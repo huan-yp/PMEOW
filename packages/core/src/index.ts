@@ -1,0 +1,20 @@
+// Core package - public API
+export * from './types.js';
+export { SSHManager } from './ssh/manager.js';
+export * as collectors from './ssh/collectors/index.js';
+export { getDatabase, closeDatabase } from './db/database.js';
+export { getAllServers, getServerById, createServer, updateServer, deleteServer } from './db/servers.js';
+export { saveMetrics, getLatestMetrics, getMetricsHistory, cleanOldMetrics } from './db/metrics.js';
+export { getAllHooks, getHookById, getHooksByServerId, createHook, updateHook, deleteHook, getHookLogs, addHookLog } from './db/hooks.js';
+export { getSettings, saveSetting, saveSettings } from './db/settings.js';
+export { Scheduler } from './scheduler.js';
+export { setAlertCallback } from './alerts.js';
+export { saveAlert, getAlerts, suppressAlert, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
+export { setNotifyCallback } from './hooks/actions.js';
+export { setHookTriggeredCallback, resetHookState } from './hooks/engine.js';
+export { evaluateCondition, getGpuIdleMinutes, resetIdleTracking } from './hooks/conditions.js';
+export { executeAction } from './hooks/actions.js';
+export type { NodeDataSource } from './datasource/types.js';
+export { SSHDataSource } from './datasource/ssh-datasource.js';
+export { AgentDataSource } from './datasource/agent-datasource.js';
+export { createDataSource } from './datasource/factory.js';
