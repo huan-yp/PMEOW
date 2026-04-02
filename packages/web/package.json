@@ -8,6 +8,7 @@
     "build": "tsc && cp -r ../ui/dist ./dist/public",
     "start": "node dist/server.js",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "test:watch": "vitest"
   },
   "dependencies": {
