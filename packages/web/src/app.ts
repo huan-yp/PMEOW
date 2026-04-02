@@ -4,10 +4,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
 import express, { type Express } from 'express';
-import { getDatabase, Scheduler } from '@monitor/core';
+import { getDatabase, Scheduler, type AgentSessionRegistry } from '@monitor/core';
 import { loginHandler, authMiddleware, socketAuthMiddleware } from './auth.js';
 import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
 import { Server as SocketServer } from 'socket.io';
+import {
+  createAgentNamespace,
+  type CreateAgentNamespaceOptions,
+} from './agent-namespace.js';
 
 const DEFAULT_PORT = Number(process.env.PORT) || 17200;
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +21,7 @@ export interface WebRuntime {
   httpServer: HttpServer;
   io: SocketServer;
   scheduler: Scheduler;
+  agentRegistry: AgentSessionRegistry;
   start: (port?: number) => Promise<number>;
   stop: () => Promise<void>;
 }
@@ -25,6 +30,7 @@ export interface CreateWebRuntimeOptions {
   port?: number;
   publicDir?: string;
   scheduler?: Scheduler;
+  agentNamespace?: CreateAgentNamespaceOptions;
 }
 
 function mountStaticAssets(app: Express, publicDir: string): void {
@@ -47,6 +53,8 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   const io = new SocketServer(httpServer, {
     cors: { origin: '*' },
   });
+  const agentNamespace = createAgentNamespace(io, scheduler, options.agentNamespace);
+  const uiNamespace = io.of('/');
 
   let currentPort = options.port ?? DEFAULT_PORT;
   let started = false;
@@ -60,10 +68,10 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
 
   setupRestRoutes(app, scheduler);
 
-  io.use(socketAuthMiddleware);
-  setupSocketHandlers(io, scheduler);
+  uiNamespace.use(socketAuthMiddleware);
+  setupSocketHandlers(uiNamespace as unknown as SocketServer, scheduler);
 
-  io.on('connection', (socket) => {
+  uiNamespace.on('connection', (socket) => {
     console.log(`[ws] client connected: ${socket.id}`);
     socket.on('disconnect', () => {
       console.log(`[ws] client disconnected: ${socket.id}`);
@@ -110,6 +118,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
     }
 
     stoppingPromise = (async () => {
+      agentNamespace.stop();
       scheduler.stop();
 
       if (!httpServer.listening) {
@@ -149,6 +158,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
     httpServer,
     io,
     scheduler,
+    agentRegistry: agentNamespace.registry,
     start,
     stop,
   };
