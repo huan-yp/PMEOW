@@ -44,3 +44,24 @@ describe('servers CRUD', () => {
     expect(getServerById(server.id)).toBeUndefined();
   });
 });
+
+describe('server sourceType and agentId fields', () => {
+  it('should default sourceType to ssh and agentId to null', () => {
+    const server = createServer(testInput);
+    expect(server.sourceType).toBe('ssh');
+    expect(server.agentId).toBeNull();
+  });
+
+  it('should allow creating a server with agent sourceType', () => {
+    const server = createServer({ ...testInput, sourceType: 'agent', agentId: 'agent-001' });
+    expect(server.sourceType).toBe('agent');
+    expect(server.agentId).toBe('agent-001');
+  });
+
+  it('should update sourceType', () => {
+    const server = createServer(testInput);
+    const updated = updateServer(server.id, { sourceType: 'agent', agentId: 'agent-002' });
+    expect(updated!.sourceType).toBe('agent');
+    expect(updated!.agentId).toBe('agent-002');
+  });
+});

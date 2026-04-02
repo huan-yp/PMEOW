@@ -1,0 +1,272 @@
+// ========================
+// Server Configuration
+// ========================
+
+export type SourceType = 'ssh' | 'agent';
+
+export interface ServerConfig {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  privateKeyPath: string;
+  sourceType: SourceType;
+  agentId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type ServerInput = Omit<ServerConfig, 'id' | 'createdAt' | 'updatedAt' | 'sourceType' | 'agentId'> & {
+  sourceType?: SourceType;
+  agentId?: string | null;
+};
+
+// ========================
+// Metrics Data
+// ========================
+
+export interface CpuMetrics {
+  usagePercent: number;      // Overall CPU usage %
+  coreCount: number;
+  modelName: string;
+  frequencyMhz: number;
+  perCoreUsage: number[];    // Per-core usage %
+}
+
+export interface MemoryMetrics {
+  totalMB: number;
+  usedMB: number;
+  availableMB: number;
+  usagePercent: number;
+  swapTotalMB: number;
+  swapUsedMB: number;
+  swapPercent: number;
+}
+
+export interface DiskInfo {
+  filesystem: string;
+  mountPoint: string;
+  totalGB: number;
+  usedGB: number;
+  availableGB: number;
+  usagePercent: number;
+}
+
+export interface DiskMetrics {
+  disks: DiskInfo[];
+  ioReadKBs: number;       // Read KB/s
+  ioWriteKBs: number;      // Write KB/s
+}
+
+export interface NetworkMetrics {
+  rxBytesPerSec: number;    // Download bytes/s
+  txBytesPerSec: number;    // Upload bytes/s
+  interfaces: {
+    name: string;
+    rxBytes: number;
+    txBytes: number;
+  }[];
+}
+
+export interface GpuMetrics {
+  available: boolean;
+  totalMemoryMB: number;
+  usedMemoryMB: number;
+  memoryUsagePercent: number;
+  utilizationPercent: number;
+  temperatureC: number;
+  gpuCount: number;
+}
+
+export interface ProcessInfo {
+  pid: number;
+  user: string;
+  cpuPercent: number;
+  memPercent: number;
+  rss: number;              // Resident memory KB
+  command: string;
+}
+
+export interface DockerContainer {
+  id: string;
+  name: string;
+  image: string;
+  status: string;
+  state: string;
+  ports: string;
+  createdAt: string;
+}
+
+export interface SystemMetrics {
+  hostname: string;
+  uptime: string;
+  loadAvg1: number;
+  loadAvg5: number;
+  loadAvg15: number;
+  kernelVersion: string;
+}
+
+export interface MetricsSnapshot {
+  serverId: string;
+  timestamp: number;
+  cpu: CpuMetrics;
+  memory: MemoryMetrics;
+  disk: DiskMetrics;
+  network: NetworkMetrics;
+  gpu: GpuMetrics;
+  processes: ProcessInfo[];
+  docker: DockerContainer[];
+  system: SystemMetrics;
+}
+
+// ========================
+// Server Status
+// ========================
+
+export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
+
+export interface ServerStatus {
+  serverId: string;
+  status: ConnectionStatus;
+  lastSeen: number;
+  error?: string;
+  latestMetrics?: MetricsSnapshot;
+}
+
+// ========================
+// Hook System
+// ========================
+
+export type HookConditionType = 'gpu_mem_below' | 'gpu_util_below' | 'gpu_idle_duration';
+
+export interface HookCondition {
+  type: HookConditionType;
+  threshold: number;         // percent (0-100) or minutes
+  serverId: string;
+}
+
+export type HookActionType = 'exec_local' | 'http_request' | 'desktop_notify';
+
+export interface ExecLocalAction {
+  type: 'exec_local';
+  command: string;
+}
+
+export interface HttpRequestAction {
+  type: 'http_request';
+  url: string;
+  method: 'GET' | 'POST' | 'PUT';
+  headers: Record<string, string>;
+  body: string;
+}
+
+export interface DesktopNotifyAction {
+  type: 'desktop_notify';
+  title: string;
+  body: string;
+}
+
+export type HookAction = ExecLocalAction | HttpRequestAction | DesktopNotifyAction;
+
+export interface HookRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  condition: HookCondition;
+  action: HookAction;
+  lastTriggeredAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type HookRuleInput = Omit<HookRule, 'id' | 'lastTriggeredAt' | 'createdAt' | 'updatedAt'>;
+
+export interface HookLog {
+  id: string;
+  hookId: string;
+  triggeredAt: number;
+  success: boolean;
+  result: string;
+  error: string | null;
+}
+
+// ========================
+// Settings
+// ========================
+
+export interface AppSettings {
+  refreshIntervalMs: number;
+  alertCpuThreshold: number;
+  alertMemoryThreshold: number;
+  alertDiskThreshold: number;
+  alertDiskMountPoints: string[];   // which mount points to check, default ["/"]
+  alertSuppressDefaultDays: number; // default suppress duration in days
+  apiEnabled: boolean;
+  apiPort: number;
+  apiToken: string;
+  historyRetentionDays: number;
+  password: string;           // bcrypt hash, for web mode
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  refreshIntervalMs: 5000,
+  alertCpuThreshold: 90,
+  alertMemoryThreshold: 90,
+  alertDiskThreshold: 90,
+  alertDiskMountPoints: ['/'],
+  alertSuppressDefaultDays: 7,
+  apiEnabled: true,
+  apiPort: 17210,
+  apiToken: '',
+  historyRetentionDays: 7,
+  password: '',
+};
+
+// ========================
+// Events
+// ========================
+
+export interface CoreEvents {
+  metricsUpdate: (data: MetricsSnapshot) => void;
+  serverStatus: (status: ServerStatus) => void;
+  alert: (alert: AlertEvent) => void;
+  hookTriggered: (log: HookLog) => void;
+  notify: (title: string, body: string) => void;
+}
+
+export interface AlertEvent {
+  id?: string;                // alert record ID (if persisted)
+  serverId: string;
+  serverName: string;
+  metric: string;
+  value: number;
+  threshold: number;
+  timestamp: number;
+}
+
+export interface AlertRecord {
+  id: string;
+  serverId: string;
+  serverName: string;
+  metric: string;
+  value: number;
+  threshold: number;
+  timestamp: number;
+  suppressedUntil: number | null;
+}
+
+// ========================
+// Template Variables (for hooks)
+// ========================
+
+export interface TemplateContext {
+  serverName: string;
+  serverHost: string;
+  gpuMemUsage: number;
+  gpuUtil: number;
+  gpuIdleMinutes: number;
+  timestamp: string;
+  cpuUsage: number;
+  memUsage: number;
+}
