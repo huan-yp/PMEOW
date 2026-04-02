@@ -1,26 +1,36 @@
-"""Minimal WebSocket transport client for communicating with the PMEOW server."""
+"""Minimal Socket.IO transport client for communicating with the PMEOW server."""
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import time
 from collections import deque
 from typing import Any, Callable
+from urllib.parse import urlsplit, urlunsplit
 
-import websocket
+import socketio
 
 from pmeow.models import MetricsSnapshot, TaskUpdate
 
 log = logging.getLogger(__name__)
 
+_NAMESPACE = "/agent"
 _MAX_BUFFER = 100
 _MAX_BACKOFF = 60
 
 
+def _normalize_server_url(server_url: str) -> str:
+    parsed = urlsplit(server_url)
+    if parsed.scheme == "ws":
+        return urlunsplit(("http", parsed.netloc, parsed.path.rstrip("/"), parsed.query, parsed.fragment))
+    if parsed.scheme == "wss":
+        return urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), parsed.query, parsed.fragment))
+    return server_url.rstrip("/")
+
+
 class AgentTransportClient:
-    """Plain-WebSocket client that speaks JSON envelopes to the PMEOW server."""
+    """Socket.IO client that speaks agent/server events on the /agent namespace."""
 
     def __init__(
         self,
@@ -28,23 +38,25 @@ class AgentTransportClient:
         agent_id: str,
         heartbeat_interval: int = 30,
     ) -> None:
-        self._server_url = server_url
+        self._server_url = _normalize_server_url(server_url)
         self._agent_id = agent_id
         self._heartbeat_interval = heartbeat_interval
 
-        self._ws: websocket.WebSocketApp | None = None
-        self._ws_thread: threading.Thread | None = None
+        self._client = socketio.Client(
+            reconnection=True,
+            reconnection_attempts=0,
+            reconnection_delay=1,
+            reconnection_delay_max=_MAX_BACKOFF,
+            logger=False,
+            engineio_logger=False,
+        )
         self._heartbeat_thread: threading.Thread | None = None
         self._connected = False
         self._shutdown = threading.Event()
         self._lock = threading.Lock()
 
-        # Reconnection state
-        self._backoff = 1
-        self._auto_reconnect = True
-
         # Offline buffer (bounded)
-        self._buffer: deque[str] = deque(maxlen=_MAX_BUFFER)
+        self._buffer: deque[tuple[str, Any]] = deque(maxlen=_MAX_BUFFER)
 
         # Registration info for re-register on reconnect
         self._register_hostname: str | None = None
@@ -52,6 +64,10 @@ class AgentTransportClient:
 
         # Inbound command handlers
         self._handlers: dict[str, Callable[..., Any]] = {}
+
+        self._client.on("connect", self._on_connect, namespace=_NAMESPACE)
+        self._client.on("disconnect", self._on_disconnect, namespace=_NAMESPACE)
+        self._client.on("connect_error", self._on_connect_error, namespace=_NAMESPACE)
 
     # ------------------------------------------------------------------
     # Properties
@@ -66,19 +82,26 @@ class AgentTransportClient:
     # ------------------------------------------------------------------
 
     def connect(self) -> None:
-        """Open WebSocket connection in a background thread."""
+        """Open the Socket.IO connection and leave reconnects to the client."""
         self._shutdown.clear()
-        self._auto_reconnect = True
-        self._start_ws()
+        self._start_heartbeat()
+
+        if self._connected or self._client.connected:
+            return
+
+        self._client.connect(
+            self._server_url,
+            namespaces=[_NAMESPACE],
+            wait=False,
+        )
 
     def disconnect(self) -> None:
         """Gracefully close the connection and stop background threads."""
-        self._auto_reconnect = False
         self._shutdown.set()
-        if self._ws:
-            self._ws.close()
-        if self._ws_thread and self._ws_thread.is_alive():
-            self._ws_thread.join(timeout=5)
+        if self._client.connected:
+            self._client.disconnect()
+        else:
+            self._connected = False
         if self._heartbeat_thread and self._heartbeat_thread.is_alive():
             self._heartbeat_thread.join(timeout=5)
 
@@ -122,44 +145,30 @@ class AgentTransportClient:
 
     def on_command(self, command: str, handler: Callable[..., Any]) -> None:
         self._handlers[command] = handler
+        self._client.on(command, self._make_command_handler(command), namespace=_NAMESPACE)
 
     # ------------------------------------------------------------------
     # Internal: send helper
     # ------------------------------------------------------------------
 
     def _send_event(self, event: str, data: Any) -> None:
-        payload = json.dumps({"event": event, "data": data})
         with self._lock:
-            if self._connected and self._ws:
+            if self._connected:
                 try:
-                    self._ws.send(payload)
+                    self._client.emit(event, data, namespace=_NAMESPACE)
                     return
                 except Exception:
                     log.warning("send failed, buffering message")
-            self._buffer.append(payload)
+            self._buffer.append((event, data))
 
     # ------------------------------------------------------------------
-    # Internal: WebSocket lifecycle
+    # Internal: Socket.IO lifecycle
     # ------------------------------------------------------------------
 
-    def _start_ws(self) -> None:
-        self._ws = websocket.WebSocketApp(
-            self._server_url,
-            on_open=self._on_open,
-            on_message=self._on_message,
-            on_error=self._on_error,
-            on_close=self._on_close,
-        )
-        self._ws_thread = threading.Thread(
-            target=self._ws.run_forever, daemon=True,
-        )
-        self._ws_thread.start()
-
-    def _on_open(self, ws: websocket.WebSocketApp) -> None:
+    def _on_connect(self) -> None:
         log.info("connected to %s", self._server_url)
         with self._lock:
             self._connected = True
-            self._backoff = 1
 
         # Flush buffered messages
         self._flush_buffer()
@@ -168,38 +177,13 @@ class AgentTransportClient:
         if self._register_hostname and self._register_version:
             self.send_register(self._register_hostname, self._register_version)
 
-        # Start heartbeat thread
-        self._start_heartbeat()
-
-    def _on_message(self, ws: websocket.WebSocketApp, message: str) -> None:
-        self._handle_message(message)
-
-    def _on_error(self, ws: websocket.WebSocketApp, error: Exception) -> None:
-        log.warning("websocket error: %s", error)
-
-    def _on_close(
-        self,
-        ws: websocket.WebSocketApp,
-        close_status: int | None,
-        close_msg: str | None,
-    ) -> None:
-        log.info("disconnected (status=%s)", close_status)
+    def _on_disconnect(self) -> None:
+        log.info("disconnected from %s", self._server_url)
         with self._lock:
             self._connected = False
 
-        if self._auto_reconnect and not self._shutdown.is_set():
-            self._reconnect()
-
-    # ------------------------------------------------------------------
-    # Internal: reconnection with exponential backoff
-    # ------------------------------------------------------------------
-
-    def _reconnect(self) -> None:
-        delay = self._backoff
-        log.info("reconnecting in %ds…", delay)
-        if not self._shutdown.wait(timeout=delay):
-            self._backoff = min(self._backoff * 2, _MAX_BACKOFF)
-            self._start_ws()
+    def _on_connect_error(self, error: Any) -> None:
+        log.warning("socket.io connect error: %s", error)
 
     # ------------------------------------------------------------------
     # Internal: flush offline buffer
@@ -207,12 +191,12 @@ class AgentTransportClient:
 
     def _flush_buffer(self) -> None:
         with self._lock:
-            while self._buffer and self._connected and self._ws:
-                msg = self._buffer.popleft()
+            while self._buffer and self._connected:
+                event, data = self._buffer.popleft()
                 try:
-                    self._ws.send(msg)
+                    self._client.emit(event, data, namespace=_NAMESPACE)
                 except Exception:
-                    self._buffer.appendleft(msg)
+                    self._buffer.appendleft((event, data))
                     break
 
     # ------------------------------------------------------------------
@@ -232,24 +216,21 @@ class AgentTransportClient:
         self._heartbeat_thread.start()
 
     # ------------------------------------------------------------------
-    # Internal: inbound message dispatch
+    # Internal: inbound command dispatch
     # ------------------------------------------------------------------
 
-    def _handle_message(self, message: str) -> None:
-        try:
-            parsed = json.loads(message)
-        except json.JSONDecodeError:
-            log.warning("ignoring non-JSON message")
-            return
+    def _make_command_handler(self, command: str) -> Callable[[Any], None]:
+        def _handle(data: Any) -> None:
+            self._dispatch_command(command, data)
 
-        event = parsed.get("event")
-        data = parsed.get("data", {})
+        return _handle
 
-        handler = self._handlers.get(event)
+    def _dispatch_command(self, command: str, data: Any) -> None:
+        handler = self._handlers.get(command)
         if handler:
             try:
                 handler(data)
             except Exception:
-                log.exception("handler error for %s", event)
+                log.exception("handler error for %s", command)
         else:
-            log.debug("no handler for event %s", event)
+            log.debug("no handler for event %s", command)

@@ -9,7 +9,7 @@ description = "PMEOW GPU cluster monitoring agent"
 requires-python = ">=3.10"
 dependencies = [
     "psutil",
-    "websocket-client",
+    "python-socketio[client]>=5,<6",
 ]
 
 [project.optional-dependencies]

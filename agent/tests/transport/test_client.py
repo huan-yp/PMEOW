@@ -2,32 +2,42 @@
 
 from __future__ import annotations
 
-import json
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from pmeow.models import TaskStatus, TaskUpdate
 from pmeow.transport.client import AgentTransportClient
+
+
+def _emit_payload(mock_client: MagicMock, call_index: int = 0) -> tuple[str, dict]:
+    call = mock_client.emit.call_args_list[call_index]
+    return call.args[0], call.args[1]
 
 
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
 
-def _make_client(**kwargs) -> AgentTransportClient:
+def _make_client(socketio_client: MagicMock, **kwargs) -> AgentTransportClient:
     defaults = {"server_url": "ws://localhost:3000", "agent_id": "test-agent"}
     defaults.update(kwargs)
-    return AgentTransportClient(**defaults)
+    socketio_client.connected = False
+    with patch("pmeow.transport.client.socketio.Client", return_value=socketio_client):
+        return AgentTransportClient(**defaults)
 
 
-def _force_connected(client: AgentTransportClient) -> MagicMock:
-    """Simulate a connected state with a mock WebSocket."""
-    mock_ws = MagicMock()
-    client._ws = mock_ws
+def _force_connected(client: AgentTransportClient, socketio_client: MagicMock) -> MagicMock:
+    """Simulate a connected state with a mock Socket.IO client."""
     client._connected = True
-    return mock_ws
+    socketio_client.connected = True
+    return socketio_client
+
+
+def _registered_handler(socketio_client: MagicMock, event: str):
+    for call in socketio_client.on.call_args_list:
+        if call.args[0] == event and call.kwargs.get("namespace") == "/agent":
+            return call.args[1]
+    raise AssertionError(f"no handler registered for {event}")
 
 
 # ------------------------------------------------------------------
@@ -37,23 +47,40 @@ def _force_connected(client: AgentTransportClient) -> MagicMock:
 
 class TestSendRegister:
     def test_register_payload_contains_hostname_version(self):
-        client = _make_client()
-        mock_ws = _force_connected(client)
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+        _force_connected(client, mock_sio)
 
         client.send_register("mybox", "0.1.0")
 
-        mock_ws.send.assert_called_once()
-        payload = json.loads(mock_ws.send.call_args[0][0])
-        assert payload["event"] == "agent:register"
-        assert payload["data"]["agentId"] == "test-agent"
-        assert payload["data"]["hostname"] == "mybox"
-        assert payload["data"]["version"] == "0.1.0"
+        mock_sio.emit.assert_called_once_with(
+            "agent:register",
+            {
+                "agentId": "test-agent",
+                "hostname": "mybox",
+                "version": "0.1.0",
+            },
+            namespace="/agent",
+        )
+
+    def test_connect_uses_agent_namespace(self):
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio, server_url="ws://localhost:3000/base/")
+
+        client.connect()
+
+        mock_sio.connect.assert_called_once_with(
+            "http://localhost:3000/base",
+            namespaces=["/agent"],
+            wait=False,
+        )
 
 
 class TestSendTaskUpdate:
     def test_task_update_serializes_correctly(self):
-        client = _make_client()
-        mock_ws = _force_connected(client)
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+        _force_connected(client, mock_sio)
 
         update = TaskUpdate(
             task_id="t-123",
@@ -63,9 +90,8 @@ class TestSendTaskUpdate:
         )
         client.send_task_update(update)
 
-        payload = json.loads(mock_ws.send.call_args[0][0])
-        assert payload["event"] == "agent:taskUpdate"
-        d = payload["data"]
+        event, d = _emit_payload(mock_sio)
+        assert event == "agent:taskUpdate"
         assert d["taskId"] == "t-123"
         assert d["status"] == "running"
         assert d["startedAt"] == 1000.0
@@ -76,12 +102,13 @@ class TestSendTaskUpdate:
 
 class TestInboundCommands:
     def test_inbound_cancel_reaches_handler(self):
-        client = _make_client()
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
         received = []
         client.on_command("server:cancelTask", lambda data: received.append(data))
 
-        msg = json.dumps({"event": "server:cancelTask", "data": {"taskId": "t-99"}})
-        client._handle_message(msg)
+        handler = _registered_handler(mock_sio, "server:cancelTask")
+        handler({"taskId": "t-99"})
 
         assert len(received) == 1
         assert received[0]["taskId"] == "t-99"
@@ -89,32 +116,32 @@ class TestInboundCommands:
 
 class TestReconnect:
     def test_reconnect_resends_register(self):
-        client = _make_client()
-        mock_ws = _force_connected(client)
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+        _force_connected(client, mock_sio)
 
         # First registration
         client.send_register("mybox", "0.1.0")
-        assert mock_ws.send.call_count == 1
+        assert mock_sio.emit.call_count == 1
 
         # Simulate disconnect
-        client._connected = False
-        mock_ws.reset_mock()
+        client._on_disconnect()
+        mock_sio.emit.reset_mock()
 
-        # Simulate reconnect — call _on_open which should re-register
-        mock_ws2 = MagicMock()
-        client._ws = mock_ws2
-        client._on_open(mock_ws2)
+        # Simulate reconnect — _on_connect should re-register
+        client._on_connect()
 
         # Should have sent the register message again
-        calls = [json.loads(c[0][0]) for c in mock_ws2.send.call_args_list]
-        register_calls = [c for c in calls if c["event"] == "agent:register"]
-        assert len(register_calls) >= 1
-        assert register_calls[0]["data"]["hostname"] == "mybox"
+        assert mock_sio.emit.call_count >= 1
+        event, data = _emit_payload(mock_sio)
+        assert event == "agent:register"
+        assert data["hostname"] == "mybox"
 
 
 class TestOfflineBuffering:
     def test_offline_buffering(self):
-        client = _make_client()
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
         # Not connected — messages should be buffered
         assert not client.connected
 
@@ -125,35 +152,45 @@ class TestOfflineBuffering:
         # heartbeats don't buffer (they return early when disconnected)
         # registers do buffer, capped at 100
         assert len(client._buffer) == 100
+        assert mock_sio.emit.call_count == 0
 
     def test_buffer_flushed_on_reconnect(self):
-        client = _make_client()
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
         # Send while disconnected
         client._send_event("agent:test", {"n": 1})
         client._send_event("agent:test", {"n": 2})
         assert len(client._buffer) == 2
 
         # Simulate reconnect
-        mock_ws = MagicMock()
-        client._ws = mock_ws
-        client._on_open(mock_ws)
+        client._on_connect()
 
         # Buffer was flushed
         assert len(client._buffer) == 0
-        # At least the 2 buffered messages were sent (plus re-register if applicable)
-        assert mock_ws.send.call_count >= 2
+        assert mock_sio.emit.call_count == 2
+        assert _emit_payload(mock_sio, 0) == ("agent:test", {"n": 1})
+        assert _emit_payload(mock_sio, 1) == ("agent:test", {"n": 2})
 
 
 class TestHeartbeat:
     def test_heartbeat_payload(self):
-        client = _make_client()
-        mock_ws = _force_connected(client)
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+        _force_connected(client, mock_sio)
 
         before = time.time()
         client.send_heartbeat()
         after = time.time()
 
-        payload = json.loads(mock_ws.send.call_args[0][0])
-        assert payload["event"] == "agent:heartbeat"
-        assert payload["data"]["agentId"] == "test-agent"
-        assert before <= payload["data"]["timestamp"] <= after
+        event, payload = _emit_payload(mock_sio)
+        assert event == "agent:heartbeat"
+        assert payload["agentId"] == "test-agent"
+        assert before <= payload["timestamp"] <= after
+
+    def test_heartbeat_is_skipped_while_disconnected(self):
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+
+        client.send_heartbeat()
+
+        mock_sio.emit.assert_not_called()
