@@ -1,10 +1,17 @@
 import {
   AGENT_EVENT,
   AgentDataSource,
+  type AgentHeartbeatPayload,
+  type AgentRegisterPayload,
   AgentSessionRegistry,
   type AgentLiveSession,
   type Scheduler,
+  SERVER_COMMAND,
+  type ServerCancelTaskPayload,
   type ServerCommandEnvelope,
+  type ServerPauseQueuePayload,
+  type ServerResumeQueuePayload,
+  type ServerSetPriorityPayload,
   isAgentHeartbeatPayload,
   isAgentRegisterPayload,
   resolveAgentBinding,
@@ -29,8 +36,30 @@ interface AgentSocketData {
   agentState?: AgentConnectionState;
 }
 
-type AgentSocket = Socket<Record<string, never>, Record<string, never>, Record<string, never>, AgentSocketData>;
-type AgentNamespace = Namespace<Record<string, never>, Record<string, never>, Record<string, never>, AgentSocketData>;
+interface AgentNamespaceClientEvents {
+  [AGENT_EVENT.register]: (payload: AgentRegisterPayload) => void;
+  [AGENT_EVENT.heartbeat]: (payload: AgentHeartbeatPayload) => void;
+}
+
+interface AgentNamespaceServerEvents {
+  [SERVER_COMMAND.cancelTask]: (payload: ServerCancelTaskPayload) => void;
+  [SERVER_COMMAND.pauseQueue]: (payload: ServerPauseQueuePayload) => void;
+  [SERVER_COMMAND.resumeQueue]: (payload: ServerResumeQueuePayload) => void;
+  [SERVER_COMMAND.setPriority]: (payload: ServerSetPriorityPayload) => void;
+}
+
+type AgentSocket = Socket<
+  AgentNamespaceClientEvents,
+  AgentNamespaceServerEvents,
+  Record<string, never>,
+  AgentSocketData
+>;
+type AgentNamespace = Namespace<
+  AgentNamespaceClientEvents,
+  AgentNamespaceServerEvents,
+  Record<string, never>,
+  AgentSocketData
+>;
 
 export interface CreateAgentNamespaceOptions {
   heartbeatTimeoutMs?: number;
@@ -56,7 +85,20 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
   return {
     agentId,
     emitCommand(command: ServerCommandEnvelope): void {
-      socket.emit(command.event, command.data);
+      switch (command.event) {
+        case SERVER_COMMAND.cancelTask:
+          socket.emit(SERVER_COMMAND.cancelTask, command.data);
+          break;
+        case SERVER_COMMAND.pauseQueue:
+          socket.emit(SERVER_COMMAND.pauseQueue, command.data);
+          break;
+        case SERVER_COMMAND.resumeQueue:
+          socket.emit(SERVER_COMMAND.resumeQueue, command.data);
+          break;
+        case SERVER_COMMAND.setPriority:
+          socket.emit(SERVER_COMMAND.setPriority, command.data);
+          break;
+      }
     },
   };
 }
