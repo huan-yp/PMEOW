@@ -57,7 +57,7 @@ def open_database(directory: str | Path) -> sqlite3.Connection:
     path.mkdir(parents=True, exist_ok=True)
     db_path = path / "pmeow.db"
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA)
