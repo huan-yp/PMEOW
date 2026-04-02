@@ -1,6 +1,8 @@
 // Core package - public API
 export * from './types.js';
 export * from './agent/protocol.js';
+export { AgentSessionRegistry } from './agent/registry.js';
+export type { AgentLiveSession } from './agent/registry.js';
 export { ingestAgentMetrics, ingestAgentTaskUpdate, flattenGpuAllocation } from './agent/ingest.js';
 export { SSHManager } from './ssh/manager.js';
 export * as collectors from './ssh/collectors/index.js';
@@ -19,7 +21,8 @@ export { setNotifyCallback } from './hooks/actions.js';
 export { setHookTriggeredCallback, resetHookState } from './hooks/engine.js';
 export { evaluateCondition, getGpuIdleMinutes, resetIdleTracking } from './hooks/conditions.js';
 export { executeAction } from './hooks/actions.js';
-export type { NodeDataSource } from './datasource/types.js';
+export type { NodeDataSource, AgentCommandDataSource } from './datasource/types.js';
+export { isAgentCommandDataSource } from './datasource/types.js';
 export { SSHDataSource } from './datasource/ssh-datasource.js';
 export { AgentDataSource } from './datasource/agent-datasource.js';
 export { createDataSource } from './datasource/factory.js';

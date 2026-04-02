@@ -1,21 +1,26 @@
 import { EventEmitter } from 'events';
 import type { MetricsSnapshot, ConnectionStatus } from '../types.js';
-import type { NodeDataSource } from './types.js';
+import { SERVER_COMMAND, type ServerCommandEnvelope } from '../agent/protocol.js';
+import type { AgentLiveSession } from '../agent/registry.js';
+import type { AgentCommandDataSource, NodeDataSource } from './types.js';
 
 /**
  * AgentDataSource receives metrics pushed by a remote Python Agent via WebSocket.
  * This is a stub — full Agent WebSocket handling is in Plan 3.
  */
-export class AgentDataSource extends EventEmitter implements NodeDataSource {
+export class AgentDataSource extends EventEmitter implements NodeDataSource, AgentCommandDataSource {
   readonly type = 'agent' as const;
   readonly serverId: string;
+  readonly agentId: string | null;
 
   private connected = false;
   private latestSnapshot: MetricsSnapshot | null = null;
+  private liveSession: AgentLiveSession | null = null;
 
-  constructor(serverId: string) {
+  constructor(serverId: string, agentId: string | null = null) {
     super();
     this.serverId = serverId;
+    this.agentId = agentId;
   }
 
   async connect(): Promise<void> {
@@ -24,8 +29,7 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource {
   }
 
   disconnect(): void {
-    this.connected = false;
-    this.latestSnapshot = null;
+    this.detachSession();
   }
 
   isConnected(): boolean {
@@ -48,11 +52,67 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource {
     this.emit('metricsReceived', snapshot);
   }
 
+  attachSession(session: AgentLiveSession): void {
+    this.liveSession = session;
+    this.connected = true;
+  }
+
+  detachSession(session?: AgentLiveSession): void {
+    if (session !== undefined && this.liveSession !== session) {
+      return;
+    }
+
+    this.liveSession = null;
+    this.connected = false;
+    this.latestSnapshot = null;
+  }
+
   /** Called when Agent registers or reconnects. */
   setConnected(connected: boolean): void {
     this.connected = connected;
     if (!connected) {
+      this.liveSession = null;
       this.latestSnapshot = null;
     }
+  }
+
+  cancelTask(taskId: string): void {
+    this.emitCommand({
+      event: SERVER_COMMAND.cancelTask,
+      data: { taskId },
+    });
+  }
+
+  pauseQueue(): void {
+    this.emitCommand({
+      event: SERVER_COMMAND.pauseQueue,
+      data: {},
+    });
+  }
+
+  resumeQueue(): void {
+    this.emitCommand({
+      event: SERVER_COMMAND.resumeQueue,
+      data: {},
+    });
+  }
+
+  setPriority(taskId: string, priority: number): void {
+    this.emitCommand({
+      event: SERVER_COMMAND.setPriority,
+      data: { taskId, priority },
+    });
+  }
+
+  private emitCommand(command: ServerCommandEnvelope): void {
+    this.requireLiveSession().emitCommand(command);
+  }
+
+  private requireLiveSession(): AgentLiveSession {
+    if (this.liveSession === null) {
+      throw new Error(`Agent server ${this.serverId} is offline`);
+    }
+
+    return this.liveSession;
   }
 }
