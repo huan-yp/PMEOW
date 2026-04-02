@@ -1,0 +1,34 @@
+"""Smoke tests for the pmeow agent package."""
+
+import pytest
+
+
+def test_import():
+    import pmeow
+    assert pmeow.__version__ == "0.1.0"
+
+
+def test_cli_status():
+    from pmeow.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["status"])
+    assert exc_info.value.code == 1
+
+
+def test_cli_help():
+    from pmeow.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+    assert exc_info.value.code == 0
+
+
+def test_config_defaults():
+    from pmeow.config import load_config
+
+    cfg = load_config()
+    assert cfg.vram_redundancy_coefficient == 0.1
+    assert cfg.collection_interval == 5
+    assert cfg.heartbeat_interval == 30
+    assert cfg.server_url == ""

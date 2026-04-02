@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmeow-agent"
+version = "0.1.0"
+description = "PMEOW GPU cluster monitoring agent"
+requires-python = ">=3.10"
+dependencies = [
+    "psutil",
+    "websocket-client",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+pmeow-agent = "pmeow.__main__:main"
+pmeow = "pmeow.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["pmeow*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
