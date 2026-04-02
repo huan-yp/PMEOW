@@ -2,6 +2,11 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+interface SchemaColumn {
+  name: string;
+  definition: string;
+}
+
 let db: Database.Database | null = null;
 
 export function getDatabase(dataDir?: string): Database.Database {
@@ -97,16 +102,96 @@ function initSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_alert_history_time
       ON alert_history(timestamp);
+
+    CREATE TABLE IF NOT EXISTS agent_tasks (
+      taskId TEXT PRIMARY KEY,
+      serverId TEXT NOT NULL,
+      status TEXT NOT NULL,
+      command TEXT,
+      cwd TEXT,
+      user TEXT,
+      requireVramMB INTEGER,
+      requireGpuCount INTEGER,
+      gpuIdsJson TEXT,
+      priority INTEGER,
+      createdAt INTEGER,
+      startedAt INTEGER,
+      finishedAt INTEGER,
+      exitCode INTEGER,
+      pid INTEGER,
+      updatedAt INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_tasks_server_updated_at
+      ON agent_tasks(serverId, updatedAt DESC);
+
+    CREATE TABLE IF NOT EXISTS gpu_usage_stats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      serverId TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      gpuIndex INTEGER NOT NULL,
+      ownerType TEXT NOT NULL,
+      ownerId TEXT,
+      userName TEXT,
+      taskId TEXT,
+      pid INTEGER,
+      usedMemoryMB REAL NOT NULL,
+      declaredVramMB REAL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_server_time
+      ON gpu_usage_stats(serverId, timestamp DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_server_gpu_time
+      ON gpu_usage_stats(serverId, gpuIndex, timestamp DESC);
   `);
 
-  // Migrate existing databases: add sourceType and agentId columns if missing
-  const cols = db.prepare("PRAGMA table_info(servers)").all() as { name: string }[];
-  const colNames = new Set(cols.map(c => c.name));
-  if (!colNames.has('sourceType')) {
-    db.exec("ALTER TABLE servers ADD COLUMN sourceType TEXT NOT NULL DEFAULT 'ssh'");
-  }
-  if (!colNames.has('agentId')) {
-    db.exec("ALTER TABLE servers ADD COLUMN agentId TEXT");
+  ensureColumns(db, 'servers', [
+    { name: 'sourceType', definition: "TEXT NOT NULL DEFAULT 'ssh'" },
+    { name: 'agentId', definition: 'TEXT' },
+  ]);
+
+  ensureColumns(db, 'agent_tasks', [
+    { name: 'serverId', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'queued'" },
+    { name: 'command', definition: 'TEXT' },
+    { name: 'cwd', definition: 'TEXT' },
+    { name: 'user', definition: 'TEXT' },
+    { name: 'requireVramMB', definition: 'INTEGER' },
+    { name: 'requireGpuCount', definition: 'INTEGER' },
+    { name: 'gpuIdsJson', definition: 'TEXT' },
+    { name: 'priority', definition: 'INTEGER' },
+    { name: 'createdAt', definition: 'INTEGER' },
+    { name: 'startedAt', definition: 'INTEGER' },
+    { name: 'finishedAt', definition: 'INTEGER' },
+    { name: 'exitCode', definition: 'INTEGER' },
+    { name: 'pid', definition: 'INTEGER' },
+    { name: 'updatedAt', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  ]);
+
+  ensureColumns(db, 'gpu_usage_stats', [
+    { name: 'serverId', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'timestamp', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'gpuIndex', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'ownerType', definition: "TEXT NOT NULL DEFAULT 'unknown'" },
+    { name: 'ownerId', definition: 'TEXT' },
+    { name: 'userName', definition: 'TEXT' },
+    { name: 'taskId', definition: 'TEXT' },
+    { name: 'pid', definition: 'INTEGER' },
+    { name: 'usedMemoryMB', definition: 'REAL NOT NULL DEFAULT 0' },
+    { name: 'declaredVramMB', definition: 'REAL' },
+  ]);
+}
+
+function ensureColumns(db: Database.Database, tableName: string, columns: SchemaColumn[]): void {
+  const existingColumns = new Set(
+    (db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]).map(column => column.name)
+  );
+
+  for (const column of columns) {
+    if (!existingColumns.has(column.name)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${column.name} ${column.definition}`);
+    }
   }
 }
 
