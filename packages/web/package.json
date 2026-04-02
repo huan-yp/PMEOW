@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc && cp -r ../ui/dist ./dist/public",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@monitor/core": "workspace:*",
@@ -23,7 +25,11 @@
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.0",
     "@types/multer": "^2.1.0",
+    "@types/supertest": "^6.0.3",
+    "socket.io-client": "^4.8.0",
+    "supertest": "^7.1.4",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
   }
 }
