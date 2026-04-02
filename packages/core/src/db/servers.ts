@@ -12,6 +12,16 @@ export function getServerById(id: string): ServerConfig | undefined {
   return db.prepare('SELECT * FROM servers WHERE id = ?').get(id) as ServerConfig | undefined;
 }
 
+export function getServerByAgentId(agentId: string): ServerConfig | undefined {
+  const db = getDatabase();
+  return db.prepare('SELECT * FROM servers WHERE agentId = ? ORDER BY updatedAt DESC LIMIT 1').get(agentId) as ServerConfig | undefined;
+}
+
+export function getServersByHost(hostname: string): ServerConfig[] {
+  const db = getDatabase();
+  return db.prepare('SELECT * FROM servers WHERE host = ? ORDER BY createdAt ASC, id ASC').all(hostname) as ServerConfig[];
+}
+
 export function createServer(input: ServerInput): ServerConfig {
   const db = getDatabase();
   const now = Date.now();
@@ -45,6 +55,13 @@ export function updateServer(id: string, input: Partial<ServerInput>): ServerCon
     'UPDATE servers SET name = ?, host = ?, port = ?, username = ?, privateKeyPath = ?, sourceType = ?, agentId = ?, updatedAt = ? WHERE id = ?'
   ).run(updated.name, updated.host, updated.port, updated.username, updated.privateKeyPath, updated.sourceType, updated.agentId, updated.updatedAt, id);
   return updated;
+}
+
+export function bindAgentToServer(serverId: string, agentId: string): ServerConfig | undefined {
+  return updateServer(serverId, {
+    sourceType: 'agent',
+    agentId,
+  });
 }
 
 export function deleteServer(id: string): boolean {

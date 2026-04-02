@@ -40,40 +40,50 @@ export class Scheduler extends EventEmitter {
     const currentIds = new Set(servers.map(s => s.id));
 
     // Remove stale datasources
-    for (const [id, ds] of this.dataSources) {
+    for (const [id] of this.dataSources) {
       if (!currentIds.has(id)) {
-        ds.disconnect();
-        this.dataSources.delete(id);
+        this.refreshServerDataSource(id);
       }
     }
 
     // Create or update datasources
     for (const server of servers) {
-      const existing = this.dataSources.get(server.id);
+      this.refreshServerDataSource(server.id);
+    }
+  }
 
-      if (existing && existing.type === server.sourceType) {
-        // Same type, update config if SSH
-        if (existing instanceof SSHDataSource) {
-          existing.updateServer(server);
-        }
-        continue;
-      }
+  refreshServerDataSource(serverId: string): void {
+    const server = getServerById(serverId);
+    const existing = this.dataSources.get(serverId);
 
-      // Type changed or new server — create fresh
+    if (!server) {
       if (existing) {
         existing.disconnect();
+        this.dataSources.delete(serverId);
       }
-
-      const ds = createDataSource(server, this.sharedSSH);
-      this.dataSources.set(server.id, ds);
-
-      // For Agent datasources, listen for pushed metrics
-      if (ds instanceof AgentDataSource) {
-        ds.on('metricsReceived', (snapshot: MetricsSnapshot) => {
-          this.handleMetrics(snapshot, server.id);
-        });
-      }
+      return;
     }
+
+    if (existing instanceof SSHDataSource && server.sourceType === 'ssh') {
+      existing.updateServer(server);
+      return;
+    }
+
+    if (
+      existing instanceof AgentDataSource
+      && server.sourceType === 'agent'
+      && existing.agentId === server.agentId
+    ) {
+      return;
+    }
+
+    if (existing) {
+      existing.disconnect();
+    }
+
+    const ds = createDataSource(server, this.sharedSSH);
+    this.dataSources.set(server.id, ds);
+    this.attachDataSourceListeners(ds, server.id);
   }
 
   start(): void {
@@ -130,13 +140,21 @@ export class Scheduler extends EventEmitter {
   async collectServer(serverId: string): Promise<MetricsSnapshot | null> {
     const ds = this.dataSources.get(serverId);
     if (!ds) {
-      // Maybe server was just created — re-init
-      this.initDataSources();
+      // Maybe server was just created or its binding changed.
+      this.refreshServerDataSource(serverId);
       const refreshed = this.dataSources.get(serverId);
       if (!refreshed) return null;
       return this.collectFromSource(refreshed);
     }
     return this.collectFromSource(ds);
+  }
+
+  private attachDataSourceListeners(ds: NodeDataSource, serverId: string): void {
+    if (ds instanceof AgentDataSource) {
+      ds.on('metricsReceived', (snapshot: MetricsSnapshot) => {
+        this.handleMetrics(snapshot, serverId);
+      });
+    }
   }
 
   private async collectFromSource(ds: NodeDataSource): Promise<MetricsSnapshot | null> {

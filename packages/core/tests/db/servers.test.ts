@@ -1,6 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getDatabase } from '../../src/db/database.js';
-import { getAllServers, createServer, getServerById, updateServer, deleteServer } from '../../src/db/servers.js';
+import {
+  bindAgentToServer,
+  createServer,
+  deleteServer,
+  getAllServers,
+  getServerByAgentId,
+  getServerById,
+  getServersByHost,
+  updateServer,
+} from '../../src/db/servers.js';
 import type { ServerInput } from '../../src/types.js';
 
 beforeEach(() => {
@@ -63,5 +72,31 @@ describe('server sourceType and agentId fields', () => {
     const updated = updateServer(server.id, { sourceType: 'agent', agentId: 'agent-002' });
     expect(updated!.sourceType).toBe('agent');
     expect(updated!.agentId).toBe('agent-002');
+  });
+});
+
+describe('server binding helpers', () => {
+  it('bindAgentToServer flips sourceType to agent and stores agentId', () => {
+    const server = createServer(testInput);
+
+    const bound = bindAgentToServer(server.id, 'agent-101');
+
+    expect(bound).toBeDefined();
+    expect(bound!.sourceType).toBe('agent');
+    expect(bound!.agentId).toBe('agent-101');
+    expect(bound!.updatedAt).toBeGreaterThanOrEqual(server.updatedAt);
+    expect(getServerByAgentId('agent-101')?.id).toBe(server.id);
+  });
+
+  it('getServersByHost returns exact hostname matches only', () => {
+    const first = createServer({ ...testInput, name: 'exact-a', host: 'gpu-01' });
+    const second = createServer({ ...testInput, name: 'exact-b', host: 'gpu-01', port: 2222 });
+    createServer({ ...testInput, name: 'partial', host: 'gpu-01.local' });
+
+    const matches = getServersByHost('gpu-01');
+
+    expect(matches).toHaveLength(2);
+    expect(matches.every(server => server.host === 'gpu-01')).toBe(true);
+    expect(matches.map(server => server.id).sort()).toEqual([first.id, second.id].sort());
   });
 });

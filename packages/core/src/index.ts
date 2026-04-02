@@ -1,6 +1,13 @@
 // Core package - public API
 export * from './types.js';
 export * from './agent/protocol.js';
+export { resolveAgentBinding } from './agent/binding.js';
+export type {
+	AgentBindingResolution,
+	BoundAgentBindingResolution,
+	ConflictAgentBindingResolution,
+	UnmatchedAgentBindingResolution,
+} from './agent/binding.js';
 export { AgentSessionRegistry } from './agent/registry.js';
 export type { AgentLiveSession } from './agent/registry.js';
 export { ingestAgentMetrics, ingestAgentTaskUpdate, flattenGpuAllocation } from './agent/ingest.js';
@@ -10,7 +17,16 @@ export { getDatabase, closeDatabase } from './db/database.js';
 export { upsertAgentTask, getAgentTask, getAgentTasksByServerId, deleteAgentTasksByServerId } from './db/agent-tasks.js';
 export { saveGpuUsageRows, getLatestGpuUsageByServerId, cleanOldGpuUsage } from './db/gpu-usage.js';
 export type { GpuUsageRowInput, StoredGpuUsageRow } from './db/gpu-usage.js';
-export { getAllServers, getServerById, createServer, updateServer, deleteServer } from './db/servers.js';
+export {
+	getAllServers,
+	getServerById,
+	getServerByAgentId,
+	getServersByHost,
+	createServer,
+	updateServer,
+	bindAgentToServer,
+	deleteServer,
+} from './db/servers.js';
 export { saveMetrics, getLatestMetrics, getMetricsHistory, cleanOldMetrics } from './db/metrics.js';
 export { getAllHooks, getHookById, getHooksByServerId, createHook, updateHook, deleteHook, getHookLogs, addHookLog } from './db/hooks.js';
 export { getSettings, saveSetting, saveSettings } from './db/settings.js';
