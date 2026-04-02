@@ -145,8 +145,16 @@ export class Scheduler extends EventEmitter {
       this.refreshServerDataSource(serverId);
       const refreshed = this.dataSources.get(serverId);
       if (!refreshed) return null;
+      if (refreshed instanceof AgentDataSource) {
+        return refreshed.collectMetrics();
+      }
       return this.collectFromSource(refreshed);
     }
+
+    if (ds instanceof AgentDataSource) {
+      return ds.collectMetrics();
+    }
+
     return this.collectFromSource(ds);
   }
 

@@ -111,7 +111,7 @@ function mergeAgentTask(
   existing: MirroredAgentTaskRecord | undefined,
   incoming: MirroredAgentTaskRecord,
 ): MirroredAgentTaskRecord {
-  return {
+  return normalizeTaskLifecycleFields({
     taskId: incoming.taskId,
     serverId: incoming.serverId,
     status: incoming.status,
@@ -127,7 +127,28 @@ function mergeAgentTask(
     finishedAt: pickField(incoming, existing, 'finishedAt'),
     exitCode: pickField(incoming, existing, 'exitCode'),
     pid: pickField(incoming, existing, 'pid'),
-  };
+  });
+}
+
+function normalizeTaskLifecycleFields(task: MirroredAgentTaskRecord): MirroredAgentTaskRecord {
+  switch (task.status) {
+    case 'queued':
+      return {
+        ...task,
+        startedAt: null,
+        finishedAt: null,
+        exitCode: null,
+        pid: null,
+      };
+    case 'running':
+      return {
+        ...task,
+        finishedAt: null,
+        exitCode: null,
+      };
+    default:
+      return task;
+  }
 }
 
 function pickField<K extends keyof MirroredAgentTaskRecord>(

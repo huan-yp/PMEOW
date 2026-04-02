@@ -195,6 +195,49 @@ describe('agent task repository', () => {
     ]);
   });
 
+  it('clears stale runtime fields when a task returns to queued state', () => {
+    vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(1_000)
+      .mockReturnValueOnce(2_000)
+      .mockReturnValueOnce(3_000);
+
+    upsertAgentTask({
+      serverId: 'server-a',
+      taskId: 'task-1',
+      status: 'running',
+      startedAt: 1_500,
+      pid: 4321,
+    });
+
+    upsertAgentTask({
+      serverId: 'server-a',
+      taskId: 'task-1',
+      status: 'completed',
+      finishedAt: 2_500,
+      exitCode: 0,
+      pid: 4321,
+    });
+
+    upsertAgentTask({
+      serverId: 'server-a',
+      taskId: 'task-1',
+      status: 'queued',
+      command: 'python retry.py',
+    });
+
+    expect(getAgentTask('task-1')).toEqual({
+      serverId: 'server-a',
+      taskId: 'task-1',
+      status: 'queued',
+      command: 'python retry.py',
+      gpuIds: null,
+      startedAt: null,
+      finishedAt: null,
+      exitCode: null,
+      pid: null,
+    });
+  });
+
   it('deletes only rows for the requested server', () => {
     vi.spyOn(Date, 'now')
       .mockReturnValueOnce(1_000)
