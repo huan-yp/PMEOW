@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getDatabase } from '../../src/db/database.js';
 import {
@@ -45,6 +48,46 @@ describe('agent_tasks schema', () => {
       'pid',
       'updatedAt',
     ]));
+  });
+
+  it('adds the task mirror table when opening a pre-migration database', () => {
+    const dbPath = path.join(process.cwd(), 'tmp-agent-tasks-legacy.db');
+    fs.rmSync(dbPath, { force: true });
+
+    const legacyDb = new Database(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22,
+        username TEXT NOT NULL,
+        privateKeyPath TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      );
+    `);
+    legacyDb.close();
+
+    const previousDbPath = process.env.MONITOR_DB_PATH;
+    process.env.MONITOR_DB_PATH = dbPath;
+
+    try {
+      const db = getDatabase();
+      const table = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_tasks'"
+      ).get() as { name: string } | undefined;
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(agent_tasks)').all() as { name: string }[]).map(column => column.name)
+      );
+
+      expect(table?.name).toBe('agent_tasks');
+      expect(columns.has('taskId')).toBe(true);
+      expect(columns.has('updatedAt')).toBe(true);
+    } finally {
+      process.env.MONITOR_DB_PATH = previousDbPath;
+      fs.rmSync(dbPath, { force: true });
+    }
   });
 });
 
@@ -102,17 +145,48 @@ describe('agent task repository', () => {
     });
   });
 
+  it('treats identical replay payloads as idempotent', () => {
+    vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
+
+    const task: MirroredAgentTaskRecord = {
+      serverId: 'server-a',
+      taskId: 'task-1',
+      status: 'queued',
+      command: 'python train.py',
+      gpuIds: [0],
+      priority: 5,
+      createdAt: 900,
+    };
+
+    upsertAgentTask(task);
+
+    const db = getDatabase();
+    const firstWrite = db.prepare(
+      'SELECT updatedAt FROM agent_tasks WHERE taskId = ?'
+    ).get('task-1') as { updatedAt: number };
+
+    upsertAgentTask({ ...task });
+
+    const secondWrite = db.prepare(
+      'SELECT COUNT(*) AS count, updatedAt FROM agent_tasks WHERE taskId = ?'
+    ).get('task-1') as { count: number; updatedAt: number };
+
+    expect(secondWrite.count).toBe(1);
+    expect(secondWrite.updatedAt).toBe(firstWrite.updatedAt);
+  });
+
   it('returns tasks ordered by updatedAt descending', () => {
     vi.spyOn(Date, 'now')
       .mockReturnValueOnce(1_000)
       .mockReturnValueOnce(2_000)
       .mockReturnValueOnce(3_000)
-      .mockReturnValueOnce(4_000);
+      .mockReturnValueOnce(4_000)
+      .mockReturnValueOnce(5_000);
 
     upsertAgentTask({ serverId: 'server-a', taskId: 'task-1', status: 'queued' });
     upsertAgentTask({ serverId: 'server-a', taskId: 'task-2', status: 'queued' });
     upsertAgentTask({ serverId: 'server-a', taskId: 'task-3', status: 'queued' });
-    upsertAgentTask({ serverId: 'server-a', taskId: 'task-1', status: 'running' });
+    upsertAgentTask({ serverId: 'server-a', taskId: 'task-1', status: 'running', startedAt: 3_500 });
 
     expect(getAgentTasksByServerId('server-a').map(task => task.taskId)).toEqual([
       'task-1',

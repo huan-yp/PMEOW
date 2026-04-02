@@ -24,6 +24,11 @@ export function upsertAgentTask(task: MirroredAgentTaskRecord): void {
   const db = getDatabase();
   const existing = getAgentTask(task.taskId);
   const mergedTask = mergeAgentTask(existing, task);
+
+  if (existing && agentTaskEquals(existing, mergedTask)) {
+    return;
+  }
+
   const updatedAt = Date.now();
 
   db.prepare(`
@@ -142,6 +147,42 @@ function serializeGpuIds(task: MirroredAgentTaskRecord): string | null {
   }
 
   return JSON.stringify(task.gpuIds ?? null);
+}
+
+function agentTaskEquals(
+  left: MirroredAgentTaskRecord,
+  right: MirroredAgentTaskRecord,
+): boolean {
+  return left.serverId === right.serverId
+    && left.taskId === right.taskId
+    && left.status === right.status
+    && left.command === right.command
+    && left.cwd === right.cwd
+    && left.user === right.user
+    && left.requireVramMB === right.requireVramMB
+    && left.requireGpuCount === right.requireGpuCount
+    && left.priority === right.priority
+    && left.createdAt === right.createdAt
+    && left.startedAt === right.startedAt
+    && left.finishedAt === right.finishedAt
+    && left.exitCode === right.exitCode
+    && left.pid === right.pid
+    && gpuIdsEqual(left.gpuIds, right.gpuIds);
+}
+
+function gpuIdsEqual(
+  left: number[] | null | undefined,
+  right: number[] | null | undefined,
+): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (left == null || right == null || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
 }
 
 function rowToAgentTask(row: RawAgentTaskRow): MirroredAgentTaskRecord {

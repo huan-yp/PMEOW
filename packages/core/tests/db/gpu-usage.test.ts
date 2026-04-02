@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getDatabase } from '../../src/db/database.js';
 import {
@@ -43,6 +46,46 @@ describe('gpu_usage_stats schema', () => {
       'usedMemoryMB',
       'declaredVramMB',
     ]));
+  });
+
+  it('adds the gpu usage table when opening a pre-migration database', () => {
+    const dbPath = path.join(process.cwd(), 'tmp-gpu-usage-legacy.db');
+    fs.rmSync(dbPath, { force: true });
+
+    const legacyDb = new Database(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE servers (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        host TEXT NOT NULL,
+        port INTEGER NOT NULL DEFAULT 22,
+        username TEXT NOT NULL,
+        privateKeyPath TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      );
+    `);
+    legacyDb.close();
+
+    const previousDbPath = process.env.MONITOR_DB_PATH;
+    process.env.MONITOR_DB_PATH = dbPath;
+
+    try {
+      const db = getDatabase();
+      const table = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'gpu_usage_stats'"
+      ).get() as { name: string } | undefined;
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(gpu_usage_stats)').all() as { name: string }[]).map(column => column.name)
+      );
+
+      expect(table?.name).toBe('gpu_usage_stats');
+      expect(columns.has('ownerType')).toBe(true);
+      expect(columns.has('usedMemoryMB')).toBe(true);
+    } finally {
+      process.env.MONITOR_DB_PATH = previousDbPath;
+      fs.rmSync(dbPath, { force: true });
+    }
   });
 });
 
