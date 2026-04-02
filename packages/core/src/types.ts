@@ -79,6 +79,85 @@ export interface GpuMetrics {
   gpuCount: number;
 }
 
+// ========================
+// Agent Runtime Data
+// ========================
+
+export type AgentTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface GpuTaskAllocation {
+  taskId: string;
+  gpuIndex: number;
+  declaredVramMB: number;
+  actualVramMB: number;
+}
+
+export interface GpuUserProcess {
+  pid: number;
+  user: string;
+  gpuIndex: number;
+  usedMemoryMB: number;
+  command: string;
+}
+
+export interface GpuUnknownProcess {
+  pid: number;
+  gpuIndex: number;
+  usedMemoryMB: number;
+}
+
+export interface PerGpuAllocationSummary {
+  gpuIndex: number;
+  totalMemoryMB: number;
+  pmeowTasks: GpuTaskAllocation[];
+  userProcesses: GpuUserProcess[];
+  unknownProcesses: GpuUnknownProcess[];
+  effectiveFreeMB: number;
+}
+
+export interface UserGpuUsageSummary {
+  user: string;
+  totalVramMB: number;
+  gpuIndices: number[];
+}
+
+export interface GpuAllocationSummary {
+  perGpu: PerGpuAllocationSummary[];
+  byUser: UserGpuUsageSummary[];
+}
+
+export interface AgentRegisterPayload {
+  agentId: string;
+  hostname: string;
+  version: string;
+}
+
+export interface AgentHeartbeatPayload {
+  agentId: string;
+  timestamp: number;
+}
+
+export interface AgentTaskUpdatePayload {
+  taskId: string;
+  status: AgentTaskStatus;
+  command?: string;
+  cwd?: string;
+  user?: string;
+  requireVramMB?: number;
+  requireGpuCount?: number;
+  gpuIds?: number[] | null;
+  priority?: number;
+  createdAt?: number;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  exitCode?: number | null;
+  pid?: number | null;
+}
+
+export interface MirroredAgentTaskRecord extends AgentTaskUpdatePayload {
+  serverId: string;
+}
+
 export interface ProcessInfo {
   pid: number;
   user: string;
@@ -118,6 +197,7 @@ export interface MetricsSnapshot {
   processes: ProcessInfo[];
   docker: DockerContainer[];
   system: SystemMetrics;
+  gpuAllocation?: GpuAllocationSummary;
 }
 
 // ========================

@@ -1,5 +1,6 @@
 // Core package - public API
 export * from './types.js';
+export * from './agent/protocol.js';
 export { SSHManager } from './ssh/manager.js';
 export * as collectors from './ssh/collectors/index.js';
 export { getDatabase, closeDatabase } from './db/database.js';
