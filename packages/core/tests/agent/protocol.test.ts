@@ -73,6 +73,7 @@ describe('agent protocol', () => {
 
   it('accepts a valid task update payload', () => {
     expect(isAgentTaskUpdatePayload({
+      serverId: 'server-1',
       taskId: 'task-1',
       status: 'running',
       command: 'python train.py',

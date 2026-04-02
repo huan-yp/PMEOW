@@ -280,7 +280,8 @@ export function isAgentTaskUpdatePayload(value: unknown): value is AgentTaskUpda
     return false;
   }
 
-  return isString(value.taskId)
+  return isString(value.serverId)
+    && isString(value.taskId)
     && isAgentTaskStatus(value.status)
     && isOptionalString(value.command)
     && isOptionalString(value.cwd)

@@ -138,6 +138,7 @@ export interface AgentHeartbeatPayload {
 }
 
 export interface AgentTaskUpdatePayload {
+  serverId: string;
   taskId: string;
   status: AgentTaskStatus;
   command?: string;
