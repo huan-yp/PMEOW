@@ -1,0 +1,17 @@
+{
+  "name": "server-monitor",
+  "private": true,
+  "version": "1.0.0",
+  "description": "PMEOW - GPU cluster monitoring and scheduling platform for labs",
+  "scripts": {
+    "dev:ui": "pnpm --filter @monitor/ui dev",
+    "dev:web": "pnpm --filter @monitor/web dev",
+    "build:core": "pnpm --filter @monitor/core exec tsc",
+    "build:ui": "pnpm --filter @monitor/ui build",
+    "build:web": "pnpm run build:core && pnpm run build:ui && pnpm --filter @monitor/web build",
+    "start:web": "pnpm --filter @monitor/web start"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

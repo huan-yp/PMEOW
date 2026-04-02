@@ -1,0 +1,16 @@
+services:
+  monitor:
+    build: .
+    container_name: monitor
+    restart: unless-stopped
+    ports:
+      - "17200:17200"
+    volumes:
+      - monitor_data:/data
+      - ~/.ssh:/root/.ssh:ro    # Mount SSH keys (read-only)
+    environment:
+      - PORT=17200
+      - MONITOR_DB_PATH=/data/monitor.db
+
+volumes:
+  monitor_data:
