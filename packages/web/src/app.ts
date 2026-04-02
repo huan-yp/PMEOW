@@ -6,6 +6,7 @@ import cors from 'cors';
 import express, { type Express } from 'express';
 import { getDatabase, Scheduler, type AgentSessionRegistry } from '@monitor/core';
 import { loginHandler, authMiddleware, socketAuthMiddleware } from './auth.js';
+import { setupAgentReadRoutes } from './agent-routes.js';
 import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
 import { Server as SocketServer } from 'socket.io';
 import {
@@ -67,6 +68,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   app.use('/api', authMiddleware);
 
   setupRestRoutes(app, scheduler);
+  setupAgentReadRoutes(app);
 
   uiNamespace.use(socketAuthMiddleware);
   setupSocketHandlers(uiNamespace as unknown as SocketServer, scheduler);

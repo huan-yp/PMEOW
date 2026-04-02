@@ -5,6 +5,9 @@ import {
   type AgentRegisterPayload,
   AgentSessionRegistry,
   type AgentLiveSession,
+  type AgentTaskUpdatePayload,
+  ingestAgentTaskUpdate,
+  isAgentMetricsPayload,
   type Scheduler,
   SERVER_COMMAND,
   type ServerCancelTaskPayload,
@@ -14,6 +17,8 @@ import {
   type ServerSetPriorityPayload,
   isAgentHeartbeatPayload,
   isAgentRegisterPayload,
+  isAgentTaskUpdatePayload,
+  type MetricsSnapshot,
   resolveAgentBinding,
 } from '@monitor/core';
 import type { Namespace, Server as SocketServer, Socket } from 'socket.io';
@@ -38,6 +43,8 @@ interface AgentSocketData {
 
 interface AgentNamespaceClientEvents {
   [AGENT_EVENT.register]: (payload: AgentRegisterPayload) => void;
+  [AGENT_EVENT.metrics]: (payload: unknown) => void;
+  [AGENT_EVENT.taskUpdate]: (payload: unknown) => void;
   [AGENT_EVENT.heartbeat]: (payload: AgentHeartbeatPayload) => void;
 }
 
@@ -71,6 +78,12 @@ export interface AgentNamespaceRuntime {
   registry: AgentSessionRegistry;
   namespace: AgentNamespace;
   stop: () => void;
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function normalizeHeartbeatTimestamp(timestamp: number): number {
@@ -113,6 +126,57 @@ function isCurrentState(
 function getAgentDataSource(scheduler: Scheduler, serverId: string): AgentDataSource | undefined {
   const dataSource = scheduler.getDataSource(serverId);
   return dataSource instanceof AgentDataSource ? dataSource : undefined;
+}
+
+function normalizeMetricsPayload(
+  payload: unknown,
+  serverId: string | undefined,
+): MetricsSnapshot | undefined {
+  if (!serverId || !isAgentMetricsPayload(payload)) {
+    return undefined;
+  }
+
+  if (payload.serverId === serverId) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    serverId,
+  };
+}
+
+function normalizeTaskUpdatePayload(
+  payload: unknown,
+  serverId: string | undefined,
+): AgentTaskUpdatePayload | undefined {
+  if (!serverId) {
+    return undefined;
+  }
+
+  if (isAgentTaskUpdatePayload(payload)) {
+    if (payload.serverId === serverId) {
+      return payload;
+    }
+
+    return {
+      ...payload,
+      serverId,
+    };
+  }
+
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+
+  const normalizedPayload = {
+    ...payload,
+    serverId,
+  };
+
+  return isAgentTaskUpdatePayload(normalizedPayload)
+    ? normalizedPayload
+    : undefined;
 }
 
 export function createAgentNamespace(
@@ -228,6 +292,36 @@ export function createAgentNamespace(
       }
 
       refreshHeartbeat(state, payload.timestamp);
+    });
+
+    socket.on(AGENT_EVENT.metrics, (payload: unknown) => {
+      const state = socket.data.agentState;
+      const serverId = state?.serverId;
+      if (!state || !serverId || !isCurrentState(states, state)) {
+        return;
+      }
+
+      const snapshot = normalizeMetricsPayload(payload, serverId);
+      if (!snapshot) {
+        return;
+      }
+
+      scheduler.refreshServerDataSource(serverId);
+      getAgentDataSource(scheduler, serverId)?.pushMetrics(snapshot);
+    });
+
+    socket.on(AGENT_EVENT.taskUpdate, (payload: unknown) => {
+      const state = socket.data.agentState;
+      if (!state || !isCurrentState(states, state)) {
+        return;
+      }
+
+      const update = normalizeTaskUpdatePayload(payload, state.serverId);
+      if (!update) {
+        return;
+      }
+
+      ingestAgentTaskUpdate(update);
     });
 
     socket.on('disconnect', () => {

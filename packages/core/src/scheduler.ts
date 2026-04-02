@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { getAllServers, getServerById } from './db/servers.js';
 import { saveMetrics, cleanOldMetrics } from './db/metrics.js';
+import { ingestAgentMetrics } from './agent/ingest.js';
 import { getSettings } from './db/settings.js';
 import { checkAlerts } from './alerts.js';
 import { evaluateHooks } from './hooks/engine.js';
@@ -191,8 +192,11 @@ export class Scheduler extends EventEmitter {
 
   /** Shared post-collection pipeline: save, alert, hook, broadcast. */
   private handleMetrics(snapshot: MetricsSnapshot, serverId: string): void {
-    // Save to DB
-    saveMetrics(snapshot);
+    if (this.dataSources.get(serverId) instanceof AgentDataSource) {
+      ingestAgentMetrics(snapshot);
+    } else {
+      saveMetrics(snapshot);
+    }
 
     // Update status with latest metrics
     const status = this.serverStatuses.get(serverId);
