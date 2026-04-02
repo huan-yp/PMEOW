@@ -1,6 +1,6 @@
 # pmeow-agent
 
-Standalone Python agent for PMEOW GPU cluster monitoring. Runs on compute nodes to collect metrics, track GPU ownership, and maintain a local task queue.
+Standalone Python agent for PMEOW GPU cluster monitoring. It runs on compute nodes, collects local metrics, tracks GPU ownership, maintains a local task queue, and connects back to the PMEOW Web service over Socket.IO.
 
 ## Requirements
 
@@ -80,7 +80,7 @@ All settings are configured via environment variables. Defaults are used when a 
 
 | Variable | Default | Description |
 |---|---|---|
-| `PMEOW_SERVER_URL` | *(empty)* | WebSocket URL of the PMEOW server (e.g. `ws://server:3000`) |
+| `PMEOW_SERVER_URL` | *(empty)* | PMEOW Web server base URL (e.g. `http://server:17200`) |
 | `PMEOW_AGENT_ID` | hostname | Unique identifier for this agent |
 | `PMEOW_COLLECTION_INTERVAL` | `5` | Seconds between metric collection cycles |
 | `PMEOW_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeat reports to server |
@@ -89,6 +89,8 @@ All settings are configured via environment variables. Defaults are used when a 
 | `PMEOW_STATE_DIR` | `~/.pmeow/` | Directory for database and runtime state |
 | `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | Path to the Unix socket for CLI ↔ daemon communication |
 | `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | Directory where task stdout/stderr logs are stored |
+
+`PMEOW_SERVER_URL` should point at the PMEOW Web service base URL. The agent transport layer will connect to the Socket.IO `/agent` namespace automatically; do not append `/agent` yourself and do not use a raw WebSocket URL.
 
 ## State directory
 
@@ -109,3 +111,9 @@ By default, all agent state is stored under `~/.pmeow/`:
 pip install -e ".[dev]"
 pytest -v
 ```
+
+## Notes on server integration
+
+- The agent sends `agent:register`, `agent:metrics`, `agent:taskUpdate`, and `agent:heartbeat` over Socket.IO.
+- The server may send `server:cancelTask`, `server:pauseQueue`, `server:resumeQueue`, and `server:setPriority` back to the agent when the node is online.
+- Server-side binding is hostname-based. Keep the Web server's `servers.host` value aligned with the node hostname if you want automatic binding.
