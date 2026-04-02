@@ -36,6 +36,10 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource, Age
     return this.connected;
   }
 
+  hasLiveSession(): boolean {
+    return this.liveSession !== null;
+  }
+
   getConnectionStatus(): ConnectionStatus {
     return this.connected ? 'connected' : 'disconnected';
   }

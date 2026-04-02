@@ -68,7 +68,10 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   app.use('/api', authMiddleware);
 
   setupRestRoutes(app, scheduler);
-  setupAgentReadRoutes(app);
+  setupAgentReadRoutes(app, {
+    scheduler,
+    agentRegistry: agentNamespace.registry,
+  });
 
   uiNamespace.use(socketAuthMiddleware);
   setupSocketHandlers(uiNamespace as unknown as SocketServer, scheduler);

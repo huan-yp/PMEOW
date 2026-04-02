@@ -37,6 +37,14 @@ export class AgentSessionRegistry {
     return this.sessionsByAgentId.get(agentId);
   }
 
+  getAgentIdByServerId(serverId: string): string | undefined {
+    return this.agentIdByServerId.get(serverId);
+  }
+
+  hasSessionByServerId(serverId: string): boolean {
+    return this.getSessionByServerId(serverId) !== undefined;
+  }
+
   detachSession(agentId: string, session?: AgentLiveSession): void {
     if (session !== undefined && this.sessionsByAgentId.get(agentId) !== session) {
       return;
