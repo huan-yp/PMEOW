@@ -1,0 +1,17 @@
+[Unit]
+Description=PMEOW Agent Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=pmeow
+ExecStart=/opt/pmeow-agent/.venv/bin/pmeow-agent daemon
+WorkingDirectory=/opt/pmeow-agent
+Environment=PMEOW_SERVER_URL=ws://your-server:3000
+Environment=PMEOW_STATE_DIR=/var/lib/pmeow-agent
+Environment=PMEOW_LOG_DIR=/var/log/pmeow-agent
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
