@@ -1,8 +1,10 @@
-<img align="right" width="200" src="crop-logo.png" alt="PMEOW — 面向高校实验室的 GPU 集群调度系统">
-
 # PMEOW
 
-实验室 GPU 集群监控与本地调度平台。
+<img align="right" width="400" src="assets/logo.png" alt="PMEOW — 面向高校实验室的 GPU 集群调度系统">
+
+PAML 实验室 GPU 集群监控与本地调度平台。
+
+PAML Manage Engine for Orchestrated Workloads (PMEOW) 是一个专为高校实验室设计的 GPU 集群监控与调度系统。它提供了一个轻量级的 Python Agent，直接运行在计算节点上，负责指标采集、GPU 归属识别、本地任务队列和自主调度。Web 服务端则提供了一个统一的界面，展示跨节点的任务队列、GPU 使用分布、安全审计视图等功能。
 
 当前实现采用两层架构：
 
