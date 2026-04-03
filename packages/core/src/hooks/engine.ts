@@ -38,6 +38,15 @@ export async function evaluateHooks(metrics: MetricsSnapshot): Promise<void> {
         timestamp: new Date().toISOString(),
         cpuUsage: metrics.cpu.usagePercent,
         memUsage: metrics.memory.usagePercent,
+        personId: '',
+        personName: '',
+        personEmail: '',
+        personQQ: '',
+        personNote: '',
+        personCustomFieldsJson: '',
+        rawUser: '',
+        taskId: '',
+        resolutionSource: 'unassigned',
       };
 
       try {

@@ -10,6 +10,7 @@ import { setupAgentReadRoutes } from './agent-routes.js';
 import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
 import { Server as SocketServer } from 'socket.io';
 import { setupOperatorRoutes } from './operator-routes.js';
+import { setupPersonRoutes } from './person-routes.js';
 import {
   createAgentNamespace,
   type CreateAgentNamespaceOptions,
@@ -83,6 +84,8 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
     scheduler,
     uiNamespace,
   });
+
+  setupPersonRoutes(app);
 
   uiNamespace.use(socketAuthMiddleware);
   setupSocketHandlers(uiNamespace, scheduler);

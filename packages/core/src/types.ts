@@ -445,6 +445,15 @@ export interface TemplateContext {
   timestamp: string;
   cpuUsage: number;
   memUsage: number;
+  personId: string;
+  personName: string;
+  personEmail: string;
+  personQQ: string;
+  personNote: string;
+  personCustomFieldsJson: string;
+  rawUser: string;
+  taskId: string;
+  resolutionSource: string;
 }
 
 // ========================

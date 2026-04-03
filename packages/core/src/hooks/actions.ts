@@ -82,7 +82,16 @@ function replaceTemplate(template: string, ctx: TemplateContext): string {
     .replace(/\{\{gpuIdleMinutes\}\}/g, String(ctx.gpuIdleMinutes))
     .replace(/\{\{timestamp\}\}/g, ctx.timestamp)
     .replace(/\{\{cpuUsage\}\}/g, String(ctx.cpuUsage))
-    .replace(/\{\{memUsage\}\}/g, String(ctx.memUsage));
+    .replace(/\{\{memUsage\}\}/g, String(ctx.memUsage))
+    .replace(/\{\{personId\}\}/g, ctx.personId)
+    .replace(/\{\{personName\}\}/g, ctx.personName)
+    .replace(/\{\{personEmail\}\}/g, ctx.personEmail)
+    .replace(/\{\{personQQ\}\}/g, ctx.personQQ)
+    .replace(/\{\{personNote\}\}/g, ctx.personNote)
+    .replace(/\{\{personCustomFieldsJson\}\}/g, ctx.personCustomFieldsJson)
+    .replace(/\{\{rawUser\}\}/g, ctx.rawUser)
+    .replace(/\{\{taskId\}\}/g, ctx.taskId)
+    .replace(/\{\{resolutionSource\}\}/g, ctx.resolutionSource);
 }
 
 function replaceHeaders(headers: Record<string, string>, ctx: TemplateContext): Record<string, string> {
