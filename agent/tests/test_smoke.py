@@ -31,3 +31,19 @@ def test_config_defaults():
     assert cfg.collection_interval == 5
     assert cfg.heartbeat_interval == 30
     assert cfg.server_url == ""
+
+
+def test_cli_run_help():
+    from pmeow.__main__ import main
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["run", "--help"])
+
+    assert exc_info.value.code == 0
+
+
+def test_cli_daemon_alias_parses():
+    from pmeow.__main__ import build_parser
+
+    args = build_parser().parse_args(["daemon"])
+    assert args.command == "daemon"

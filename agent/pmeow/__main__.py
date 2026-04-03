@@ -7,21 +7,14 @@ import json
 import os
 import sys
 
+from pmeow import cli_runtime
+
 
 _DEFAULT_SOCKET = os.path.expanduser("~/.pmeow/pmeow.sock")
 
 
 def _socket_path(args: argparse.Namespace) -> str:
     return getattr(args, "socket", None) or _DEFAULT_SOCKET
-
-
-def _cmd_daemon(args: argparse.Namespace) -> None:
-    from pmeow.config import load_config
-    from pmeow.daemon.service import DaemonService
-
-    config = load_config()
-    svc = DaemonService(config)
-    svc.start()
 
 
 def _cmd_status(args: argparse.Namespace) -> None:
@@ -113,29 +106,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
-    # daemon
-    sub.add_parser("daemon", help="Start the agent daemon")
+    # runtime
+    sub.add_parser("run", help="Run the agent in the foreground")
+    sub.add_parser("daemon", help="Compatibility alias for foreground run")
 
-    # status
+    start_parser = sub.add_parser("start", help="Start the agent in the background")
+    start_parser.add_argument("--agent-log-file", default=None, help="Path to the runtime log file")
+
+    sub.add_parser("stop", help="Stop the background agent")
+
+    restart_parser = sub.add_parser("restart", help="Restart the background agent")
+    restart_parser.add_argument("--agent-log-file", default=None, help="Path to the runtime log file")
+
+    sub.add_parser("is-running", help="Check whether the background agent is running")
+
+    # queue control
     sub.add_parser("status", help="Query queue status")
 
-    # cancel
     cancel_parser = sub.add_parser("cancel", help="Cancel a task")
     cancel_parser.add_argument("task_id", help="ID of the task to cancel")
 
-    # logs
     logs_parser = sub.add_parser("logs", help="Get task logs")
     logs_parser.add_argument("task_id", help="ID of the task")
     logs_parser.add_argument("--tail", type=int, default=100, help="Number of lines")
 
-    # submit
     submit_parser = sub.add_parser("submit", help="Submit a task")
     submit_parser.add_argument("--pvram", type=int, default=0, help="VRAM in MB")
     submit_parser.add_argument("--gpu", type=int, default=1, help="GPU count")
     submit_parser.add_argument("--priority", type=int, default=10, help="Priority")
     submit_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Command to run")
 
-    # pause / resume
     sub.add_parser("pause", help="Pause the task queue")
     sub.add_parser("resume", help="Resume the task queue")
 
@@ -143,7 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 _HANDLERS = {
-    "daemon": _cmd_daemon,
+    "run": lambda args: cli_runtime.run_foreground(args),
+    "daemon": lambda args: cli_runtime.run_foreground(args),
+    "start": lambda args: cli_runtime.start_background(args),
+    "stop": lambda args: cli_runtime.stop_background(args),
+    "restart": lambda args: cli_runtime.restart_background(args),
+    "is-running": lambda args: cli_runtime.is_running(args),
     "status": _cmd_status,
     "cancel": _cmd_cancel,
     "logs": _cmd_logs,
