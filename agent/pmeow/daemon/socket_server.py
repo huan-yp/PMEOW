@@ -123,14 +123,18 @@ class SocketServer:
 # RPC method implementations
 # ------------------------------------------------------------------
 
-def _to_task_dict(rec: Any) -> dict:
-    return {
+def _to_task_dict(rec: Any, *, log_dir: str | None = None) -> dict:
+    result = {
         "id": rec.id,
         "command": rec.command,
         "cwd": rec.cwd,
         "user": rec.user,
         "require_vram_mb": rec.require_vram_mb,
         "require_gpu_count": rec.require_gpu_count,
+        "argv": rec.argv,
+        "launch_mode": rec.launch_mode.value,
+        "report_requested": rec.report_requested,
+        "launch_deadline": rec.launch_deadline,
         "gpu_ids": rec.gpu_ids,
         "priority": rec.priority,
         "status": rec.status.value,
@@ -140,9 +144,14 @@ def _to_task_dict(rec: Any) -> dict:
         "exit_code": rec.exit_code,
         "pid": rec.pid,
     }
+    if log_dir is not None:
+        from pmeow.executor.logs import get_task_log_path
+        result["log_path"] = get_task_log_path(rec.id, log_dir)
+    return result
 
 
 def _submit_task(svc: DaemonService, params: dict) -> dict:
+    from pmeow.models import TaskLaunchMode
     spec = TaskSpec(
         command=params["command"],
         cwd=params.get("cwd", "."),
@@ -151,16 +160,19 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         require_gpu_count=params.get("require_gpu_count", 1),
         gpu_ids=params.get("gpu_ids"),
         priority=params.get("priority", 10),
+        argv=params.get("argv"),
+        launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.daemon_shell,
+        report_requested=bool(params.get("report_requested", False)),
     )
     rec = svc.submit_task(spec)
-    return _to_task_dict(rec)
+    return _to_task_dict(rec, log_dir=svc.config.log_dir)
 
 
 def _list_tasks(svc: DaemonService, params: dict) -> list[dict]:
     status = None
     if "status" in params and params["status"] is not None:
         status = TaskStatus(params["status"])
-    return [_to_task_dict(t) for t in svc.list_tasks(status)]
+    return [_to_task_dict(t, log_dir=svc.config.log_dir) for t in svc.list_tasks(status)]
 
 
 def _cancel_task(svc: DaemonService, params: dict) -> bool:
@@ -193,11 +205,32 @@ def _get_status(svc: DaemonService, params: dict) -> dict:
     }
 
 
+def _get_task(svc: DaemonService, params: dict) -> dict | None:
+    task = svc.get_task(params["task_id"])
+    return _to_task_dict(task, log_dir=svc.config.log_dir) if task is not None else None
+
+
+def _get_task_events(svc: DaemonService, params: dict) -> list[dict]:
+    return svc.get_task_events(params["task_id"], after_id=params.get("after_id", 0))
+
+
+def _confirm_attached_launch(svc: DaemonService, params: dict) -> bool:
+    return svc.confirm_attached_launch(params["task_id"], pid=params["pid"])
+
+
+def _finish_attached_task(svc: DaemonService, params: dict) -> bool:
+    return svc.finish_attached_task(params["task_id"], exit_code=params["exit_code"])
+
+
 _METHODS: dict[str, Any] = {
     "submit_task": _submit_task,
     "list_tasks": _list_tasks,
+    "get_task": _get_task,
+    "get_task_events": _get_task_events,
     "cancel_task": _cancel_task,
     "get_logs": _get_logs,
+    "confirm_attached_launch": _confirm_attached_launch,
+    "finish_attached_task": _finish_attached_task,
     "pause_queue": _pause_queue,
     "resume_queue": _resume_queue,
     "get_status": _get_status,

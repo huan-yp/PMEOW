@@ -29,9 +29,11 @@ from pmeow.store.tasks import (
     append_task_event,
     attach_runtime,
     cancel_task as db_cancel_task,
+    confirm_attached_launch as db_confirm_attached_launch,
     create_task,
     finish_task,
     get_task,
+    list_task_events,
     list_tasks as db_list_tasks,
     requeue_expired_attached_launches,
     reserve_attached_launch,
@@ -281,3 +283,34 @@ class DaemonService:
                 failed=counts["failed"],
                 cancelled=counts["cancelled"],
             )
+
+    def get_task_events(self, task_id: str, after_id: int = 0) -> list[dict]:
+        with self._lock:
+            return list_task_events(self.db, task_id, after_id=after_id)
+
+    def confirm_attached_launch(self, task_id: str, pid: int) -> bool:
+        with self._lock:
+            task = get_task(self.db, task_id)
+            if task is None or task.status != TaskStatus.launching:
+                return False
+            db_confirm_attached_launch(self.db, task_id, pid=pid, started_at=time.time())
+            self._record_task_message(task_id, "attached_started", f"attached process started pid={pid}")
+            if self.transport:
+                self.transport.send_task_update(TaskUpdate(task_id=task_id, status=TaskStatus.running, started_at=time.time(), pid=pid))
+            return True
+
+    def finish_attached_task(self, task_id: str, exit_code: int) -> bool:
+        with self._lock:
+            task = get_task(self.db, task_id)
+            if task is None or task.launch_mode != TaskLaunchMode.attached_python:
+                return False
+            finished_at = time.time()
+            finish_task(self.db, task_id, exit_code, finished_at)
+            self._record_task_message(task_id, "attached_finished", f"attached process finished exit_code={exit_code}")
+            if self.transport:
+                self.transport.send_task_update(TaskUpdate(
+                    task_id=task_id,
+                    status=TaskStatus.completed if exit_code == 0 else TaskStatus.failed,
+                    finished_at=finished_at, exit_code=exit_code,
+                ))
+            return True

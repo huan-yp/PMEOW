@@ -240,3 +240,100 @@ def test_collect_cycle_requeues_expired_attached_launch(svc, monkeypatch):
 
     content = read_task_log(rec.id, svc.config.log_dir)
     assert "launch reservation expired" in content
+
+
+# ------------------------------------------------------------------
+# attached task confirm / finish / events
+# ------------------------------------------------------------------
+
+def test_confirm_and_finish_attached_task(tmp_state):
+    from pmeow.store.tasks import reserve_attached_launch
+    from pmeow.store.database import close_database
+
+    svc = DaemonService(tmp_state)
+    record = svc.submit_task(_make_spec(
+        command="python demo.py",
+        argv=["/usr/bin/python3", "demo.py"],
+        launch_mode=TaskLaunchMode.attached_python,
+        require_vram_mb=0,
+        require_gpu_count=0,
+    ))
+    now = time.time()
+    reserve_attached_launch(svc.db, record.id, gpu_ids=[0], launch_deadline=now + 30, reserved_at=now)
+
+    assert svc.confirm_attached_launch(record.id, pid=5432) is True
+    running = svc.get_task(record.id)
+    assert running is not None
+    assert running.status == TaskStatus.running
+    assert running.pid == 5432
+
+    assert svc.finish_attached_task(record.id, exit_code=0) is True
+    finished = svc.get_task(record.id)
+    assert finished is not None
+    assert finished.status == TaskStatus.completed
+    assert finished.exit_code == 0
+    close_database(svc.db)
+
+
+def test_socket_roundtrip_for_attached_methods(tmp_state):
+    from pmeow.store.tasks import reserve_attached_launch
+    from pmeow.store.database import close_database
+
+    svc = DaemonService(tmp_state)
+    srv = SocketServer(tmp_state.socket_path, svc)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    time.sleep(0.2)
+
+    try:
+        # submit an attached task via socket
+        submit = send_request(tmp_state.socket_path, "submit_task", {
+            "command": "python demo.py",
+            "cwd": "/tmp",
+            "user": "tester",
+            "require_vram_mb": 0,
+            "require_gpu_count": 0,
+            "argv": ["/usr/bin/python3", "demo.py"],
+            "launch_mode": "attached_python",
+            "report_requested": True,
+        })
+        assert submit["ok"] is True
+        task_id = submit["result"]["id"]
+        assert submit["result"]["launch_mode"] == "attached_python"
+        assert submit["result"]["report_requested"] is True
+
+        # reserve launch (directly on DB since it's the daemon's job)
+        reserve_attached_launch(svc.db, task_id, gpu_ids=[0], launch_deadline=time.time() + 30, reserved_at=time.time())
+
+        # get_task
+        current = send_request(tmp_state.socket_path, "get_task", {"task_id": task_id})
+        assert current["ok"] is True
+        assert current["result"]["launch_mode"] == "attached_python"
+        assert current["result"]["log_path"].endswith(f"{task_id}.log")
+        assert current["result"]["status"] == "launching"
+
+        # confirm_attached_launch
+        confirm = send_request(tmp_state.socket_path, "confirm_attached_launch", {"task_id": task_id, "pid": 6543})
+        assert confirm["ok"] is True
+        assert confirm["result"] is True
+
+        # verify running
+        current = send_request(tmp_state.socket_path, "get_task", {"task_id": task_id})
+        assert current["result"]["status"] == "running"
+        assert current["result"]["pid"] == 6543
+
+        # finish_attached_task
+        finish = send_request(tmp_state.socket_path, "finish_attached_task", {"task_id": task_id, "exit_code": 0})
+        assert finish["ok"] is True
+        assert finish["result"] is True
+
+        # get_task_events
+        events = send_request(tmp_state.socket_path, "get_task_events", {"task_id": task_id, "after_id": 0})
+        assert events["ok"] is True
+        event_types = [e["event_type"] for e in events["result"]]
+        assert "submitted" in event_types
+        assert "attached_started" in event_types
+        assert "attached_finished" in event_types
+    finally:
+        srv.shutdown()
+        close_database(svc.db)
