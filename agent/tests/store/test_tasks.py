@@ -6,16 +6,21 @@ import time
 
 import pytest
 
-from pmeow.models import TaskSpec, TaskStatus
+from pmeow.models import TaskLaunchMode, TaskSpec, TaskStatus
 from pmeow.store.database import open_database, close_database, recover_interrupted_tasks
 from pmeow.store.tasks import (
+    append_task_event,
     attach_runtime,
     cancel_task,
+    confirm_attached_launch,
     create_task,
     finish_task,
     get_task,
     list_queued_tasks,
+    list_task_events,
     list_tasks,
+    requeue_expired_attached_launches,
+    reserve_attached_launch,
 )
 from pmeow.store.runtime import is_queue_paused, set_queue_paused
 
@@ -206,3 +211,131 @@ class TestListTasksByStatus:
 
         all_tasks = list_tasks(conn)
         assert len(all_tasks) == 3
+
+
+class TestAttachedTaskPersistence:
+    def test_create_and_get_attached_python_task(self, conn):
+        spec = _spec(
+            argv=["train.py", "--epochs", "10"],
+            launch_mode=TaskLaunchMode.attached_python,
+            report_requested=True,
+        )
+        record = create_task(conn, spec)
+
+        assert record.argv == ["train.py", "--epochs", "10"]
+        assert record.launch_mode == TaskLaunchMode.attached_python
+        assert record.report_requested is True
+        assert record.launch_deadline is None
+
+        fetched = get_task(conn, record.id)
+        assert fetched is not None
+        assert fetched.argv == ["train.py", "--epochs", "10"]
+        assert fetched.launch_mode == TaskLaunchMode.attached_python
+        assert fetched.report_requested is True
+        assert fetched.launch_deadline is None
+
+    def test_reserve_confirm_and_requeue_attached_launch(self, conn):
+        spec = _spec(
+            launch_mode=TaskLaunchMode.attached_python,
+            argv=["script.py"],
+        )
+        record = create_task(conn, spec)
+        now = time.time()
+        deadline = now + 30.0
+
+        # Reserve the launch — status becomes launching
+        reserve_attached_launch(
+            conn, record.id, gpu_ids=[0, 1], launch_deadline=deadline, reserved_at=now,
+        )
+        fetched = get_task(conn, record.id)
+        assert fetched.status == TaskStatus.launching
+        assert fetched.gpu_ids == [0, 1]
+        assert fetched.launch_deadline == pytest.approx(deadline, abs=0.01)
+
+        reservations = conn.execute(
+            "SELECT COUNT(*) FROM resource_reservations WHERE task_id = ?",
+            (record.id,),
+        ).fetchone()[0]
+        assert reservations == 2
+
+        # Confirm the launch — status becomes running
+        confirm_attached_launch(conn, record.id, pid=4242, started_at=now + 1)
+        fetched = get_task(conn, record.id)
+        assert fetched.status == TaskStatus.running
+        assert fetched.pid == 4242
+        assert fetched.started_at == pytest.approx(now + 1, abs=0.01)
+        assert fetched.launch_deadline is None
+
+        # Create a second task with an already-expired deadline
+        record2 = create_task(conn, spec)
+        expired_deadline = now - 5.0
+        reserve_attached_launch(
+            conn, record2.id, gpu_ids=[2], launch_deadline=expired_deadline, reserved_at=now,
+        )
+        requeued = requeue_expired_attached_launches(conn, now)
+        assert record2.id in requeued
+
+        fetched2 = get_task(conn, record2.id)
+        assert fetched2.status == TaskStatus.queued
+        assert fetched2.gpu_ids is None
+        assert fetched2.launch_deadline is None
+
+        # Reservations cleaned up
+        count = conn.execute(
+            "SELECT COUNT(*) FROM resource_reservations WHERE task_id = ?",
+            (record2.id,),
+        ).fetchone()[0]
+        assert count == 0
+
+
+class TestLaunchingRecoveryOnRestart:
+    def test_launching_tasks_requeued_on_restart(self, conn):
+        spec = _spec(launch_mode=TaskLaunchMode.attached_python)
+        record = create_task(conn, spec)
+        now = time.time()
+        reserve_attached_launch(
+            conn, record.id, gpu_ids=[0], launch_deadline=now + 30, reserved_at=now,
+        )
+        assert get_task(conn, record.id).status == TaskStatus.launching
+
+        # Simulate daemon restart
+        recover_interrupted_tasks(conn)
+
+        fetched = get_task(conn, record.id)
+        assert fetched.status == TaskStatus.queued
+        assert fetched.gpu_ids is None
+        assert fetched.launch_deadline is None
+
+        events = conn.execute(
+            "SELECT event_type FROM task_events WHERE task_id = ?",
+            (record.id,),
+        ).fetchall()
+        assert any(e[0] == "launch_requeued_after_restart" for e in events)
+
+        count = conn.execute(
+            "SELECT COUNT(*) FROM resource_reservations WHERE task_id = ?",
+            (record.id,),
+        ).fetchone()[0]
+        assert count == 0
+
+
+class TestTaskEvents:
+    def test_append_and_list_task_events(self, conn):
+        record = create_task(conn, _spec())
+        now = time.time()
+
+        append_task_event(conn, record.id, "gpu_reserved", now, '{"gpus": [0]}')
+        append_task_event(conn, record.id, "process_started", now + 1, None)
+
+        events = list_task_events(conn, record.id)
+        assert len(events) == 2
+        assert events[0]["event_type"] == "gpu_reserved"
+        assert events[0]["details"] == '{"gpus": [0]}'
+        assert events[1]["event_type"] == "process_started"
+        assert events[1]["details"] is None
+
+        # after_id filtering
+        first_id = events[0]["id"]
+        filtered = list_task_events(conn, record.id, after_id=first_id)
+        assert len(filtered) == 1
+        assert filtered[0]["event_type"] == "process_started"

@@ -60,10 +60,16 @@ def _serialize(obj: object) -> object:
 
 class TaskStatus(enum.Enum):
     queued = "queued"
+    launching = "launching"
     running = "running"
     completed = "completed"
     failed = "failed"
     cancelled = "cancelled"
+
+
+class TaskLaunchMode(enum.Enum):
+    daemon_shell = "daemon_shell"
+    attached_python = "attached_python"
 
 
 @dataclass
@@ -75,6 +81,9 @@ class TaskSpec:
     require_gpu_count: int = 1
     gpu_ids: Optional[list[int]] = None
     priority: int = 10
+    argv: Optional[list[str]] = None
+    launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
+    report_requested: bool = False
 
 
 @dataclass
@@ -89,6 +98,10 @@ class TaskRecord:
     priority: int
     status: TaskStatus
     created_at: float
+    argv: Optional[list[str]] = None
+    launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
+    report_requested: bool = False
+    launch_deadline: Optional[float] = None
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     exit_code: Optional[int] = None

@@ -8,7 +8,7 @@ import time
 import uuid
 from typing import Optional
 
-from pmeow.models import TaskRecord, TaskSpec, TaskStatus
+from pmeow.models import TaskLaunchMode, TaskRecord, TaskSpec, TaskStatus
 
 
 def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
@@ -28,6 +28,10 @@ def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
         finished_at,
         exit_code,
         pid,
+        argv_json,
+        launch_mode,
+        report_requested,
+        launch_deadline,
     ) = row
     return TaskRecord(
         id=id_,
@@ -40,6 +44,10 @@ def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
         priority=priority,
         status=TaskStatus(status),
         created_at=created_at,
+        argv=json.loads(argv_json) if argv_json is not None else None,
+        launch_mode=TaskLaunchMode(launch_mode),
+        report_requested=bool(report_requested),
+        launch_deadline=launch_deadline,
         started_at=started_at,
         finished_at=finished_at,
         exit_code=exit_code,
@@ -50,7 +58,7 @@ def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
 _SELECT_COLS = (
     "id, command, cwd, user, require_vram_mb, require_gpu_count, "
     "gpu_ids, priority, status, created_at, started_at, finished_at, "
-    "exit_code, pid"
+    "exit_code, pid, argv_json, launch_mode, report_requested, launch_deadline"
 )
 
 
@@ -59,12 +67,13 @@ def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
     task_id = str(uuid.uuid4())
     now = time.time()
     gpu_ids_json = json.dumps(spec.gpu_ids) if spec.gpu_ids is not None else None
+    argv_json = json.dumps(spec.argv) if spec.argv is not None else None
 
     conn.execute(
         "INSERT INTO tasks "
         "(id, command, cwd, user, require_vram_mb, require_gpu_count, "
-        "gpu_ids, priority, status, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)",
+        "gpu_ids, priority, status, created_at, argv_json, launch_mode, report_requested) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
         (
             task_id,
             spec.command,
@@ -75,6 +84,9 @@ def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
             gpu_ids_json,
             spec.priority,
             now,
+            argv_json,
+            spec.launch_mode.value,
+            int(spec.report_requested),
         ),
     )
     conn.commit()
@@ -90,6 +102,9 @@ def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
         priority=spec.priority,
         status=TaskStatus.queued,
         created_at=now,
+        argv=spec.argv,
+        launch_mode=spec.launch_mode,
+        report_requested=spec.report_requested,
     )
 
 
@@ -185,3 +200,111 @@ def cancel_task(conn: sqlite3.Connection, task_id: str) -> None:
         "DELETE FROM resource_reservations WHERE task_id = ?", (task_id,)
     )
     conn.commit()
+
+
+def reserve_attached_launch(
+    conn: sqlite3.Connection,
+    task_id: str,
+    gpu_ids: list[int],
+    launch_deadline: float,
+    reserved_at: float,
+) -> None:
+    """Reserve GPUs for an attached launch — sets status to 'launching'."""
+    gpu_ids_json = json.dumps(gpu_ids)
+    conn.execute(
+        "UPDATE tasks SET status = 'launching', gpu_ids = ?, launch_deadline = ? "
+        "WHERE id = ?",
+        (gpu_ids_json, launch_deadline, task_id),
+    )
+    task = get_task(conn, task_id)
+    vram_per_gpu = task.require_vram_mb if task else 0
+    for gpu_index in gpu_ids:
+        conn.execute(
+            "INSERT INTO resource_reservations (task_id, gpu_index, vram_mb, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (task_id, gpu_index, vram_per_gpu, reserved_at),
+        )
+    conn.commit()
+
+
+def confirm_attached_launch(
+    conn: sqlite3.Connection,
+    task_id: str,
+    pid: int,
+    started_at: float,
+) -> None:
+    """Confirm an attached launch — sets status to 'running', clears deadline."""
+    conn.execute(
+        "UPDATE tasks SET status = 'running', pid = ?, started_at = ?, "
+        "launch_deadline = NULL WHERE id = ?",
+        (pid, started_at, task_id),
+    )
+    conn.commit()
+
+
+def requeue_expired_attached_launches(
+    conn: sqlite3.Connection, now: float
+) -> list[str]:
+    """Requeue launching tasks whose deadline has passed. Returns requeued IDs."""
+    rows = conn.execute(
+        "SELECT id FROM tasks WHERE status = 'launching' AND launch_deadline < ?",
+        (now,),
+    ).fetchall()
+    requeued_ids = [row[0] for row in rows]
+    for task_id in requeued_ids:
+        conn.execute(
+            "UPDATE tasks SET status = 'queued', gpu_ids = NULL, launch_deadline = NULL "
+            "WHERE id = ?",
+            (task_id,),
+        )
+        conn.execute(
+            "DELETE FROM resource_reservations WHERE task_id = ?",
+            (task_id,),
+        )
+        conn.execute(
+            "INSERT INTO task_events (task_id, event_type, timestamp, details) "
+            "VALUES (?, 'launch_deadline_expired', ?, NULL)",
+            (task_id, now),
+        )
+    if requeued_ids:
+        conn.commit()
+    return requeued_ids
+
+
+def append_task_event(
+    conn: sqlite3.Connection,
+    task_id: str,
+    event_type: str,
+    timestamp: float,
+    details: Optional[str] = None,
+) -> None:
+    """Insert a structured event into the task_events table."""
+    conn.execute(
+        "INSERT INTO task_events (task_id, event_type, timestamp, details) "
+        "VALUES (?, ?, ?, ?)",
+        (task_id, event_type, timestamp, details),
+    )
+    conn.commit()
+
+
+def list_task_events(
+    conn: sqlite3.Connection,
+    task_id: str,
+    after_id: int = 0,
+) -> list[dict]:
+    """Return task events for *task_id*, optionally after a given event id."""
+    rows = conn.execute(
+        "SELECT id, task_id, event_type, timestamp, details "
+        "FROM task_events WHERE task_id = ? AND id > ? ORDER BY id ASC",
+        (task_id, after_id),
+    ).fetchall()
+    return [
+        {
+            "id": r[0],
+            "task_id": r[1],
+            "event_type": r[2],
+            "timestamp": r[3],
+            "details": r[4],
+        }
+        for r in rows
+    ]
