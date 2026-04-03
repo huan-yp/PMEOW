@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { resolveAgentBinding } from '../../src/agent/binding.js';
+import { autoCreateAgentServer, resolveAgentBinding } from '../../src/agent/binding.js';
 import { getDatabase } from '../../src/db/database.js';
 import { createServer, getServerById } from '../../src/db/servers.js';
 import { AgentDataSource } from '../../src/datasource/agent-datasource.js';
@@ -122,5 +122,17 @@ describe('Scheduler.refreshServerDataSource', () => {
     expect((refreshed as AgentDataSource).agentId).toBe('agent-refresh');
 
     scheduler.stop();
+  });
+});
+
+describe('autoCreateAgentServer', () => {
+  it('uses the provided peer address for the server host', () => {
+    const resolution = autoCreateAgentServer('agent-auto-ip', 'gpu-auto-ip', '10.0.0.42');
+
+    expect(resolution.status).toBe('bound');
+    expect(resolution.server.name).toBe('gpu-auto-ip');
+    expect(resolution.server.host).toBe('10.0.0.42');
+    expect(resolution.server.sourceType).toBe('agent');
+    expect(getServerById(resolution.server.id)?.host).toBe('10.0.0.42');
   });
 });

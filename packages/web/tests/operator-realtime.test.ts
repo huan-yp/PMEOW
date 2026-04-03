@@ -78,6 +78,32 @@ afterEach(() => {
 });
 
 describe('operator realtime fanout', () => {
+  it('notifies authenticated ui clients when agent registration changes the server catalog', async () => {
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+    const uiClient = await connectUi(baseUrl, token);
+    const agentClient = await connectAgent(baseUrl);
+
+    const changed = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Timed out waiting for serversChanged'));
+      }, 1_000);
+
+      uiClient.once('serversChanged', () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+
+    agentClient.emit(AGENT_EVENT.register, {
+      agentId: 'agent-servers-changed',
+      hostname: 'agent-servers-changed',
+      version: '1.0.0',
+    });
+
+    await expect(changed).resolves.toBeUndefined();
+  });
+
   it('forwards scheduler securityEvent emissions to authenticated ui clients', async () => {
     const { baseUrl, runtime } = await startTestRuntime({
       scheduler: new Scheduler(),

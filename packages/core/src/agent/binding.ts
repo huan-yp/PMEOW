@@ -75,10 +75,14 @@ export function resolveAgentBinding(agentId: string, hostname: string): AgentBin
  * Auto-create a server entry for a first-time agent and bind it.
  * Call this when resolveAgentBinding returns 'unmatched'.
  */
-export function autoCreateAgentServer(agentId: string, hostname: string): BoundAgentBindingResolution {
+export function autoCreateAgentServer(
+  agentId: string,
+  hostname: string,
+  host?: string,
+): BoundAgentBindingResolution {
   const server = createServer({
     name: hostname,
-    host: hostname,
+    host: host ?? hostname,
     port: 0,
     username: '',
     privateKeyPath: '',

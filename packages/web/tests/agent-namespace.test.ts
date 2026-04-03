@@ -2,6 +2,7 @@ import {
   AgentDataSource,
   Scheduler,
   createServer,
+  getAllServers,
   getServerById,
   listPersonBindingCandidates,
   listPersonBindingSuggestions,
@@ -119,6 +120,27 @@ afterEach(async () => {
 });
 
 describe('createAgentNamespace', () => {
+  it('auto-creates first-time agent servers with the peer ip as host', async () => {
+    const { runtime, baseUrl } = await startRuntime();
+    const client = await connectAgent(baseUrl);
+
+    client.emit('agent:register', {
+      agentId: 'agent-auto-host',
+      hostname: 'gpu-auto-host',
+      version: '1.0.0',
+    });
+
+    await waitForCondition(() => {
+      const server = getAllServers().find((current) => current.agentId === 'agent-auto-host');
+
+      expect(server).toBeDefined();
+      expect(server?.name).toBe('gpu-auto-host');
+      expect(server?.host).toBe('127.0.0.1');
+      expect(server?.sourceType).toBe('agent');
+      expect(getAgentDataSource(runtime, server!.id).isConnected()).toBe(true);
+    });
+  });
+
   it('register binds a live session and flips the scheduler datasource to agent', async () => {
     const { runtime, baseUrl } = await startRuntime();
     const server = createServer({

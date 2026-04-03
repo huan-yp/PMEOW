@@ -21,7 +21,7 @@ import type {
   SecurityEventQuery,
 } from '@monitor/core';
 import { TransportProvider } from '../src/transport/TransportProvider.js';
-import { useLoadInitialData } from '../src/hooks/useMetrics.js';
+import { useLoadInitialData, useMetricsSubscription } from '../src/hooks/useMetrics.js';
 import { useStore } from '../src/store/useStore.js';
 import type { TransportAdapter } from '../src/transport/types.js';
 
@@ -67,6 +67,7 @@ function createMockTransport(): TransportAdapter {
     onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
     onTaskUpdate: vi.fn(() => () => undefined),
     onSecurityEvent: vi.fn(() => () => undefined),
+    onServersChanged: vi.fn(() => () => undefined),
     getServers: vi.fn(async () => []),
     addServer: vi.fn(async (_input: ServerInput) => { throw new Error('not implemented'); }),
     updateServer: vi.fn(async (_id: string, _input: Partial<ServerInput>) => { throw new Error('not implemented'); }),
@@ -109,6 +110,11 @@ function createMockTransport(): TransportAdapter {
 
 function Probe() {
   useLoadInitialData();
+  return null;
+}
+
+function SubscriptionProbe() {
+  useMetricsSubscription();
   return null;
 }
 
@@ -172,5 +178,43 @@ describe('useLoadInitialData', () => {
     expect(transport.getLatestMetrics).toHaveBeenCalledTimes(2);
     expect(transport.getLatestMetrics).toHaveBeenCalledWith(serverA.id);
     expect(transport.getLatestMetrics).toHaveBeenCalledWith(serverB.id);
+  });
+
+  it('refreshes the server list when the server catalog changes in realtime', async () => {
+    const transport = createMockTransport();
+    const serverA = createServer('server-a', '10.0.0.1');
+    const serverB = createServer('server-b', '10.0.0.2');
+    let handleServersChanged: (() => void) | undefined;
+
+    transport.getServers = vi.fn()
+      .mockResolvedValueOnce([serverA])
+      .mockResolvedValueOnce([serverA, serverB]);
+    transport.getServerStatuses = vi.fn(async () => []);
+    transport.onServersChanged = vi.fn((cb: () => void) => {
+      handleServersChanged = cb;
+      return () => undefined;
+    });
+
+    render(
+      <TransportProvider adapter={transport}>
+        <>
+          <Probe />
+          <SubscriptionProbe />
+        </>
+      </TransportProvider>,
+    );
+
+    await waitFor(() => {
+      expect(transport.getServers).toHaveBeenCalledTimes(1);
+      expect(useStore.getState().servers).toEqual([serverA]);
+      expect(handleServersChanged).toBeTypeOf('function');
+    });
+
+    handleServersChanged?.();
+
+    await waitFor(() => {
+      expect(transport.getServers).toHaveBeenCalledTimes(2);
+      expect(useStore.getState().servers).toEqual([serverA, serverB]);
+    });
   });
 });

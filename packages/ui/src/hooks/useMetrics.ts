@@ -4,11 +4,30 @@ import { useStore } from '../store/useStore.js';
 
 export function useMetricsSubscription() {
   const transport = useTransport();
+  const setServers = useStore((state) => state.setServers);
   const setLatestMetrics = useStore((state) => state.setLatestMetrics);
   const setStatus = useStore((state) => state.setStatus);
   const addToast = useStore((state) => state.addToast);
 
   useEffect(() => {
+    let refreshingServers = false;
+
+    const refreshServers = () => {
+      if (refreshingServers) {
+        return;
+      }
+
+      refreshingServers = true;
+      void transport.getServers()
+        .then((servers) => {
+          setServers(servers);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          refreshingServers = false;
+        });
+    };
+
     const unsubs = [
       transport.onMetricsUpdate((data) => {
         setLatestMetrics(data);
@@ -17,6 +36,10 @@ export function useMetricsSubscription() {
         setStatus(status);
         if (status.latestMetrics) {
           setLatestMetrics(status.latestMetrics);
+        }
+
+        if (!useStore.getState().servers.some((server) => server.id === status.serverId)) {
+          refreshServers();
         }
       }),
       transport.onAlert((alert) => {
@@ -42,8 +65,14 @@ export function useMetricsSubscription() {
       }),
     ];
 
+    if (transport.onServersChanged) {
+      unsubs.push(transport.onServersChanged(() => {
+        refreshServers();
+      }));
+    }
+
     return () => unsubs.forEach(fn => fn());
-  }, [transport, setLatestMetrics, setStatus, addToast]);
+  }, [transport, setServers, setLatestMetrics, setStatus, addToast]);
 }
 
 export function useLoadInitialData() {

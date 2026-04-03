@@ -75,6 +75,10 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
       uiNamespace.emit('taskUpdate', taskUpdate);
       handleTaskUpdateForNotifications(taskUpdate);
     },
+    onServerChanged: () => {
+      options.agentNamespace?.onServerChanged?.();
+      uiNamespace.emit('serversChanged');
+    },
   });
 
   let currentPort = options.port ?? DEFAULT_PORT;

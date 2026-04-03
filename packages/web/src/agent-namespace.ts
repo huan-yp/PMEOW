@@ -79,6 +79,7 @@ export interface CreateAgentNamespaceOptions {
   sweepIntervalMs?: number;
   now?: () => number;
   onTaskUpdate?: (payload: AgentTaskUpdatePayload) => void;
+  onServerChanged?: () => void;
   getMetricsTimeoutMs?: () => number;
 }
 
@@ -116,6 +117,32 @@ function normalizeOptionalTimestamp(timestamp: number | null | undefined): numbe
   }
 
   return normalizeTimestamp(timestamp);
+}
+
+function normalizePeerAddress(value: string | string[] | undefined): string | undefined {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const firstValue = rawValue?.split(',')[0]?.trim();
+
+  if (!firstValue) {
+    return undefined;
+  }
+
+  const withoutBrackets = firstValue.startsWith('[') && firstValue.includes(']')
+    ? firstValue.slice(1, firstValue.indexOf(']'))
+    : firstValue;
+
+  return withoutBrackets.startsWith('::ffff:')
+    ? withoutBrackets.slice('::ffff:'.length)
+    : withoutBrackets;
+}
+
+function getSocketAddress(socket: AgentSocket): string | undefined {
+  const forwardedAddress = normalizePeerAddress(socket.handshake.headers['x-forwarded-for']);
+  if (forwardedAddress) {
+    return forwardedAddress;
+  }
+
+  return normalizePeerAddress(socket.handshake.address);
 }
 
 function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSession {
@@ -277,6 +304,7 @@ export function createAgentNamespace(
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
   const onTaskUpdate = options.onTaskUpdate;
+  const onServerChanged = options.onServerChanged;
 
   const detachServerSession = (serverId: string | undefined, session?: AgentLiveSession, reason?: string): void => {
     if (!serverId) {
@@ -338,9 +366,10 @@ export function createAgentNamespace(
 
       const previous = states.get(payload.agentId);
       const session = createLiveSession(socket, payload.agentId);
+      const socketAddress = getSocketAddress(socket);
       let resolution = resolveAgentBinding(payload.agentId, payload.hostname);
       if (resolution.status === 'unmatched') {
-        resolution = autoCreateAgentServer(payload.agentId, payload.hostname);
+        resolution = autoCreateAgentServer(payload.agentId, payload.hostname, socketAddress);
       }
       const nextState: AgentConnectionState = {
         agentId: payload.agentId,
@@ -364,6 +393,7 @@ export function createAgentNamespace(
 
       if (nextState.serverId) {
         attachServerSession(nextState.serverId, session);
+        onServerChanged?.();
       }
 
       if (previous && previous.socket.id !== socket.id) {

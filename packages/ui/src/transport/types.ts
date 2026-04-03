@@ -29,6 +29,7 @@ export interface TransportAdapter {
   onNotify(cb: (title: string, body: string) => void): () => void;
   onTaskUpdate(cb: (update: AgentTaskUpdatePayload) => void): () => void;
   onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void;
+  onServersChanged?(cb: () => void): () => void;
 
   // Servers
   getServers(): Promise<ServerConfig[]>;

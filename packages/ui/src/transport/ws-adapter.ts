@@ -73,6 +73,11 @@ export class WebSocketAdapter implements TransportAdapter {
     return () => { this.socket?.off('securityEvent', cb); };
   }
 
+  onServersChanged(cb: () => void): () => void {
+    this.socket?.on('serversChanged', cb);
+    return () => { this.socket?.off('serversChanged', cb); };
+  }
+
   // REST helpers
   private async fetch<T>(url: string, options?: RequestInit): Promise<T> {
     const headers: Record<string, string> = {
