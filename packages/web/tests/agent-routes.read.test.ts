@@ -1,5 +1,6 @@
 import {
   Scheduler,
+  closeDatabase,
   createServer,
   getLatestGpuUsageByServerId,
   getLatestMetrics,
@@ -10,6 +11,8 @@ import request from 'supertest';
 import { io as createClient, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWebRuntime, type WebRuntime } from '../src/app.js';
+
+process.env.MONITOR_DB_PATH = ':memory:';
 
 const runtimes: WebRuntime[] = [];
 const clients: Socket[] = [];
@@ -209,6 +212,7 @@ function expectedGpuUsageRows(serverId: string, timestamp: number, taskId = 'tas
       userName: undefined,
       taskId,
       pid: undefined,
+      command: undefined,
       usedMemoryMB: 6_144,
       declaredVramMB: 8_192,
     },
@@ -222,6 +226,7 @@ function expectedGpuUsageRows(serverId: string, timestamp: number, taskId = 'tas
       userName: user,
       taskId: undefined,
       pid: 2_201,
+      command: 'python job.py',
       usedMemoryMB: 1_024,
       declaredVramMB: undefined,
     },
@@ -235,6 +240,7 @@ function expectedGpuUsageRows(serverId: string, timestamp: number, taskId = 'tas
       userName: undefined,
       taskId: undefined,
       pid: 991,
+      command: undefined,
       usedMemoryMB: 512,
       declaredVramMB: undefined,
     },
@@ -255,6 +261,8 @@ afterEach(async () => {
       await runtime.stop();
     }
   }
+
+  closeDatabase();
 });
 
 describe('agent read routes', () => {

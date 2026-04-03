@@ -9,6 +9,7 @@ import { loginHandler, authMiddleware, socketAuthMiddleware } from './auth.js';
 import { setupAgentReadRoutes } from './agent-routes.js';
 import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
 import { Server as SocketServer } from 'socket.io';
+import { setupOperatorRoutes } from './operator-routes.js';
 import {
   createAgentNamespace,
   type CreateAgentNamespaceOptions,
@@ -54,8 +55,14 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   const io = new SocketServer(httpServer, {
     cors: { origin: '*' },
   });
-  const agentNamespace = createAgentNamespace(io, scheduler, options.agentNamespace);
   const uiNamespace = io.of('/');
+  const agentNamespace = createAgentNamespace(io, scheduler, {
+    ...options.agentNamespace,
+    onTaskUpdate: (taskUpdate) => {
+      options.agentNamespace?.onTaskUpdate?.(taskUpdate);
+      uiNamespace.emit('taskUpdate', taskUpdate);
+    },
+  });
 
   let currentPort = options.port ?? DEFAULT_PORT;
   let started = false;
@@ -72,9 +79,13 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
     scheduler,
     agentRegistry: agentNamespace.registry,
   });
+  setupOperatorRoutes(app, {
+    scheduler,
+    uiNamespace,
+  });
 
   uiNamespace.use(socketAuthMiddleware);
-  setupSocketHandlers(uiNamespace as unknown as SocketServer, scheduler);
+  setupSocketHandlers(uiNamespace, scheduler);
 
   uiNamespace.on('connection', (socket) => {
     console.log(`[ws] client connected: ${socket.id}`);

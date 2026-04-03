@@ -72,6 +72,7 @@ export interface CreateAgentNamespaceOptions {
   heartbeatTimeoutMs?: number;
   sweepIntervalMs?: number;
   now?: () => number;
+  onTaskUpdate?: (payload: AgentTaskUpdatePayload) => void;
 }
 
 export interface AgentNamespaceRuntime {
@@ -190,6 +191,7 @@ export function createAgentNamespace(
   const now = options.now ?? (() => Date.now());
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+  const onTaskUpdate = options.onTaskUpdate;
 
   const detachServerSession = (serverId: string | undefined, session?: AgentLiveSession): void => {
     if (!serverId) {
@@ -322,6 +324,7 @@ export function createAgentNamespace(
       }
 
       ingestAgentTaskUpdate(update);
+      onTaskUpdate?.(update);
     });
 
     socket.on('disconnect', () => {

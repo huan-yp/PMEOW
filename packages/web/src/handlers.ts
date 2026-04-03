@@ -1,4 +1,4 @@
-import type { Server as SocketServer } from 'socket.io';
+import type { Namespace } from 'socket.io';
 import type { Scheduler } from '@monitor/core';
 import fs from 'fs';
 import path from 'path';
@@ -14,7 +14,7 @@ import {
 } from '@monitor/core';
 import type { ServerInput, HookRuleInput } from '@monitor/core';
 
-export function setupSocketHandlers(io: SocketServer, scheduler: Scheduler): void {
+export function setupSocketHandlers(io: Namespace, scheduler: Scheduler): void {
   // Forward core events to all authenticated clients
   scheduler.on('metricsUpdate', (data) => {
     io.emit('metricsUpdate', data);
@@ -22,6 +22,10 @@ export function setupSocketHandlers(io: SocketServer, scheduler: Scheduler): voi
 
   scheduler.on('serverStatus', (status) => {
     io.emit('serverStatus', status);
+  });
+
+  scheduler.on('securityEvent', (event) => {
+    io.emit('securityEvent', event);
   });
 
   setAlertCallback((alert) => {
