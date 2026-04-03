@@ -115,7 +115,7 @@ The runtime design keeps three independent path categories.
 State path group:
 
 - PMEOW_STATE_DIR remains the base directory for local runtime state
-- Add PMEOW_PID_FILE with a default of PMEOW_STATE_DIR/pmeow-agent.pid
+- Add PMEOW_PID_FILE with a default of a pid file inside the state directory
 
 Task log path group:
 
@@ -168,9 +168,7 @@ install-service:
 - Writes a dedicated environment file to /etc/pmeow-agent/pmeow-agent.env by default
 - Resolves the current pmeow-agent executable path and uses run in ExecStart
 - Runs systemctl daemon-reload after writing the unit file
-- Does not enable or start the service by default
-- Supports explicit enable and start flags for operators who want a one-shot installation flow
-- Delegates all ongoing service supervision to systemd
+- May optionally enable and start the service, but service supervision is always delegated to systemd
 
 Recommended unit characteristics:
 

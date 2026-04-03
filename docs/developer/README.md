@@ -19,6 +19,7 @@
 - Web 服务端、Core、UI、Python Agent 的协作方式
 - 数据流、鉴权、节点绑定、任务控制和安全事件链路
 - 本地开发、构建、测试与调试方法
+- GitHub Actions、PyPI、npm 和 Docker 的发版入口
 
 ## 什么不在这里
 
@@ -40,3 +41,5 @@
 - 任务队列和安全审计的用户可见行为
 
 对应地，如果你修改了管理员工作流或页面行为，也要同时更新 `docs/user/` 中的相关页面。
+
+当前的 CI 与发版说明已经整理在 [local-development.md](local-development.md) 中，包含 tag 规则、版本源和 GitHub 侧前置配置。

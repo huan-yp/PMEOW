@@ -90,6 +90,7 @@ pmeow-agent stop
 pnpm dev:web
 pnpm dev:ui
 pnpm build:web
+pnpm build:web-cli
 pnpm start:web
 pnpm test:core
 pnpm test:web
@@ -104,6 +105,7 @@ pnpm typecheck:web
 - `packages/core`: `build`, `dev`, `test`, `test:watch`, `typecheck`
 - `packages/web`: `dev`, `build`, `start`, `test`, `test:watch`, `typecheck`
 - `packages/ui`: `dev`, `build`, `test`, `typecheck`
+- `packages/web-cli`: `build`
 
 ### Agent 命令
 
@@ -116,6 +118,50 @@ pytest -v
 pmeow-agent status
 pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
 ```
+
+## CI 与发版
+
+当前仓库已经内置了 GitHub Actions 的校验和发版流程，维护时主要看下面四个文件：
+
+- `.github/workflows/ci.yml`：PR 和 push 的通用校验
+- `.github/workflows/release-agent.yml`：PyPI 发版
+- `.github/workflows/release-web.yml`：npm 发版
+- `.github/workflows/release-docker.yml`：Web 服务 Docker 镜像发版
+
+### 版本源与 tag 规则
+
+- Python Agent 的版本源是 `agent/pyproject.toml`
+- npm Web 发行包的版本源是 `packages/web-cli/package.json`
+- Agent 发版 tag 形如 `agent-v0.1.0`
+- Web 发版 tag 形如 `web-v1.0.0`
+
+CI 会强校验 tag 和包内版本是否一致；不一致时会直接失败，不会继续发布。
+
+### 本地发版前最小检查
+
+发布前至少建议在本地跑通下面几步：
+
+```bash
+pnpm test:core
+pnpm --filter @monitor/web test
+pnpm build:web-cli
+
+cd agent
+. .venv/bin/activate
+python3 -m pytest -v
+```
+
+其中 `pnpm build:web-cli` 会先构建 `core`、`ui`、`web`，再构建最终对外发布的 `pmeow-web` 包。
+
+### GitHub 侧前置配置
+
+第一次启用发版前，需要先在 GitHub 和 registry 侧完成这些准备：
+
+- 在 GitHub 创建 `release` environment
+- 为 npm 配置 `NPM_TOKEN` secret
+- 在 PyPI 为 `pmeow-agent` 配置 Trusted Publisher
+
+Web 的 Docker workflow 默认推送到 `ghcr.io/<owner>/<repo>`，使用 GitHub 自带 token，不需要额外再配 Docker 发布 token。
 
 ## 本地环境变量
 
