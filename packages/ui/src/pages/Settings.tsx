@@ -164,6 +164,22 @@ export function Settings() {
           </p>
         </div>
 
+        {/* Agent metrics timeout */}
+        <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+          <h3 className="text-sm font-medium text-slate-300 mb-3">Agent 离线检测</h3>
+          <div>
+            <label htmlFor="agentMetricsTimeoutMs" className="text-xs text-slate-500 block mb-1">指标超时 (秒)</label>
+            <div className="flex items-center gap-3">
+              <input id="agentMetricsTimeoutMs" type="number"
+                min={5} max={300} step={1}
+                value={Math.round(local.agentMetricsTimeoutMs / 1000)}
+                onChange={e => update('agentMetricsTimeoutMs', Number(e.target.value) * 1000)}
+                className="bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 w-24 focus:border-accent-blue focus:outline-none" />
+              <span className="text-xs text-slate-500">超过此时间未收到指标，节点将标记为离线</span>
+            </div>
+          </div>
+        </div>
+
         {/* API */}
         <div className="bg-dark-card border border-dark-border rounded-lg p-4">
           <h3 className="text-sm font-medium text-slate-300 mb-3">对外 API</h3>

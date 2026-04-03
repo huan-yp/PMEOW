@@ -278,6 +278,22 @@ function initSchema(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_person_mobile_notifications_dedupe
       ON person_mobile_notifications(personId, dedupeKey)
       WHERE dedupeKey != '';
+
+    CREATE TABLE IF NOT EXISTS server_status_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      serverId TEXT NOT NULL,
+      fromStatus TEXT NOT NULL,
+      toStatus TEXT NOT NULL,
+      reason TEXT,
+      lastSeen INTEGER NOT NULL,
+      createdAt INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_server_status_events_server_created
+      ON server_status_events(serverId, createdAt DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_server_status_events_created
+      ON server_status_events(createdAt DESC);
   `);
 
   ensureColumns(db, 'servers', [

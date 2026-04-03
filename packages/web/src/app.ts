@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
 import express, { type Express } from 'express';
-import { getDatabase, Scheduler, type AgentSessionRegistry } from '@monitor/core';
+import { getDatabase, Scheduler, type AgentSessionRegistry, getSettings } from '@monitor/core';
 import { loginHandler, authMiddleware, socketAuthMiddleware } from './auth.js';
 import { setupAgentReadRoutes } from './agent-routes.js';
 import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
@@ -62,6 +62,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   });
   const uiNamespace = io.of('/');
   const agentNamespace = createAgentNamespace(io, scheduler, {
+    getMetricsTimeoutMs: () => getSettings().agentMetricsTimeoutMs,
     ...options.agentNamespace,
     onTaskUpdate: (taskUpdate) => {
       options.agentNamespace?.onTaskUpdate?.(taskUpdate);

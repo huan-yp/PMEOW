@@ -59,24 +59,27 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource, Age
   attachSession(session: AgentLiveSession): void {
     this.liveSession = session;
     this.connected = true;
+    this.emit('sessionAttached');
   }
 
-  detachSession(session?: AgentLiveSession): void {
+  detachSession(session?: AgentLiveSession, reason?: string): void {
     if (session !== undefined && this.liveSession !== session) {
       return;
     }
 
     this.liveSession = null;
     this.connected = false;
-    this.latestSnapshot = null;
+    this.emit('sessionDetached', { reason });
   }
 
   /** Called when Agent registers or reconnects. */
-  setConnected(connected: boolean): void {
+  setConnected(connected: boolean, reason?: string): void {
     this.connected = connected;
     if (!connected) {
       this.liveSession = null;
-      this.latestSnapshot = null;
+      this.emit('sessionDetached', { reason });
+    } else {
+      this.emit('sessionAttached');
     }
   }
 

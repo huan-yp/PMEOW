@@ -31,6 +31,7 @@ export function getSettings(): AppSettings {
     securityHighGpuUtilizationPercent: getNumberSetting('securityHighGpuUtilizationPercent', DEFAULT_SETTINGS.securityHighGpuUtilizationPercent),
     securityHighGpuDurationMinutes: getNumberSetting('securityHighGpuDurationMinutes', DEFAULT_SETTINGS.securityHighGpuDurationMinutes),
     password: map.get('password') ?? DEFAULT_SETTINGS.password,
+    agentMetricsTimeoutMs: getNumberSetting('agentMetricsTimeoutMs', DEFAULT_SETTINGS.agentMetricsTimeoutMs),
   };
 }
 

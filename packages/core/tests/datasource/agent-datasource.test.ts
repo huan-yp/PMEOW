@@ -122,4 +122,56 @@ describe('AgentDataSource', () => {
       expect(isServerCommandEnvelope(command)).toBe(true);
     }
   });
+
+  it('emits sessionAttached when session is attached', () => {
+    const ds = new AgentDataSource('srv-1', 'agent-1');
+    const { session } = createSession();
+    const events: string[] = [];
+
+    ds.on('sessionAttached', () => events.push('attached'));
+    ds.attachSession(session);
+
+    expect(events).toEqual(['attached']);
+  });
+
+  it('emits sessionDetached with reason when session is detached', () => {
+    const ds = new AgentDataSource('srv-1', 'agent-1');
+    const { session } = createSession();
+    const events: Array<{ reason?: string }> = [];
+
+    ds.on('sessionDetached', (info: { reason?: string }) => events.push(info));
+    ds.attachSession(session);
+    ds.detachSession(session, 'metrics_timeout');
+
+    expect(events).toEqual([{ reason: 'metrics_timeout' }]);
+  });
+
+  it('preserves latestSnapshot after detach', async () => {
+    const ds = new AgentDataSource('srv-1', 'agent-1');
+    const { session } = createSession();
+    const snapshot = createSnapshot();
+
+    ds.attachSession(session);
+    ds.pushMetrics(snapshot);
+    ds.detachSession(session, 'metrics_timeout');
+
+    expect(ds.isConnected()).toBe(false);
+    // latestSnapshot should be preserved for stale display
+    await expect(ds.collectMetrics()).resolves.toEqual(snapshot);
+  });
+
+  it('does not emit sessionDetached when detaching a non-current session', () => {
+    const ds = new AgentDataSource('srv-1', 'agent-1');
+    const first = createSession();
+    const second = createSession();
+    const events: string[] = [];
+
+    ds.on('sessionDetached', () => events.push('detached'));
+    ds.attachSession(first.session);
+    ds.attachSession(second.session);
+    ds.detachSession(first.session, 'old');
+
+    expect(events).toEqual([]);
+    expect(ds.isConnected()).toBe(true);
+  });
 });

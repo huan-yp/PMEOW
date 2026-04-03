@@ -46,6 +46,7 @@ async function waitForCondition(
 async function startRuntime(options: {
   heartbeatTimeoutMs?: number;
   sweepIntervalMs?: number;
+  getMetricsTimeoutMs?: () => number;
 } = {}): Promise<{ runtime: WebRuntime; baseUrl: string }> {
   const runtime = trackRuntime(createWebRuntime({
     port: 0,
@@ -245,6 +246,103 @@ describe('createAgentNamespace', () => {
     await waitForCondition(() => {
       expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(false);
       expect(runtime.agentRegistry.getSession('agent-disconnect')).toBeUndefined();
+    });
+  });
+
+  it('metrics timeout detaches the session when metrics stop arriving', async () => {
+    const { runtime, baseUrl } = await startRuntime({
+      heartbeatTimeoutMs: 60_000,
+      sweepIntervalMs: 10,
+      getMetricsTimeoutMs: () => 60,
+    });
+
+    // Override getMetricsTimeoutMs for a short timeout
+    // We need to use the runtime directly since startRuntime doesn't pass getMetricsTimeoutMs
+    const server = createServer({
+      name: 'gpu-metrics-timeout',
+      host: 'gpu-metrics-timeout',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+    });
+    const client = await connectAgent(baseUrl);
+
+    client.emit('agent:register', {
+      agentId: 'agent-metrics-timeout',
+      hostname: 'gpu-metrics-timeout',
+      version: '1.0.0',
+    });
+
+    await waitForCondition(() => {
+      expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(true);
+    });
+
+    // Send metrics to establish lastMetricsAt
+    client.emit('agent:metrics', {
+      serverId: server.id,
+      timestamp: Date.now(),
+      cpu: { usagePercent: 10, coreCount: 1, modelName: '', frequencyMhz: 0, perCoreUsage: [] },
+      memory: { totalMB: 0, usedMB: 0, availableMB: 0, usagePercent: 0, swapTotalMB: 0, swapUsedMB: 0, swapPercent: 0 },
+      disk: { disks: [], ioReadKBs: 0, ioWriteKBs: 0 },
+      network: { rxBytesPerSec: 0, txBytesPerSec: 0, interfaces: [] },
+      gpu: { available: false, totalMemoryMB: 0, usedMemoryMB: 0, memoryUsagePercent: 0, utilizationPercent: 0, temperatureC: 0, gpuCount: 0 },
+      processes: [],
+      docker: [],
+      system: { hostname: 'gpu-metrics-timeout', uptime: '1d', loadAvg1: 0, loadAvg5: 0, loadAvg15: 0, kernelVersion: '' },
+    });
+
+    await waitForCondition(() => {
+      expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(true);
+    });
+
+    // Now wait for metrics timeout (60ms) — the sweep runs every 10ms,
+    // so the session should be detached quickly
+    await waitForCondition(() => {
+      expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(false);
+    }, { timeoutMs: 2_000 });
+
+    // Server binding should still exist
+    expect(getServerById(server.id)?.sourceType).toBe('agent');
+  });
+
+  it('socket disconnect immediately marks agent offline even when heartbeat is still fresh', async () => {
+    const { runtime, baseUrl } = await startRuntime({
+      heartbeatTimeoutMs: 60_000,
+      sweepIntervalMs: 100,
+    });
+    const server = createServer({
+      name: 'gpu-immediate',
+      host: 'gpu-immediate',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+    });
+    const client = await connectAgent(baseUrl);
+
+    client.emit('agent:register', {
+      agentId: 'agent-immediate',
+      hostname: 'gpu-immediate',
+      version: '1.0.0',
+    });
+
+    await waitForCondition(() => {
+      expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(true);
+    });
+
+    // Send fresh heartbeat
+    client.emit('agent:heartbeat', {
+      agentId: 'agent-immediate',
+      timestamp: Date.now(),
+    });
+
+    await new Promise(r => setTimeout(r, 50));
+    expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(true);
+
+    // Disconnect socket — should immediately go offline
+    client.disconnect();
+
+    await waitForCondition(() => {
+      expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(false);
     });
   });
 

@@ -12,6 +12,7 @@ import { SSHManager } from './ssh/manager.js';
 import { SSHDataSource } from './datasource/ssh-datasource.js';
 import { AgentDataSource } from './datasource/agent-datasource.js';
 import type { NodeDataSource } from './datasource/types.js';
+import { insertServerStatusEvent } from './db/server-status-events.js';
 import type { MetricsSnapshot, ServerStatus, ConnectionStatus } from './types.js';
 
 export class Scheduler extends EventEmitter {
@@ -166,6 +167,46 @@ export class Scheduler extends EventEmitter {
       ds.on('metricsReceived', (snapshot: MetricsSnapshot) => {
         this.handleMetrics(snapshot, serverId);
       });
+      ds.on('sessionAttached', () => {
+        this.updateAgentStatus(serverId, 'connecting');
+      });
+      ds.on('sessionDetached', (info: { reason?: string }) => {
+        this.updateAgentStatus(serverId, 'disconnected', info?.reason);
+      });
+    }
+  }
+
+  private updateAgentStatus(serverId: string, nextStatus: ConnectionStatus, reason?: string): void {
+    const prev = this.serverStatuses.get(serverId);
+    const fromStatus = prev?.status ?? 'disconnected';
+
+    if (fromStatus === nextStatus) {
+      return;
+    }
+
+    const now = Date.now();
+    const status: ServerStatus = {
+      serverId,
+      status: nextStatus,
+      lastSeen: prev?.lastSeen ?? now,
+      error: reason,
+      latestMetrics: prev?.latestMetrics,
+    };
+
+    this.serverStatuses.set(serverId, status);
+    this.emit('serverStatus', status);
+
+    try {
+      insertServerStatusEvent({
+        serverId,
+        fromStatus,
+        toStatus: nextStatus,
+        reason,
+        lastSeen: status.lastSeen,
+        createdAt: now,
+      });
+    } catch {
+      // DB write failure should not break status flow
     }
   }
 
@@ -209,21 +250,30 @@ export class Scheduler extends EventEmitter {
       saveMetrics(snapshot);
     }
 
-    // Update status with latest metrics
-    const status = this.serverStatuses.get(serverId);
-    if (status) {
+    // For agent datasources, use the status machine
+    if (this.dataSources.get(serverId) instanceof AgentDataSource) {
+      this.updateAgentStatus(serverId, 'connected');
+      const status = this.serverStatuses.get(serverId)!;
       status.latestMetrics = snapshot;
       status.lastSeen = Date.now();
-      status.status = 'connected';
+      this.emit('serverStatus', status);
     } else {
-      this.serverStatuses.set(serverId, {
-        serverId,
-        status: 'connected',
-        lastSeen: Date.now(),
-        latestMetrics: snapshot,
-      });
+      // Update status with latest metrics (SSH path)
+      const status = this.serverStatuses.get(serverId);
+      if (status) {
+        status.latestMetrics = snapshot;
+        status.lastSeen = Date.now();
+        status.status = 'connected';
+      } else {
+        this.serverStatuses.set(serverId, {
+          serverId,
+          status: 'connected',
+          lastSeen: Date.now(),
+          latestMetrics: snapshot,
+        });
+      }
+      this.emit('serverStatus', this.serverStatuses.get(serverId));
     }
-    this.emit('serverStatus', this.serverStatuses.get(serverId));
 
     // Emit to listeners (web UI via Socket.IO)
     this.emit('metricsUpdate', snapshot);

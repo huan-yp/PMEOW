@@ -35,6 +35,7 @@ interface AgentConnectionState {
   socket: AgentSocket;
   serverId?: string;
   lastHeartbeatAt: number;
+  lastMetricsAt?: number;
   timedOut: boolean;
 }
 
@@ -74,6 +75,7 @@ export interface CreateAgentNamespaceOptions {
   sweepIntervalMs?: number;
   now?: () => number;
   onTaskUpdate?: (payload: AgentTaskUpdatePayload) => void;
+  getMetricsTimeoutMs?: () => number;
 }
 
 export interface AgentNamespaceRuntime {
@@ -230,12 +232,12 @@ export function createAgentNamespace(
   const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
   const onTaskUpdate = options.onTaskUpdate;
 
-  const detachServerSession = (serverId: string | undefined, session?: AgentLiveSession): void => {
+  const detachServerSession = (serverId: string | undefined, session?: AgentLiveSession, reason?: string): void => {
     if (!serverId) {
       return;
     }
 
-    getAgentDataSource(scheduler, serverId)?.detachSession(session);
+    getAgentDataSource(scheduler, serverId)?.detachSession(session, reason);
   };
 
   const attachServerSession = (serverId: string, session: AgentLiveSession): void => {
@@ -257,7 +259,7 @@ export function createAgentNamespace(
 
     states.delete(state.agentId);
     registry.detachSession(state.agentId, state.session);
-    detachServerSession(state.serverId, state.session);
+    detachServerSession(state.serverId, state.session, 'socket_disconnect');
     clearSocketState(state.socket, state);
   };
 
@@ -350,6 +352,7 @@ export function createAgentNamespace(
 
       scheduler.refreshServerDataSource(serverId);
       getAgentDataSource(scheduler, serverId)?.pushMetrics(snapshot);
+      state.lastMetricsAt = now();
     });
 
     socket.on(AGENT_EVENT.taskUpdate, (payload: unknown) => {
@@ -377,20 +380,32 @@ export function createAgentNamespace(
     });
   });
 
+  const getMetricsTimeoutMs = options.getMetricsTimeoutMs;
+  const DEFAULT_METRICS_TIMEOUT_MS = 15_000;
+
   const sweepTimer = setInterval(() => {
     const currentTime = now();
+    const metricsTimeout = getMetricsTimeoutMs ? getMetricsTimeoutMs() : DEFAULT_METRICS_TIMEOUT_MS;
 
     for (const state of states.values()) {
       if (state.timedOut) {
         continue;
       }
 
-      if (currentTime - state.lastHeartbeatAt <= heartbeatTimeoutMs) {
-        continue;
+      // Metrics-based timeout for nodes that have reported at least once
+      if (state.lastMetricsAt !== undefined) {
+        if (currentTime - state.lastMetricsAt > metricsTimeout) {
+          state.timedOut = true;
+          detachServerSession(state.serverId, state.session, 'metrics_timeout');
+          continue;
+        }
       }
 
-      state.timedOut = true;
-      detachServerSession(state.serverId, state.session);
+      // Heartbeat-based timeout as fallback (session health)
+      if (currentTime - state.lastHeartbeatAt > heartbeatTimeoutMs) {
+        state.timedOut = true;
+        detachServerSession(state.serverId, state.session, 'heartbeat_timeout');
+      }
     }
   }, sweepIntervalMs);
 
