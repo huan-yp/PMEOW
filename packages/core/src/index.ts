@@ -112,3 +112,16 @@ export {
   getPersonMobilePreferences,
   updatePersonMobilePreferences,
 } from './db/person-mobile-preferences.js';
+export {
+  createPersonMobileNotification,
+  getPersonMobileNotifications,
+  getPersonUnreadNotificationCount,
+  markPersonNotificationRead,
+} from './db/person-mobile-notifications.js';
+export type { CreateNotificationInput } from './db/person-mobile-notifications.js';
+export {
+  buildTaskNotificationEvent,
+  buildNodeStatusNotificationEvent,
+  buildGpuAvailabilityNotificationEvent,
+  shouldNotifyForTask,
+} from './mobile/notification-policies.js';
