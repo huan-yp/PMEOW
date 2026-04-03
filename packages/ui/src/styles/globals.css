@@ -113,6 +113,14 @@ body {
   font-size: 0.78rem;
 }
 
+.mobile-shell-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 6rem);
+}
+
+.mobile-tabbar-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+}
+
 .node-surface-shell {
   position: relative;
   overflow: hidden;

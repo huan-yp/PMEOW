@@ -52,7 +52,9 @@ describe('admin mobile pages', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('首页')).toBeTruthy();
+    const homeLink = await screen.findByRole('link', { name: '首页' });
+
+    expect(homeLink.getAttribute('aria-current')).toBe('page');
     expect(screen.getByText('任务')).toBeTruthy();
     // "节点" appears in both summary card and nav bar
     expect(screen.getAllByText('节点').length).toBeGreaterThanOrEqual(1);

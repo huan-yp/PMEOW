@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setServerUrl, getServerUrl } from '../session/server-url.js';
 import { setPersonToken } from '../session/person-session.js';
+import { BrandMarkIcon, TokenIcon } from '../components/MobileIcons.js';
 
 type Mode = 'person' | 'admin';
 
@@ -72,82 +73,119 @@ export function ConnectScreen() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-dark-bg p-6 text-slate-200">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-cyan/20 to-accent-blue/25 text-accent-blue">
-        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-            d="M5 6.75A1.75 1.75 0 016.75 5h10.5A1.75 1.75 0 0119 6.75v2.5A1.75 1.75 0 0117.25 11H6.75A1.75 1.75 0 015 9.25v-2.5zm0 8A1.75 1.75 0 016.75 13h4.5A1.75 1.75 0 0113 14.75v2.5A1.75 1.75 0 0111.25 19h-4.5A1.75 1.75 0 015 17.25v-2.5zm10 0A1.75 1.75 0 0116.75 13h.5A1.75 1.75 0 0119 14.75v2.5A1.75 1.75 0 0117.25 19h-.5A1.75 1.75 0 0115 17.25v-2.5z" />
-        </svg>
+    <div className="brand-shell min-h-screen px-4 py-6 text-slate-200">
+      <div className="brand-shell-grid" />
+
+      <div className="mx-auto flex min-h-screen max-w-md items-center">
+        <div className="w-full space-y-4">
+          <section className="brand-card-strong relative overflow-hidden rounded-[30px] p-6">
+            <div className="pointer-events-none absolute -right-6 top-0 h-24 w-24 rounded-full bg-accent-cyan/10 blur-3xl" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-accent-cyan shadow-[0_18px_44px_rgba(6,182,212,0.16)]">
+              <BrandMarkIcon className="h-7 w-7" />
+            </div>
+            <p className="mt-5 brand-kicker">mobile access</p>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-50">连接 PMEOW</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              使用服务器地址与令牌或管理口令连接，获得和 Web 控制台一致的监测与调度体验。
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="brand-chip">个人模式</span>
+              <span className="brand-chip">管理员模式</span>
+              <span className="brand-chip">统一视觉层</span>
+            </div>
+          </section>
+
+          <section className="brand-card rounded-[30px] p-5">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => { setMode('person'); setError(''); }}
+                className={`rounded-[22px] border px-4 py-3 text-left transition-colors ${
+                  mode === 'person'
+                    ? 'border-accent-cyan/35 bg-accent-cyan/10 text-slate-100'
+                    : 'border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <TokenIcon className="h-4 w-4" />
+                  个人模式
+                </span>
+                <span className="mt-1 block text-xs leading-5 opacity-80">适合成员查看任务、节点和通知。</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setMode('admin'); setError(''); }}
+                className={`rounded-[22px] border px-4 py-3 text-left transition-colors ${
+                  mode === 'admin'
+                    ? 'border-accent-cyan/35 bg-accent-cyan/10 text-slate-100'
+                    : 'border-white/10 bg-white/[0.03] text-slate-400 hover:border-white/20 hover:text-slate-200'
+                }`}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <BrandMarkIcon className="h-4 w-4" />
+                  管理员模式
+                </span>
+                <span className="mt-1 block text-xs leading-5 opacity-80">进入完整控制台，查看全量节点和调度状态。</span>
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div>
+                <label className="mb-2 block text-sm text-slate-400">服务器地址</label>
+                <input
+                  type="url"
+                  value={server}
+                  onChange={e => setServer(e.target.value)}
+                  placeholder="https://your-server:17200"
+                  className="w-full rounded-2xl border border-dark-border bg-dark-bg/80 px-4 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
+                />
+              </div>
+
+              {mode === 'person' ? (
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">个人访问令牌</label>
+                  <input
+                    type="text"
+                    value={token}
+                    onChange={e => setToken(e.target.value)}
+                    placeholder="pmt_..."
+                    className="w-full rounded-2xl border border-dark-border bg-dark-bg/80 px-4 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">管理员密码</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="管理员密码"
+                    className="w-full rounded-2xl border border-dark-border bg-dark-bg/80 px-4 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void (mode === 'person' ? handlePersonConnect() : handleAdminConnect())}
+                disabled={loading || !server.trim() || (mode === 'person' ? !token.trim() : !password.trim())}
+                className="w-full rounded-2xl bg-accent-blue px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-blue/80 disabled:opacity-50"
+              >
+                {loading ? '连接中...' : mode === 'person' ? '连接个人端' : '连接管理端'}
+              </button>
+
+              <p className="text-xs leading-5 text-slate-500">建议使用 HTTPS 地址，确保移动端与 Web 端都通过同一服务器入口访问。</p>
+            </div>
+
+            {error ? (
+              <p className="mt-4 rounded-2xl border border-accent-red/20 bg-accent-red/10 px-3 py-2 text-center text-sm text-accent-red">
+                {error}
+              </p>
+            ) : null}
+          </section>
+        </div>
       </div>
-      <p className="text-lg font-semibold">PMEOW</p>
-      <p className="text-sm text-slate-400">连接到你的 PMEOW 服务器</p>
-
-      {/* Mode toggle */}
-      <div className="flex w-full max-w-sm rounded-lg border border-dark-border bg-dark-card text-sm">
-        <button
-          onClick={() => { setMode('person'); setError(''); }}
-          className={`flex-1 rounded-lg py-2 transition-colors ${mode === 'person' ? 'bg-accent-blue text-white' : 'text-slate-400'}`}
-        >
-          个人模式
-        </button>
-        <button
-          onClick={() => { setMode('admin'); setError(''); }}
-          className={`flex-1 rounded-lg py-2 transition-colors ${mode === 'admin' ? 'bg-accent-blue text-white' : 'text-slate-400'}`}
-        >
-          管理员模式
-        </button>
-      </div>
-
-      {/* Server URL */}
-      <input
-        type="url"
-        value={server}
-        onChange={e => setServer(e.target.value)}
-        placeholder="https://your-server:17200"
-        className="w-full max-w-sm rounded-lg border border-dark-border bg-dark-card px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500"
-      />
-
-      {mode === 'person' ? (
-        <>
-          <input
-            type="text"
-            value={token}
-            onChange={e => setToken(e.target.value)}
-            placeholder="pmt_..."
-            className="w-full max-w-sm rounded-lg border border-dark-border bg-dark-card px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500"
-          />
-          <button
-            onClick={handlePersonConnect}
-            disabled={loading || !server.trim() || !token.trim()}
-            className="w-full max-w-sm rounded-lg bg-accent-blue px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {loading ? '连接中...' : '连接'}
-          </button>
-        </>
-      ) : (
-        <>
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            placeholder="管理员密码"
-            className="w-full max-w-sm rounded-lg border border-dark-border bg-dark-card px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500"
-          />
-          <button
-            onClick={handleAdminConnect}
-            disabled={loading || !server.trim() || !password.trim()}
-            className="w-full max-w-sm rounded-lg bg-accent-blue px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {loading ? '连接中...' : '连接'}
-          </button>
-        </>
-      )}
-
-      {error && (
-        <p className="w-full max-w-sm rounded-lg border border-red-800/50 bg-red-900/20 px-3 py-2 text-center text-sm text-red-400">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

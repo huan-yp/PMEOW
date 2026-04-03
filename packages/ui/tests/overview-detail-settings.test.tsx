@@ -27,6 +27,7 @@ import { useStore } from '../src/store/useStore.js';
 import { Overview } from '../src/pages/Overview.js';
 import { ServerDetail } from '../src/pages/ServerDetail.js';
 import { Settings } from '../src/pages/Settings.js';
+import { APP_VERSION, AUTHOR_GITHUB_URL, AUTHOR_NAME, PROJECT_REPO_URL } from '../src/utils/branding.js';
 
 function createDeferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -931,6 +932,28 @@ describe('overview detail settings', () => {
     expect(screen.getByLabelText('无归属 GPU 持续分钟')).toBeTruthy();
     expect(screen.getByLabelText('高 GPU 利用率阈值 (%)')).toBeTruthy();
     expect(screen.getByText('Agent 部署说明')).toBeTruthy();
+  });
+
+  it('shows about information on settings page', () => {
+    const transport = createMockTransport();
+
+    useStore.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+      },
+    });
+
+    renderWithProviders(<Settings />, transport);
+
+    expect(screen.getByText('关于')).toBeTruthy();
+
+    const repoLink = screen.getByRole('link', { name: 'GitHub Repo · 本项目开源' });
+    expect(repoLink.getAttribute('href')).toBe(PROJECT_REPO_URL);
+
+    const authorLink = screen.getByRole('link', { name: `Powered By ${AUTHOR_NAME}` });
+    expect(authorLink.getAttribute('href')).toBe(AUTHOR_GITHUB_URL);
+
+    expect(screen.getByText(`v${APP_VERSION}`)).toBeTruthy();
   });
 
   it('restores save button and shows failure feedback when saving settings fails', async () => {

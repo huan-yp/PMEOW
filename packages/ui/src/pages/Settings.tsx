@@ -2,6 +2,13 @@ import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore.js';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { AppSettings } from '@monitor/core';
+import {
+  APP_VERSION,
+  AUTHOR_GITHUB_URL,
+  AUTHOR_NAME,
+  COPYRIGHT_YEAR,
+  PROJECT_REPO_URL,
+} from '../utils/branding.js';
 
 export function Settings() {
   const transport = useTransport();
@@ -221,6 +228,42 @@ export function Settings() {
             />
           </div>
         )}
+
+        <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+          <h3 className="text-sm font-medium text-slate-300 mb-3">关于</h3>
+          <div className="space-y-3 text-sm text-slate-300">
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <span className="text-xs text-slate-500">项目仓库</span>
+              <a
+                href={PROJECT_REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-cyan transition-colors hover:text-slate-100"
+              >
+                GitHub Repo · 本项目开源
+              </a>
+            </div>
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <span className="text-xs text-slate-500">作者</span>
+              <a
+                href={AUTHOR_GITHUB_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-cyan transition-colors hover:text-slate-100"
+              >
+                Powered By {AUTHOR_NAME}
+              </a>
+            </div>
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <span className="text-xs text-slate-500">版本</span>
+              <span className="font-mono text-slate-200">v{APP_VERSION}</span>
+            </div>
+            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <span className="text-xs text-slate-500">版权</span>
+              <span className="text-slate-400">Copyright © {COPYRIGHT_YEAR} {AUTHOR_NAME}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="mt-6 flex items-center gap-3">
