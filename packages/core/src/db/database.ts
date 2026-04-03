@@ -173,6 +173,64 @@ function initSchema(db: Database.Database): void {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_security_events_open_fingerprint
       ON security_events(serverId, eventType, fingerprint)
       WHERE resolved = 0;
+
+    CREATE TABLE IF NOT EXISTS persons (
+      id TEXT PRIMARY KEY,
+      displayName TEXT NOT NULL,
+      email TEXT NOT NULL DEFAULT '',
+      qq TEXT NOT NULL DEFAULT '',
+      note TEXT NOT NULL DEFAULT '',
+      customFieldsJson TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'active',
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS person_bindings (
+      id TEXT PRIMARY KEY,
+      personId TEXT NOT NULL,
+      serverId TEXT NOT NULL,
+      systemUser TEXT NOT NULL,
+      source TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      effectiveFrom INTEGER NOT NULL,
+      effectiveTo INTEGER,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique
+      ON person_bindings(serverId, systemUser)
+      WHERE enabled = 1 AND effectiveTo IS NULL;
+
+    CREATE TABLE IF NOT EXISTS task_owner_overrides (
+      id TEXT PRIMARY KEY,
+      taskId TEXT NOT NULL,
+      serverId TEXT NOT NULL,
+      personId TEXT NOT NULL,
+      source TEXT NOT NULL,
+      effectiveFrom INTEGER NOT NULL,
+      effectiveTo INTEGER,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS person_attribution_facts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp INTEGER NOT NULL,
+      sourceType TEXT NOT NULL,
+      serverId TEXT NOT NULL,
+      personId TEXT,
+      rawUser TEXT,
+      taskId TEXT,
+      gpuIndex INTEGER,
+      vramMB REAL,
+      taskStatus TEXT,
+      resolutionSource TEXT NOT NULL,
+      metadataJson TEXT NOT NULL DEFAULT '{}'
+    );
   `);
 
   ensureColumns(db, 'servers', [

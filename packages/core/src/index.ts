@@ -76,3 +76,17 @@ export { createDataSource } from './datasource/factory.js';
 export { buildProcessAuditRows } from './security/audit.js';
 export { buildSecurityFingerprint, analyzeSecuritySnapshot } from './security/analyzer.js';
 export { processSecuritySnapshot } from './security/pipeline.js';
+export {
+  createPerson,
+  getPersonById,
+  listPersons,
+  updatePerson,
+  archivePerson,
+  createPersonBinding,
+  listPersonBindings,
+  updatePersonBinding,
+  getActivePersonBinding,
+  setTaskOwnerOverride,
+  getTaskOwnerOverride,
+  getActiveTaskOwnerOverride,
+} from './db/persons.js';

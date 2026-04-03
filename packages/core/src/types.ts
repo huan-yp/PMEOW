@@ -446,3 +446,47 @@ export interface TemplateContext {
   cpuUsage: number;
   memUsage: number;
 }
+
+// ========================
+// Person Attribution
+// ========================
+
+export type PersonStatus = 'active' | 'archived';
+export type PersonResolutionSource = 'override' | 'binding' | 'unassigned' | 'unknown';
+
+export interface PersonRecord {
+  id: string;
+  displayName: string;
+  email: string;
+  qq: string;
+  note: string;
+  customFields: Record<string, string>;
+  status: PersonStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersonBindingRecord {
+  id: string;
+  personId: string;
+  serverId: string;
+  systemUser: string;
+  source: 'manual' | 'suggested' | 'synced';
+  enabled: boolean;
+  effectiveFrom: number;
+  effectiveTo: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskOwnerOverrideRecord {
+  id: string;
+  taskId: string;
+  serverId: string;
+  personId: string;
+  source: 'manual' | 'synced';
+  effectiveFrom: number;
+  effectiveTo: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
