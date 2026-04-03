@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "pmeow-agent"
 version = "0.1.0"
 description = "PMEOW GPU cluster monitoring agent"
+authors = [{name = "huan-yp"}]
 requires-python = ">=3.10"
 dependencies = [
     "psutil",
