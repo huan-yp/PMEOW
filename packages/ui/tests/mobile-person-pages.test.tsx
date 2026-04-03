@@ -216,6 +216,7 @@ describe('desktop person detail token controls', () => {
       getPersonBindings: vi.fn(async () => []),
       createPersonBinding: vi.fn(async () => ({} as any)),
       updatePersonBinding: vi.fn(async () => ({} as any)),
+      getPersonBindingCandidates: vi.fn(async () => []),
       getPersonBindingSuggestions: vi.fn(async () => []),
       getPersonSummary: vi.fn(async () => []),
       getPersonTimeline: vi.fn(async () => []),

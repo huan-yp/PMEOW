@@ -547,6 +547,20 @@ export interface PersonBindingSuggestion {
   lastSeenAt: number;
 }
 
+export interface PersonBindingCandidateActiveBinding {
+  bindingId: string;
+  personId: string;
+  personDisplayName: string;
+}
+
+export interface PersonBindingCandidate {
+  serverId: string;
+  serverName: string;
+  systemUser: string;
+  lastSeenAt: number;
+  activeBinding: PersonBindingCandidateActiveBinding | null;
+}
+
 export interface ServerPersonActivity {
   serverId: string;
   people: Array<{ personId: string; displayName: string; currentVramMB: number; runningTaskCount: number }>;

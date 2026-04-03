@@ -2,6 +2,7 @@ import {
   createPerson,
   createPersonBinding,
   getPersonById,
+  listPersonBindingCandidates,
   getPersonSummaries,
   getPersonTimeline,
   getPersonTasks,
@@ -22,6 +23,8 @@ export function setupPersonRoutes(app: Express): void {
   app.get('/api/persons', (_req, res) => res.json(listPersons({ includeArchived: true })));
 
   app.get('/api/persons/summary', (req, res) => res.json(getPersonSummaries(Number(req.query.hours ?? 168))));
+
+  app.get('/api/person-binding-candidates', (_req, res) => res.json(listPersonBindingCandidates()));
 
   app.get('/api/person-binding-suggestions', (_req, res) => res.json(listPersonBindingSuggestions()));
 

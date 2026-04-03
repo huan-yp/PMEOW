@@ -3,7 +3,7 @@ import type {
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
   AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
-  PersonRecord, PersonBindingRecord, PersonBindingSuggestion,
+  PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
   MirroredAgentTaskRecord, ResolvedGpuAllocationResponse,
 } from '@monitor/core';
@@ -86,6 +86,7 @@ export interface TransportAdapter {
   getPersonBindings(personId: string): Promise<PersonBindingRecord[]>;
   createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source: string; effectiveFrom: number }): Promise<PersonBindingRecord>;
   updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord>;
+  getPersonBindingCandidates(): Promise<PersonBindingCandidate[]>;
   getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]>;
   getPersonSummary(hours?: number): Promise<PersonSummaryItem[]>;
   getPersonTimeline(personId: string, hours?: number): Promise<PersonTimelinePoint[]>;

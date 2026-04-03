@@ -7,6 +7,7 @@ import type {
   AppSettings,
   GpuOverviewResponse,
   GpuUsageSummaryItem,
+  GpuUsageTimelinePoint,
   HookLog,
   HookRule,
   HookRuleInput,
@@ -83,13 +84,14 @@ function createMockTransport(overrides: Partial<TransportAdapter> = {}): Transpo
     }),
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 1_710_000_000_000, users: [], servers: [] })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
-    getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_user, _hours) => []),
+    getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageTimelinePoint[]>>(async (_user, _hours) => []),
     cancelTask: vi.fn<(serverId: string, taskId: string) => Promise<void>>(async (_serverId, _taskId) => undefined),
     setTaskPriority: vi.fn<(serverId: string, taskId: string, priority: number) => Promise<void>>(async (_serverId, _taskId, _priority) => undefined),
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     uploadKey: vi.fn<(file: File) => Promise<{ path: string }>>(async (_file) => ({ path: '/tmp/key' })),
     getResolvedGpuAllocation: vi.fn(async () => null),
+    getPersonBindingCandidates: vi.fn(async () => []),
     ...overrides,
   };
 }

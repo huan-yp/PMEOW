@@ -100,6 +100,7 @@ export {
   getPersonTimeline,
   getPersonTasks,
   getServerPersonActivity,
+	listPersonBindingCandidates,
   listPersonBindingSuggestions,
   getResolvedGpuAllocation,
 } from './db/person-attribution.js';

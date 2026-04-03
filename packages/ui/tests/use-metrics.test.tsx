@@ -6,7 +6,6 @@ import type {
   AlertEvent,
   AlertRecord,
   AppSettings,
-  GpuAllocationSummary,
   GpuOverviewResponse,
   GpuUsageSummaryItem,
   GpuUsageTimelinePoint,
@@ -104,6 +103,7 @@ function createMockTransport(): TransportAdapter {
     getGpuAllocation: vi.fn(async (_serverId: string) => null as GpuAllocationSummary | null),
     getTask: vi.fn(async (_serverId: string, _taskId: string) => null),
     getResolvedGpuAllocation: vi.fn(async () => null),
+    getPersonBindingCandidates: vi.fn(async () => []),
   };
 }
 

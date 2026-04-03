@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type {
   AgentTaskQueueGroup,
@@ -26,13 +26,27 @@ import type {
   MirroredAgentTaskRecord,
 } from '@monitor/core';
 import { DEFAULT_SETTINGS } from '@monitor/core';
+import App from '../src/App.js';
+import { useStore } from '../src/store/useStore.js';
 import { TransportProvider } from '../src/transport/TransportProvider.js';
 import type { SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
 import { PeopleOverview } from '../src/pages/PeopleOverview.js';
 import { PeopleManage } from '../src/pages/PeopleManage.js';
 import { PersonDetail } from '../src/pages/PersonDetail.js';
 
-function createMockTransport(): TransportAdapter {
+const basePerson: PersonRecord = {
+  id: 'person-1',
+  displayName: 'Alice',
+  email: 'alice@example.com',
+  qq: '',
+  note: '',
+  customFields: {},
+  status: 'active',
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+function createMockTransport(overrides: Partial<TransportAdapter> = {}): TransportAdapter {
   return {
     isElectron: false,
     connect: vi.fn(),
@@ -77,25 +91,63 @@ function createMockTransport(): TransportAdapter {
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async () => undefined),
     resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async () => undefined),
     uploadKey: vi.fn<(file: File) => Promise<{ path: string }>>(async () => ({ path: '/tmp/key' })),
-    getPersons: vi.fn(async () => [{ id: 'person-1', displayName: 'Alice', email: 'alice@example.com', qq: '', note: '', customFields: {}, status: 'active' as const, createdAt: 1, updatedAt: 1 }]),
+    getPersons: vi.fn(async () => [basePerson]),
     createPerson: vi.fn(async (input: { displayName: string; email?: string; qq?: string; note?: string; customFields: Record<string, string> }) => ({ id: 'person-2', status: 'active' as const, createdAt: 2, updatedAt: 2, displayName: input.displayName, email: input.email ?? '', qq: input.qq ?? '', note: input.note ?? '', customFields: input.customFields })),
     updatePerson: vi.fn(async (id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; customFields: Record<string, string> }>) => ({ id, displayName: 'Alice', email: '', qq: '', note: '', customFields: {}, status: 'active' as const, createdAt: 1, updatedAt: 2, ...input })),
     getPersonBindings: vi.fn(async () => []),
-    createPersonBinding: vi.fn(async (input: { personId: string; serverId: string; systemUser: string; source: string; effectiveFrom: number }) => ({ id: 'binding-1', enabled: true, effectiveTo: null, createdAt: 1, updatedAt: 1, ...input })),
-    updatePersonBinding: vi.fn(async (id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>) => ({ id, personId: 'person-1', serverId: 'server-1', systemUser: 'alice', source: 'manual', enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 2, ...input })),
+    createPersonBinding: vi.fn(async (input: { personId: string; serverId: string; systemUser: string; source: 'manual' | 'suggested' | 'synced'; effectiveFrom: number }) => ({ id: 'binding-1', enabled: true, effectiveTo: null, createdAt: 1, updatedAt: 1, ...input })),
+    updatePersonBinding: vi.fn(async (id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>) => ({ id, personId: 'person-1', serverId: 'server-1', systemUser: 'alice', source: 'manual' as const, enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 2, ...input })),
+    getPersonBindingCandidates: vi.fn(async () => []),
     getPersonBindingSuggestions: vi.fn(async () => []),
     getPersonSummary: vi.fn(async () => [{ personId: 'person-1', displayName: 'Alice', currentVramMB: 4096, runningTaskCount: 1, queuedTaskCount: 0, activeServerCount: 1, lastActivityAt: Date.now(), vramOccupancyHours: 2, vramGigabyteHours: 8, taskRuntimeHours: 1.5 }]),
     getPersonTimeline: vi.fn(async () => []),
     getPersonTasks: vi.fn(async () => []),
     getServerPersonActivity: vi.fn(async () => ({ serverId: 'server-1', people: [], unassignedVramMB: 0, unassignedUsers: [] })),
     getResolvedGpuAllocation: vi.fn(async () => null),
+    ...overrides,
+  ...overrides,
   };
 }
 
+function renderApp(transport: TransportAdapter, route: string) {
+  window.history.pushState({}, '', route);
+  const AppWithAdapter = App as unknown as (props: { adapter?: TransportAdapter }) => JSX.Element;
+  return render(<AppWithAdapter adapter={transport} />);
+}
+
 describe('person pages', () => {
-  it('renders person overview with summary data', async () => {
+  beforeEach(() => {
+    useStore.setState({
+      servers: [],
+      statuses: new Map(),
+      latestMetrics: new Map(),
+      hooks: [],
+      settings: null,
+      taskQueueGroups: [],
+      openSecurityEvents: [],
+      toasts: [],
+      authenticated: false,
+    });
+  });
+
+  it('renders a browse-first people landing page from the person directory and merged summary data', async () => {
+    const transport = createMockTransport({
+      getPersons: vi.fn(async () => [
+        basePerson,
+        {
+          ...basePerson,
+          id: 'person-2',
+          displayName: 'Bob',
+          email: 'bob@example.com',
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ]),
+      getPersonSummary: vi.fn(async () => [{ personId: 'person-1', displayName: 'Alice', currentVramMB: 4096, runningTaskCount: 1, queuedTaskCount: 0, activeServerCount: 1, lastActivityAt: Date.now(), vramOccupancyHours: 2, vramGigabyteHours: 8, taskRuntimeHours: 1.5 }]),
+    });
+
     render(
-      <TransportProvider adapter={createMockTransport()}>
+      <TransportProvider adapter={transport}>
         <MemoryRouter initialEntries={['/people']}>
           <Routes>
             <Route path="/people" element={<PeopleOverview />} />
@@ -103,11 +155,65 @@ describe('person pages', () => {
         </MemoryRouter>
       </TransportProvider>
     );
+
+    expect(await screen.findByRole('heading', { name: '人员' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '添加人员' }).getAttribute('href')).toBe('/people/new');
     expect(await screen.findByText('Alice')).toBeTruthy();
+    expect(await screen.findByText('Bob')).toBeTruthy();
     expect(await screen.findByText(/4096 MB/)).toBeTruthy();
+    expect(screen.queryByPlaceholderText('显示名称')).toBeNull();
+    expect(screen.queryByText('绑定建议')).toBeNull();
+    await waitFor(() => {
+      expect(transport.getPersons).toHaveBeenCalledTimes(1);
+      expect(transport.getPersonSummary).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('renders person management list', async () => {
+  it('renders an empty-state CTA that enters the creation flow', async () => {
+    render(
+      <TransportProvider adapter={createMockTransport({ getPersons: vi.fn(async () => []), getPersonSummary: vi.fn(async () => []) })}>
+        <MemoryRouter initialEntries={['/people']}>
+          <Routes>
+            <Route path="/people" element={<PeopleOverview />} />
+          </Routes>
+        </MemoryRouter>
+      </TransportProvider>
+    );
+
+    expect(await screen.findByText('还没有人员')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '开始添加' }).getAttribute('href')).toBe('/people/new');
+  });
+
+  it('redirects the legacy manage route to /people/new', async () => {
+    renderApp(
+      createMockTransport({
+        checkAuth: vi.fn(async () => ({ authenticated: true, needsSetup: false })),
+      }),
+      '/people/manage'
+    );
+
+    expect(await screen.findByRole('heading', { name: '添加人员' })).toBeTruthy();
+    await waitFor(() => {
+      expect(window.location.pathname).toBe('/people/new');
+    });
+  });
+
+  it('renders the guided people creation page at /people/new with a single people nav entry', async () => {
+    renderApp(
+      createMockTransport({
+        checkAuth: vi.fn(async () => ({ authenticated: true, needsSetup: false })),
+      }),
+      '/people/new'
+    );
+
+    expect(await screen.findByRole('heading', { name: '添加人员' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '从服务器用户开始' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '手动创建空白人员' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '人员' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.queryByRole('link', { name: '人员管理' })).toBeNull();
+  });
+
+  it('renders person creation wizard directly', async () => {
     render(
       <TransportProvider adapter={createMockTransport()}>
         <MemoryRouter initialEntries={['/people/manage']}>
@@ -117,8 +223,8 @@ describe('person pages', () => {
         </MemoryRouter>
       </TransportProvider>
     );
-    expect(await screen.findByText('人员管理')).toBeTruthy();
-    expect(await screen.findByText('Alice')).toBeTruthy();
+    expect(await screen.findByText('添加人员')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '从服务器用户开始' })).toBeTruthy();
   });
 
   it('renders person detail page', async () => {
