@@ -176,14 +176,14 @@ export function TaskQueue() {
     <div className="p-6 space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Tasks</h1>
+          <h1 className="text-2xl font-bold text-slate-100">任务调度</h1>
           <p className="mt-1 text-sm text-slate-500">查看节点任务队列并执行基础调度控制。</p>
         </div>
       </div>
 
       {taskQueueGroups.length === 0 ? (
         <div className="rounded-lg border border-dark-border bg-dark-card p-6 text-sm text-slate-500">
-          暂无任务队列数据
+          暂无任务队列数据，等待节点开始上报。
         </div>
       ) : (
         taskQueueGroups.map((group) => (
@@ -192,7 +192,7 @@ export function TaskQueue() {
               <div>
                 <h2 className="text-lg font-semibold text-slate-100">{group.serverName}</h2>
                 <p className="mt-1 text-xs text-slate-500">
-                  serverId: {group.serverId} · queued {group.queued.length} · running {group.running.length} · recent {group.recent.length}
+                  节点 ID {group.serverId} · 排队 {group.queued.length} · 运行 {group.running.length} · 最近 {group.recent.length}
                 </p>
               </div>
 

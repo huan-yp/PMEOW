@@ -37,11 +37,11 @@ export function GpuOverviewCard() {
   const topUsers = overview?.users.slice(0, 5) ?? [];
 
   return (
-    <div className="bg-dark-card border border-dark-border rounded-xl p-5 mb-6">
+    <div className="brand-card rounded-2xl p-5">
       <div className="flex items-center justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-base font-semibold text-slate-100">GPU 使用分布</h2>
-          <p className="text-xs text-slate-500 mt-1">按用户汇总当前集群显存占用</p>
+          <h2 className="text-base font-semibold text-slate-100">GPU 归属总览</h2>
+          <p className="text-xs text-slate-500 mt-1">按用户汇总当前节点集群显存占用</p>
         </div>
         {overview && (
           <span className="text-xs text-slate-600 font-mono">

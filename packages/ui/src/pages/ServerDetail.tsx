@@ -131,7 +131,7 @@ export function ServerDetail() {
   if (!server) {
     return (
       <div className="p-6 text-center text-slate-500">
-        服务器不存在
+        节点不存在
         <button onClick={() => navigate('/')} className="ml-2 text-accent-blue underline">返回</button>
       </div>
     );
@@ -139,7 +139,7 @@ export function ServerDetail() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: '概览' },
-    ...(server.sourceType === 'agent' ? [{ key: 'tasks' as const, label: 'Tasks' }] : []),
+    ...(server.sourceType === 'agent' ? [{ key: 'tasks' as const, label: '任务' }] : []),
     { key: 'processes', label: '进程' },
     { key: 'docker', label: 'Docker' },
   ];

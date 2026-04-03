@@ -13,7 +13,7 @@ export type {
 	SecurityEventType,
 } from './types.js';
 export * from './agent/protocol.js';
-export { resolveAgentBinding } from './agent/binding.js';
+export { resolveAgentBinding, autoCreateAgentServer } from './agent/binding.js';
 export type {
 	AgentBindingResolution,
 	BoundAgentBindingResolution,

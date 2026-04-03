@@ -20,6 +20,7 @@ import {
   isAgentTaskUpdatePayload,
   type MetricsSnapshot,
   resolveAgentBinding,
+  autoCreateAgentServer,
 } from '@monitor/core';
 import type { Namespace, Server as SocketServer, Socket } from 'socket.io';
 
@@ -253,7 +254,10 @@ export function createAgentNamespace(
 
       const previous = states.get(payload.agentId);
       const session = createLiveSession(socket, payload.agentId);
-      const resolution = resolveAgentBinding(payload.agentId, payload.hostname);
+      let resolution = resolveAgentBinding(payload.agentId, payload.hostname);
+      if (resolution.status === 'unmatched') {
+        resolution = autoCreateAgentServer(payload.agentId, payload.hostname);
+      }
       const nextState: AgentConnectionState = {
         agentId: payload.agentId,
         session,

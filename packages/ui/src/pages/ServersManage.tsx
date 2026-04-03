@@ -12,12 +12,15 @@ export function ServersManage() {
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-100">服务器管理</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-slate-100">节点管理</h1>
+          <p className="mt-1 text-sm text-slate-500">管理 PMEOW 控制台中的节点接入配置。</p>
+        </div>
         <button
           onClick={() => { setShowAdd(true); setEditing(null); }}
           className="px-4 py-2 bg-accent-blue text-white text-sm rounded-lg hover:bg-accent-blue/80 transition-colors"
         >
-          + 添加服务器
+          + 添加节点
         </button>
       </div>
 
@@ -63,7 +66,7 @@ export function ServersManage() {
                   </button>
                   <button
                     onClick={async () => {
-                      if (confirm(`确定删除「${server.name}」？`)) {
+                      if (confirm(`确定删除节点「${server.name}」？`)) {
                         await transport.deleteServer(server.id);
                         removeServer(server.id);
                       }
@@ -124,7 +127,7 @@ function ServerForm({ initial, onSubmit, onCancel, onTest }: FormProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className="text-xs text-slate-500 block mb-1">名称</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Lab Server 1"
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Lab Node 1"
             className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
         </div>
         <div>

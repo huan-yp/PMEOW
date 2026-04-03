@@ -4,6 +4,7 @@ import { getSettings, saveSetting } from '@monitor/core';
 import type { Request, Response, NextFunction } from 'express';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'monitor_' + Date.now().toString(36);
+const TOKEN_EXPIRES_IN = '30d';
 
 export function hashPassword(plain: string): string {
   return bcryptjs.hashSync(plain, 10);
@@ -14,7 +15,7 @@ export function verifyPassword(plain: string, hashed: string): boolean {
 }
 
 export function signToken(payload: Record<string, unknown> = {}): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
 }
 
 export function verifyToken(token: string): Record<string, unknown> | null {

@@ -278,6 +278,7 @@ describe('overview detail settings', () => {
   });
 
   it('shows gpu overview card on overview page', async () => {
+    const user = userEvent.setup();
     const transport = createMockTransport();
     const server = createServer();
     const metrics = createMetricsSnapshot(server.id);
@@ -290,7 +291,8 @@ describe('overview detail settings', () => {
 
     renderWithProviders(<Overview />, transport);
 
-    expect(await screen.findByText('GPU 使用分布')).toBeTruthy();
+    await user.click(await screen.findByRole('button', { name: '节点态势' }));
+    expect(await screen.findByText('GPU 归属总览')).toBeTruthy();
     expect(await screen.findByText(/alice/)).toBeTruthy();
     expect(await screen.findByText('16384 MB')).toBeTruthy();
     expect(transport.getGpuOverview).toHaveBeenCalledTimes(1);
@@ -317,9 +319,9 @@ describe('overview detail settings', () => {
       `/server/${server.id}`
     );
 
-    expect(await screen.findByRole('button', { name: 'Tasks' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '任务' })).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Tasks' }));
+    await user.click(screen.getByRole('button', { name: '任务' }));
 
     expect(await screen.findByText('排队 1 / 运行中 1')).toBeTruthy();
     await waitFor(() => {
@@ -356,9 +358,9 @@ describe('overview detail settings', () => {
     );
 
     expect(await screen.findByRole('heading', { name: server.name })).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'Tasks' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: '任务' })).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Tasks' }));
+    await user.click(screen.getByRole('button', { name: '任务' }));
 
     expect(await screen.findByText('排队 1 / 运行中 1')).toBeTruthy();
     await waitFor(() => {

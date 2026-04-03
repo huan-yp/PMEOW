@@ -41,7 +41,10 @@ export function Alerts() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-slate-100 mb-6">告警历史</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-100">告警历史</h1>
+        <p className="mt-1 text-sm text-slate-500">查看节点资源阈值告警及忽略状态。</p>
+      </div>
 
       {loading ? (
         <div className="text-slate-500">加载中...</div>
@@ -53,7 +56,7 @@ export function Alerts() {
             <thead>
               <tr className="text-left text-xs text-slate-500 border-b border-dark-border">
                 <th className="pb-2 pr-4">时间</th>
-                <th className="pb-2 pr-4">服务器</th>
+                <th className="pb-2 pr-4">节点</th>
                 <th className="pb-2 pr-4">指标</th>
                 <th className="pb-2 pr-4">当前值</th>
                 <th className="pb-2 pr-4">阈值</th>

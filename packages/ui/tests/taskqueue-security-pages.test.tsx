@@ -184,15 +184,15 @@ describe('task queue and security pages', () => {
 
     renderApp(transport);
 
-    expect(await screen.findByRole('link', { name: 'Tasks' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Security' })).toBeTruthy();
+    expect(await screen.findByRole('link', { name: '任务调度' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '安全审计' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: '查看日志' })).toBeNull();
 
-    await user.click(screen.getByRole('link', { name: 'Tasks' }));
-    expect(await screen.findByRole('heading', { name: 'Tasks' })).toBeTruthy();
+    await user.click(screen.getByRole('link', { name: '任务调度' }));
+    expect(await screen.findByRole('heading', { name: '任务调度' })).toBeTruthy();
 
-    await user.click(screen.getByRole('link', { name: 'Security' }));
-    expect(await screen.findByRole('heading', { name: 'Security' })).toBeTruthy();
+    await user.click(screen.getByRole('link', { name: '安全审计' }));
+    expect(await screen.findByRole('heading', { name: '安全审计' })).toBeTruthy();
 
     await waitFor(() => {
       expect(transport.getTaskQueue).toHaveBeenCalled();
@@ -288,7 +288,7 @@ describe('task queue and security pages', () => {
     await user.selectOptions(screen.getByLabelText('resolved'), 'true');
     await user.clear(screen.getByLabelText('hours'));
     await user.type(screen.getByLabelText('hours'), '24');
-    await user.click(screen.getByRole('button', { name: '应用筛选' }));
+    await user.click(screen.getByRole('button', { name: '更新视图' }));
 
     await waitFor(() => {
       expect(transport.getSecurityEvents).toHaveBeenCalledWith({

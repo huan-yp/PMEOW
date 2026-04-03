@@ -1,6 +1,7 @@
 import type { ServerConfig } from '../types.js';
 import {
   bindAgentToServer,
+  createServer,
   getServerByAgentId,
   getServersByHost,
 } from '../db/servers.js';
@@ -67,5 +68,26 @@ export function resolveAgentBinding(agentId: string, hostname: string): AgentBin
   return {
     status: 'unmatched',
     hostname,
+  };
+}
+
+/**
+ * Auto-create a server entry for a first-time agent and bind it.
+ * Call this when resolveAgentBinding returns 'unmatched'.
+ */
+export function autoCreateAgentServer(agentId: string, hostname: string): BoundAgentBindingResolution {
+  const server = createServer({
+    name: hostname,
+    host: hostname,
+    port: 0,
+    username: '',
+    privateKeyPath: '',
+    sourceType: 'agent',
+    agentId,
+  });
+  return {
+    status: 'bound',
+    server,
+    restored: false,
   };
 }

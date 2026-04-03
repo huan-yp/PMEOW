@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import signal
+import socket
 import threading
 import time
 
+from pmeow import __version__
 from pmeow.collector.snapshot import collect_snapshot
 from pmeow.config import AgentConfig
 from pmeow.executor.logs import read_task_log
 from pmeow.executor.runner import TaskRunner
-from pmeow.models import QueueState, TaskRecord, TaskSpec, TaskStatus
+from pmeow.models import QueueState, TaskRecord, TaskSpec, TaskStatus, TaskUpdate
 from pmeow.queue.history import GpuHistoryTracker
 from pmeow.queue.scheduler import QueueScheduler
 from pmeow.store.database import close_database, open_database
@@ -24,6 +26,7 @@ from pmeow.store.tasks import (
     get_task,
     list_tasks as db_list_tasks,
 )
+from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +44,14 @@ class DaemonService:
         self.history = GpuHistoryTracker(window_seconds=config.history_window_seconds)
         self.scheduler = QueueScheduler(self.history)
 
+        self.transport: AgentTransportClient | None = None
+        if config.server_url:
+            self.transport = AgentTransportClient(
+                server_url=config.server_url,
+                agent_id=config.agent_id or socket.gethostname(),
+                heartbeat_interval=config.heartbeat_interval,
+            )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -56,6 +67,18 @@ class DaemonService:
         srv_thread = threading.Thread(target=srv.serve_forever, daemon=True)
         srv_thread.start()
 
+        if self.transport:
+            self.transport.connect()
+            self.transport.send_register(
+                hostname=socket.gethostname(),
+                version=__version__,
+            )
+            log.info(
+                "transport connecting to %s (agent_id=%s)",
+                self.config.server_url,
+                self.config.agent_id,
+            )
+
         log.info("daemon started (interval=%ds)", self.config.collection_interval)
         try:
             while not self._shutdown.is_set():
@@ -65,6 +88,8 @@ class DaemonService:
                     log.exception("collection cycle error")
                 self._shutdown.wait(timeout=self.config.collection_interval)
         finally:
+            if self.transport:
+                self.transport.disconnect()
             srv.shutdown()
             close_database(self.db)
             log.info("daemon stopped")
@@ -99,8 +124,16 @@ class DaemonService:
 
             # Reap completed tasks
             for task_id, exit_code in self.runner.check_completed():
-                finish_task(self.db, task_id, exit_code, time.time())
+                finished_at = time.time()
+                finish_task(self.db, task_id, exit_code, finished_at)
                 log.info("task %s finished (exit=%d)", task_id, exit_code)
+                if self.transport:
+                    self.transport.send_task_update(TaskUpdate(
+                        task_id=task_id,
+                        status=TaskStatus.completed if exit_code == 0 else TaskStatus.failed,
+                        finished_at=finished_at,
+                        exit_code=exit_code,
+                    ))
 
             # Scheduling
             if not is_queue_paused(self.db):
@@ -110,13 +143,25 @@ class DaemonService:
                     if task is None:
                         continue
                     proc = self.runner.start(task, dec.gpu_ids, self.config.log_dir)
+                    started_at = time.time()
                     attach_runtime(
-                        self.db, task.id, proc.pid, dec.gpu_ids, time.time()
+                        self.db, task.id, proc.pid, dec.gpu_ids, started_at
                     )
                     log.info(
                         "started task %s (pid=%d, gpus=%s)",
                         task.id, proc.pid, dec.gpu_ids,
                     )
+                    if self.transport:
+                        self.transport.send_task_update(TaskUpdate(
+                            task_id=task.id,
+                            status=TaskStatus.running,
+                            started_at=started_at,
+                            pid=proc.pid,
+                        ))
+
+        if self.transport:
+            self.transport.send_metrics(snapshot)
+            log.debug("sent metrics to server")
 
     # ------------------------------------------------------------------
     # Task management (thread-safe)
@@ -135,6 +180,11 @@ class DaemonService:
                 self.runner.cancel(task_id)
             if task.status in (TaskStatus.queued, TaskStatus.running):
                 db_cancel_task(self.db, task_id)
+                if self.transport:
+                    self.transport.send_task_update(TaskUpdate(
+                        task_id=task_id,
+                        status=TaskStatus.cancelled,
+                    ))
                 return True
             return False
 

@@ -29,45 +29,92 @@ export function Login({ onSuccess }: LoginProps) {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-dark-bg flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-2">
-            <div className="w-10 h-10 rounded-lg bg-accent-blue/20 flex items-center justify-center">
-              <svg className="w-6 h-6 text-accent-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-100">Monitor</h1>
-          <p className="text-sm text-slate-500 mt-1">服务器硬件监控平台</p>
-        </div>
+  const capabilities = [
+    {
+      title: '节点接入视图',
+      body: '统一查看 SSH 节点与 agent 节点的在线状态和资源指标。',
+    },
+    {
+      title: '任务调度控制',
+      body: '聚合排队、运行和近期任务，支持基础调度操作。',
+    },
+    {
+      title: 'GPU 归属审计',
+      body: '持续跟踪显存占用分布与异常事件，便于排查归属问题。',
+    },
+  ] as const;
 
-        <form onSubmit={handleSubmit} className="bg-dark-card border border-dark-border rounded-lg p-6">
-          <div className="mb-4">
-            <label className="block text-sm text-slate-400 mb-1">密码</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="请输入登录密码"
-              autoFocus
-              className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2.5 text-sm text-slate-200 focus:border-accent-blue focus:outline-none placeholder-slate-600"
-            />
-          </div>
-          {error && (
-            <p className="text-xs text-accent-red mb-3">{error}</p>
-          )}
-          <button
-            type="submit"
-            disabled={loading || !password}
-            className="w-full py-2.5 bg-accent-blue text-white text-sm font-medium rounded-lg hover:bg-accent-blue/80 transition-colors disabled:opacity-50"
-          >
-            {loading ? '登录中...' : '登 录'}
-          </button>
-        </form>
+  return (
+    <div className="brand-shell min-h-screen p-4 md:p-8">
+      <div className="mx-auto flex min-h-screen max-w-6xl items-center">
+        <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1.2fr)_420px]">
+          <section className="brand-card-strong relative overflow-hidden rounded-3xl p-6 md:p-10">
+            <div className="pointer-events-none absolute right-8 top-8 h-28 w-28 rounded-full bg-accent-cyan/10 blur-3xl" />
+            <p className="brand-kicker">PMEOW CONTROL PLANE</p>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-50 md:text-5xl">PMEOW</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
+              面向实验室节点、任务队列与 GPU 归属的统一控制台。
+            </p>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <span className="brand-chip">节点在线状态</span>
+              <span className="brand-chip">任务队列控制</span>
+              <span className="brand-chip">GPU 占用审计</span>
+            </div>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-3">
+              {capabilities.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-white/10 bg-slate-950/25 p-4 backdrop-blur-sm">
+                  <h2 className="text-sm font-semibold text-slate-100">{item.title}</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="brand-card rounded-3xl p-6 md:p-7">
+            <div className="mb-6 flex flex-col items-center">
+              <div className="mb-4 h-24 w-24 overflow-hidden rounded-full border-2 border-accent-cyan/30 shadow-lg shadow-accent-cyan/10">
+                <img src="/icon.jpg" alt="PMEOW" className="h-full w-full object-cover" />
+              </div>
+              <p className="brand-kicker">ACCESS</p>
+              <h2 className="mt-3 text-2xl font-semibold text-slate-100">进入 PMEOW 控制台</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                输入访问口令，继续查看节点状态、任务调度与 GPU 观测数据。
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm text-slate-400">访问口令</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="请输入访问口令"
+                  autoFocus
+                  className="w-full rounded-xl border border-dark-border bg-dark-bg/80 px-3 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
+                />
+              </div>
+
+              {error && (
+                <p className="rounded-xl border border-accent-red/20 bg-accent-red/10 px-3 py-2 text-sm text-accent-red">{error}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || !password}
+                className="w-full rounded-xl bg-accent-blue px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-blue/80 disabled:opacity-50"
+              >
+                {loading ? '登录中...' : '进入控制台'}
+              </button>
+
+              <p className="text-xs leading-5 text-slate-500">
+                登录后可直接进入 PMEOW 总览页，查看节点在线情况、任务队列镜像和 GPU 归属审计结果。
+              </p>
+            </form>
+          </section>
+        </div>
       </div>
     </div>
   );

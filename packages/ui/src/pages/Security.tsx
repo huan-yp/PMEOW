@@ -133,8 +133,8 @@ export function Security() {
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Security</h1>
-          <p className="mt-1 text-sm text-slate-500">筛选并处理节点安全事件。</p>
+          <h1 className="text-2xl font-bold text-slate-100">安全审计</h1>
+          <p className="mt-1 text-sm text-slate-500">筛选并处理节点安全事件与 GPU 归属异常。</p>
         </div>
         <div className="text-sm text-slate-500">{resultsLabel}</div>
       </div>
@@ -142,18 +142,18 @@ export function Security() {
       <section className="rounded-lg border border-dark-border bg-dark-card p-4 shadow-sm">
         <div className="grid gap-4 md:grid-cols-4">
           <label className="text-sm text-slate-400">
-            <span className="mb-1 block">serverId</span>
+            <span className="mb-1 block">节点 ID</span>
             <input
               aria-label="serverId"
               value={filters.serverId}
               onChange={(event) => setFilters((current) => ({ ...current, serverId: event.target.value }))}
               className="w-full rounded border border-dark-border bg-dark-bg px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none"
-              placeholder="server-1"
+              placeholder="node-1"
             />
           </label>
 
           <label className="text-sm text-slate-400">
-            <span className="mb-1 block">resolved</span>
+            <span className="mb-1 block">处理状态</span>
             <select
               aria-label="resolved"
               value={filters.resolved}
@@ -167,7 +167,7 @@ export function Security() {
           </label>
 
           <label className="text-sm text-slate-400">
-            <span className="mb-1 block">hours</span>
+            <span className="mb-1 block">时间范围 (小时)</span>
             <input
               aria-label="hours"
               type="number"
@@ -184,7 +184,7 @@ export function Security() {
               onClick={applyFilters}
               className="w-full rounded border border-dark-border px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-dark-hover"
             >
-              应用筛选
+              更新视图
             </button>
           </div>
         </div>
@@ -194,7 +194,7 @@ export function Security() {
         <div className="text-sm text-slate-500">加载中...</div>
       ) : events.length === 0 ? (
         <div className="rounded-lg border border-dark-border bg-dark-card p-6 text-sm text-slate-500">
-          暂无安全事件
+          当前筛选条件下暂无安全事件
         </div>
       ) : (
         <section className="overflow-x-auto rounded-lg border border-dark-border bg-dark-card shadow-sm">
@@ -202,7 +202,7 @@ export function Security() {
             <thead>
               <tr className="border-b border-dark-border text-left text-xs text-slate-500">
                 <th className="px-4 py-3">时间</th>
-                <th className="px-4 py-3">serverId</th>
+                <th className="px-4 py-3">节点 ID</th>
                 <th className="px-4 py-3">类型</th>
                 <th className="px-4 py-3">详情</th>
                 <th className="px-4 py-3">状态</th>

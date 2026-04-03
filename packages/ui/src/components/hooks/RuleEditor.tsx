@@ -74,7 +74,7 @@ export function RuleEditor({ servers, initial, onSubmit, onCancel }: Props) {
             className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
         </div>
         <div>
-          <label className="text-xs text-slate-500 block mb-1">目标服务器</label>
+          <label className="text-xs text-slate-500 block mb-1">目标节点</label>
           <select value={serverId} onChange={e => setServerId(e.target.value)}
             className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none">
             {servers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

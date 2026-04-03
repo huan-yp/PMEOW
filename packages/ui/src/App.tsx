@@ -16,33 +16,37 @@ import { TaskQueue } from './pages/TaskQueue.js';
 import { Security } from './pages/Security.js';
 import { Login } from './pages/Login.js';
 
-function SidebarNav() {
-  const [collapsed, setCollapsed] = useState(false);
-
+function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const links = [
-    { to: '/', icon: DashboardIcon, label: '概览' },
-    { to: '/servers', icon: ServerIcon, label: '服务器' },
+    { to: '/', icon: DashboardIcon, label: '控制台' },
+    { to: '/servers', icon: ServerIcon, label: '节点' },
     { to: '/hooks', icon: HookIcon, label: '钩子规则' },
     { to: '/alerts', icon: AlertIcon, label: '告警' },
-    { to: '/tasks', icon: TaskIcon, label: 'Tasks' },
-    { to: '/security', icon: ShieldIcon, label: 'Security' },
+    { to: '/tasks', icon: TaskIcon, label: '任务调度' },
+    { to: '/security', icon: ShieldIcon, label: '安全审计' },
     { to: '/settings', icon: SettingsIcon, label: '设置' },
   ];
 
   return (
-    <aside className={`fixed left-0 top-0 h-screen bg-dark-card border-r border-dark-border flex flex-col transition-all duration-200 z-30 ${collapsed ? 'w-16' : 'w-52'}`}>
-      {/* Logo */}
-      <div className="h-14 flex items-center gap-2 px-4 border-b border-dark-border shrink-0">
-        <div className="w-8 h-8 rounded bg-accent-blue/20 flex items-center justify-center shrink-0">
-          <svg className="w-5 h-5 text-accent-blue" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
+    <aside className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-dark-border bg-dark-card/85 backdrop-blur-xl transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`}>
+      <div className="shrink-0 border-b border-dark-border px-3 py-4">
+        <div className={`rounded-2xl border border-white/10 bg-white/[0.03] ${collapsed ? 'flex items-center justify-center p-2.5' : 'flex items-start gap-3 p-3'}`}>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent-cyan/20 to-accent-blue/25 text-accent-blue">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
+                d="M5 6.75A1.75 1.75 0 016.75 5h10.5A1.75 1.75 0 0119 6.75v2.5A1.75 1.75 0 0117.25 11H6.75A1.75 1.75 0 015 9.25v-2.5zm0 8A1.75 1.75 0 016.75 13h4.5A1.75 1.75 0 0113 14.75v2.5A1.75 1.75 0 0111.25 19h-4.5A1.75 1.75 0 015 17.25v-2.5zm10 0A1.75 1.75 0 0116.75 13h.5A1.75 1.75 0 0119 14.75v2.5A1.75 1.75 0 0117.25 19h-.5A1.75 1.75 0 0115 17.25v-2.5z" />
+            </svg>
+          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <p className="brand-kicker">PMEOW Console</p>
+              <p className="mt-1 text-sm font-semibold text-slate-100">PMEOW</p>
+              <p className="mt-1 text-xs text-slate-500">节点 / 任务 / GPU 观测</p>
+            </div>
+          )}
         </div>
-        {!collapsed && <span className="font-bold text-slate-200 text-sm">Monitor</span>}
       </div>
 
-      {/* Nav Links */}
       <nav className="flex-1 py-3 space-y-1 px-2">
         {links.map(l => (
           <NavLink key={l.to} to={l.to} end={l.to === '/'}
@@ -55,10 +59,9 @@ function SidebarNav() {
         ))}
       </nav>
 
-      {/* Collapse button */}
       <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="h-12 flex items-center justify-center text-slate-500 hover:text-slate-300 border-t border-dark-border"
+        onClick={onToggle}
+        className="h-12 flex items-center justify-center border-t border-dark-border text-slate-500 transition-colors hover:bg-white/5 hover:text-slate-300"
       >
         <svg className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
@@ -72,11 +75,12 @@ function AppContent() {
   useMetricsSubscription();
   useLoadInitialData();
   useOperatorBootstrap();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen bg-dark-bg text-slate-200">
-      <SidebarNav />
-      <main className="ml-52 min-h-screen">
+    <div className="brand-shell min-h-screen bg-dark-bg text-slate-200">
+      <SidebarNav collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} />
+      <main className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
         <Routes>
           <Route path="/" element={<Overview />} />
           <Route path="/server/:id" element={<ServerDetail />} />
@@ -94,15 +98,59 @@ function AppContent() {
   );
 }
 
+function AuthBootstrap() {
+  return (
+    <div className="brand-shell flex min-h-screen items-center justify-center p-4">
+      <div role="status" aria-live="polite" className="brand-card rounded-3xl px-6 py-5 text-center">
+        <p className="brand-kicker">AUTH</p>
+        <p className="mt-2 text-sm text-slate-300">正在恢复登录状态...</p>
+      </div>
+    </div>
+  );
+}
+
 function AuthGate() {
   const transport = useTransport();
   const { authenticated, setAuthenticated } = useStore();
+  const [authReady, setAuthReady] = useState(Boolean(transport.isElectron));
 
   useEffect(() => {
+    let cancelled = false;
+
     if (transport.isElectron) {
       setAuthenticated(true);
+      setAuthReady(true);
+      return;
     }
-  }, [transport.isElectron, setAuthenticated]);
+
+    setAuthReady(false);
+
+    void transport.checkAuth()
+      .then(({ authenticated: nextAuthenticated }) => {
+        if (cancelled) {
+          return;
+        }
+
+        setAuthenticated(nextAuthenticated);
+        setAuthReady(true);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setAuthenticated(false);
+        setAuthReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [transport, setAuthenticated]);
+
+  if (!authReady && !transport.isElectron) {
+    return <AuthBootstrap />;
+  }
 
   if (!authenticated && !transport.isElectron) {
     return <Login onSuccess={() => setAuthenticated(true)} />;

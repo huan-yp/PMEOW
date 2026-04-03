@@ -52,7 +52,7 @@ export function HooksList({ hooks, servers, onEdit, onDelete, onToggle, onViewLo
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  服务器: {server?.name ?? '未知'} · 
+                  节点: {server?.name ?? '未知'} · 
                   当 {conditionLabels[hook.condition.type]}{hook.condition.threshold}{conditionUnits[hook.condition.type]} → {actionLabels[hook.action.type]}
                 </p>
                 {hook.lastTriggeredAt && (
