@@ -44,7 +44,7 @@ class TestFormatGpuOverview:
         gpus = [_make_gpu(0, free=12000.0)]
         result = format_gpu_overview(gpus)
         assert "gpu0" in result
-        assert "free=12000MB" in result
+        assert "free=11.7 GB" in result
 
     def test_multiple_gpus(self) -> None:
         gpus = [_make_gpu(0, free=8000.0), _make_gpu(1, free=4000.0)]
@@ -59,7 +59,7 @@ class TestFormatWaitingReport:
         task = _make_task(require_gpu_count=2, require_vram_mb=4000)
         result = format_waiting_report(task, [])
         assert "2 gpu(s)" in result
-        assert "4000MB" in result
+        assert "3.9 GB" in result
         assert "queue probe" in result
 
 
