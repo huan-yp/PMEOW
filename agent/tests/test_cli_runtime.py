@@ -51,3 +51,11 @@ def test_start_background_requires_agent_log_file(monkeypatch, tmp_path):
         start_background(type("Args", (), {"agent_log_file": None})())
 
     assert exc_info.value.code == 1
+
+
+def test_build_parser_accepts_systemd_commands():
+    parser = build_parser()
+
+    assert parser.parse_args(["install-service"]).command == "install-service"
+    assert parser.parse_args(["install-service", "--enable", "--start"]).start is True
+    assert parser.parse_args(["uninstall-service"]).command == "uninstall-service"

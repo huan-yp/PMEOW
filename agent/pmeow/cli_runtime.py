@@ -61,3 +61,43 @@ def is_running(args) -> None:
         return
     print("not running", file=sys.stderr)
     raise SystemExit(1)
+
+
+def install_service(args) -> None:
+    from pathlib import Path
+
+    from pmeow.daemon.systemd import (
+        SystemdServicePaths,
+        install_systemd_service,
+        resolve_agent_executable,
+    )
+
+    config = load_config()
+    paths = SystemdServicePaths(
+        service_name="pmeow-agent",
+        unit_path=Path("/etc/systemd/system/pmeow-agent.service"),
+        environment_path=Path("/etc/pmeow-agent/pmeow-agent.env"),
+    )
+    install_systemd_service(
+        config=config,
+        executable_path=resolve_agent_executable(),
+        working_directory=str(Path.cwd().resolve()),
+        paths=paths,
+        enable=args.enable,
+        start=args.start,
+    )
+    print("installed service")
+
+
+def uninstall_service(args) -> None:
+    from pathlib import Path
+
+    from pmeow.daemon.systemd import SystemdServicePaths, uninstall_systemd_service
+
+    paths = SystemdServicePaths(
+        service_name="pmeow-agent",
+        unit_path=Path("/etc/systemd/system/pmeow-agent.service"),
+        environment_path=Path("/etc/pmeow-agent/pmeow-agent.env"),
+    )
+    uninstall_systemd_service(paths=paths)
+    print("uninstalled service")

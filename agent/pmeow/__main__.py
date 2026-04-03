@@ -120,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("is-running", help="Check whether the background agent is running")
 
+    install_parser = sub.add_parser("install-service", help="Install the systemd service")
+    install_parser.add_argument("--enable", action="store_true", help="Enable the service after installation")
+    install_parser.add_argument("--start", action="store_true", help="Start the service after installation")
+
+    sub.add_parser("uninstall-service", help="Uninstall the systemd service")
+
     # queue control
     sub.add_parser("status", help="Query queue status")
 
@@ -149,6 +155,8 @@ _HANDLERS = {
     "stop": lambda args: cli_runtime.stop_background(args),
     "restart": lambda args: cli_runtime.restart_background(args),
     "is-running": lambda args: cli_runtime.is_running(args),
+    "install-service": lambda args: cli_runtime.install_service(args),
+    "uninstall-service": lambda args: cli_runtime.uninstall_service(args),
     "status": _cmd_status,
     "cancel": _cmd_cancel,
     "logs": _cmd_logs,
