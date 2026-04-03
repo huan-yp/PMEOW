@@ -163,7 +163,11 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 - 本地状态目录：默认 `~/.pmeow/`
 - 本地数据库：`~/.pmeow/pmeow.db`
 - 控制 socket：`~/.pmeow/pmeow.sock`
+- 后台 pid file：`PMEOW_PID_FILE`
 - 任务日志目录：`~/.pmeow/logs/`
+- 前台模式 runtime log：当前启动终端
+- 后台模式 runtime log：`PMEOW_AGENT_LOG_FILE`
+- systemd 模式 runtime log：`journalctl -u pmeow-agent`
 
 ## 什么时候适合直接重启
 

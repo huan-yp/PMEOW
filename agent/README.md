@@ -19,17 +19,35 @@ pip install -e ".[dev]"
 
 ## Usage
 
-### Start the daemon
-
-The daemon runs in the foreground, collecting metrics and processing the task queue:
+### Run in the foreground
 
 ```bash
+pmeow-agent run
+# compatibility alias
 pmeow-agent daemon
-# or
-python -m pmeow daemon
 ```
 
-For production deployments, see [systemd service example](examples/pmeow-agent.service).
+Foreground mode prints agent runtime logs to the console.
+
+### Run in the background
+
+```bash
+export PMEOW_AGENT_LOG_FILE=~/.pmeow/agent.log
+pmeow-agent start
+pmeow-agent is-running
+pmeow-agent stop
+```
+
+Background mode writes agent runtime logs to `PMEOW_AGENT_LOG_FILE` and keeps task stdout or stderr in `PMEOW_LOG_DIR`.
+
+### Install as a systemd service
+
+```bash
+sudo pmeow-agent install-service --enable --start
+sudo pmeow-agent uninstall-service
+```
+
+Systemd supervision keeps the process in the foreground and captures runtime logs in journal.
 
 ### Submit a task
 
@@ -89,6 +107,8 @@ All settings are configured via environment variables. Defaults are used when a 
 | `PMEOW_STATE_DIR` | `~/.pmeow/` | Directory for database and runtime state |
 | `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | Path to the Unix socket for CLI ↔ daemon communication |
 | `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | Directory where task stdout/stderr logs are stored |
+| `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | Pid file used by background mode |
+| `PMEOW_AGENT_LOG_FILE` | *(empty)* | Dedicated runtime log file used by background mode |
 
 `PMEOW_SERVER_URL` should point at the PMEOW Web service base URL. The agent transport layer will connect to the Socket.IO `/agent` namespace automatically; do not append `/agent` yourself and do not use a raw WebSocket URL.
 
@@ -100,6 +120,7 @@ By default, all agent state is stored under `~/.pmeow/`:
 ~/.pmeow/
 ├── pmeow.db        # SQLite database (tasks, runtime state)
 ├── pmeow.sock      # Unix domain socket (daemon control)
+├── pmeow-agent.pid # Pid file (background mode only)
 └── logs/
     ├── <task_id>.log
     └── ...

@@ -49,26 +49,45 @@ Agent 通过环境变量配置，未设置时会使用默认值。
 | `PMEOW_STATE_DIR` | `~/.pmeow/` | 本地状态目录 |
 | `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | CLI 与 daemon 通信的 Unix socket |
 | `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | 任务日志目录 |
+| `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | 后台模式 pid 文件 |
+| `PMEOW_AGENT_LOG_FILE` | 空 | 后台模式 runtime log 文件 |
 
 关于 `PMEOW_SERVER_URL` 有两个重要约束：
 
 - 传入的是服务端基础 URL，不要自己拼 `/agent`。
 - 传入 `http://` 或 `https://` 地址即可，不需要手写原始 WebSocket 地址。
 
-## 启动 daemon
+## 三种启动方式
 
-最小启动流程：
+### 前台
 
 ```bash
 export PMEOW_SERVER_URL=http://your-server:17200
-pmeow-agent daemon
+pmeow-agent run
 ```
 
-daemon 会以前台方式运行，完成采集、调度、Socket.IO 通信和本地 socket 服务。
+适合初次接入和现场排障，runtime log 直接看当前终端。
 
-如果你准备长期运行，建议使用 systemd。仓库里提供了示例文件：
+### 后台
 
-- `agent/examples/pmeow-agent.service`
+```bash
+export PMEOW_SERVER_URL=http://your-server:17200
+export PMEOW_AGENT_LOG_FILE=~/.pmeow/agent.log
+pmeow-agent start
+pmeow-agent is-running
+pmeow-agent stop
+```
+
+适合不想长期占用终端、但还没切到 systemd 的节点。
+
+### systemd
+
+```bash
+sudo pmeow-agent install-service --enable --start
+sudo journalctl -u pmeow-agent -f
+```
+
+适合长期托管。systemd 负责进程生命周期，journal 负责 runtime log。
 
 ## 本地 CLI 工作流
 
@@ -119,6 +138,7 @@ Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
 ~/.pmeow/
 ├── pmeow.db
 ├── pmeow.sock
+├── pmeow-agent.pid
 └── logs/
 ```
 
@@ -133,7 +153,7 @@ Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
 1. 在 Web 控制台先创建服务器记录。
 2. 确认服务器记录的 `host` 与节点 hostname 一致。
 3. 在节点上安装 Agent 并导出 `PMEOW_SERVER_URL`。
-4. 以前台方式启动 `pmeow-agent daemon`，先确认没有报错。
+4. 以前台方式启动 `pmeow-agent run`，先确认没有报错。
 5. 回到 Web 控制台查看“概览”“Tasks”“服务器详情”是否出现队列与 GPU allocation 数据。
 6. 确认无误后，再切换到 systemd 持久运行。
 

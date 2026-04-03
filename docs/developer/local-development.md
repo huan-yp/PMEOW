@@ -70,8 +70,15 @@ pnpm start:web
 ```bash
 cd agent
 . .venv/bin/activate
-pmeow-agent daemon
+pmeow-agent run
+
+# 后台模式
+PMEOW_AGENT_LOG_FILE=$PWD/.tmp/agent.log pmeow-agent start
+pmeow-agent is-running
+pmeow-agent stop
 ```
+
+如果你同时跑多个本地 Agent 实例，除了拆分 `PMEOW_STATE_DIR` 和 `PMEOW_SOCKET_PATH`，也要拆分 `PMEOW_PID_FILE` 和 `PMEOW_AGENT_LOG_FILE`。
 
 如果你只想跑 Agent 测试而不连接真实服务端，可以保持 `PMEOW_SERVER_URL` 为空，专注于本地 socket、队列和采集层测试。
 
@@ -134,8 +141,10 @@ pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
 - `PMEOW_STATE_DIR`
 - `PMEOW_SOCKET_PATH`
 - `PMEOW_LOG_DIR`
+- `PMEOW_PID_FILE`
+- `PMEOW_AGENT_LOG_FILE`
 
-如果你同时跑多个本地 Agent 实例，一定要给它们分配不同的状态目录和 socket 路径，否则很容易互相污染。
+如果你同时跑多个本地 Agent 实例，一定要给它们分配不同的状态目录、socket 路径、pid 文件和 runtime log 文件，否则很容易互相污染。
 
 ## 本地数据位置
 
