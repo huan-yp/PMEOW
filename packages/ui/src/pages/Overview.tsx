@@ -59,24 +59,49 @@ export function Overview() {
 
   const stats = [
     {
+      key: 'presence',
       label: '在线节点',
       value: servers.length === 0 ? '0' : `${onlineCount}/${servers.length}`,
       hint: servers.length === 0 ? '等待节点接入' : offlineCount === 0 ? '当前全部在线' : `${offlineCount} 个节点离线`,
+      cardClassName: 'border-sky-400/20 bg-sky-500/[0.07] shadow-[0_18px_48px_rgba(14,165,233,0.08)]',
+      valueClassName: 'text-sky-100',
+      hintClassName: offlineCount > 0 ? 'text-rose-200/75' : 'text-sky-100/75',
+      badges: servers.length > 0
+        ? [
+            { label: '在线', value: String(onlineCount), className: 'node-badge-base node-badge-status-online' },
+            { label: '离线', value: String(offlineCount), className: 'node-badge-base node-badge-status-offline' },
+          ]
+        : [],
     },
     {
+      key: 'load',
       label: '任务负载',
       value: String(queuedCount + runningCount),
       hint: `排队 ${queuedCount} · 运行 ${runningCount}`,
+      cardClassName: 'border-cyan-400/12 bg-cyan-500/[0.04]',
+      valueClassName: 'text-slate-100',
+      hintClassName: 'text-slate-400',
+      badges: [],
     },
     {
+      key: 'risk',
       label: '待处理风险',
       value: String(openSecurityEvents.length),
       hint: openSecurityEvents.length === 0 ? '过去 7 天未发现未处理事件' : `${riskyNodeCount} 个节点存在风险`,
+      cardClassName: 'border-amber-400/16 bg-amber-400/[0.05]',
+      valueClassName: 'text-amber-100',
+      hintClassName: 'text-slate-300/80',
+      badges: [],
     },
     {
+      key: 'sampling',
       label: '最新采样',
       value: latestMetricTimestamp > 0 ? formatTime(latestMetricTimestamp) : '--',
       hint: latestMetricTimestamp > 0 ? '来自节点实时指标' : '等待第一批数据上报',
+      cardClassName: 'border-white/10 bg-slate-950/30',
+      valueClassName: 'text-slate-100',
+      hintClassName: 'text-slate-400',
+      badges: [],
     },
   ];
 
@@ -90,10 +115,19 @@ export function Overview() {
       <section>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {stats.map((item) => (
-            <div key={item.label} className="rounded-2xl border border-white/10 bg-slate-950/30 p-4 backdrop-blur-sm">
+            <div key={item.key} className={`rounded-2xl border p-4 backdrop-blur-sm ${item.cardClassName}`}>
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500">{item.label}</p>
-              <p className="mt-3 text-2xl font-semibold text-slate-100">{item.value}</p>
-              <p className="mt-2 text-xs text-slate-400">{item.hint}</p>
+              <p className={`mt-3 text-2xl font-semibold ${item.valueClassName}`}>{item.value}</p>
+              {item.badges.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {item.badges.map((badge) => (
+                    <span key={badge.label} className={badge.className}>
+                      {badge.label} {badge.value}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className={`${item.badges.length > 0 ? 'mt-3' : 'mt-2'} text-xs ${item.hintClassName}`}>{item.hint}</p>
             </div>
           ))}
         </div>

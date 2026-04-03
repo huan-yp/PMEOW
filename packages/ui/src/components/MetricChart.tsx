@@ -1,20 +1,30 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
 
-interface Series {
+export interface MetricChartSeries {
   name: string;
   data: { time: number; value: number }[];
   color?: string;
   unit?: string;
+  yAxisIndex?: number;
+  valueFormatter?: (value: number) => string;
+}
+
+export interface MetricChartAxis {
+  position?: 'left' | 'right';
+  formatter?: (value: number) => string;
+  color?: string;
+  splitLine?: boolean;
 }
 
 interface Props {
-  series: Series[];
+  series: MetricChartSeries[];
   height?: number;
   yAxisFormatter?: (v: number) => string;
+  yAxes?: MetricChartAxis[];
 }
 
-export function MetricChart({ series, height = 200, yAxisFormatter }: Props) {
+export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
@@ -36,6 +46,12 @@ export function MetricChart({ series, height = 200, yAxisFormatter }: Props) {
     if (!chartInstance.current || series.length === 0) return;
 
     const defaultColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
+    const axisConfigs = yAxes && yAxes.length > 0
+      ? yAxes
+      : [{ formatter: yAxisFormatter } satisfies MetricChartAxis];
+    const hasRightAxis = axisConfigs.length > 1;
+    const gridLeft = hasRightAxis ? 52 : 48;
+    const gridRight = hasRightAxis ? 52 : 18;
 
     chartInstance.current.setOption({
       tooltip: {
@@ -49,8 +65,13 @@ export function MetricChart({ series, height = 200, yAxisFormatter }: Props) {
           let html = `<div style="margin-bottom:4px;color:#94a3b8">${time}</div>`;
           for (const p of params) {
             const s = series[p.seriesIndex];
-            const unit = s?.unit || '';
-            html += `<div>${p.marker} ${p.seriesName}: <b>${p.value[1].toFixed(1)}${unit}</b></div>`;
+            const value = Number(p.value[1] ?? 0);
+            const formattedValue = s?.valueFormatter
+              ? s.valueFormatter(value)
+              : s?.unit
+                ? `${value.toFixed(1)}${s.unit}`
+                : value.toFixed(1);
+            html += `<div>${p.marker} ${p.seriesName}: <b>${formattedValue}</b></div>`;
           }
           return html;
         },
@@ -64,9 +85,10 @@ export function MetricChart({ series, height = 200, yAxisFormatter }: Props) {
       },
       grid: {
         top: 10,
-        right: 16,
+        right: gridRight,
         bottom: series.length > 1 ? 30 : 10,
-        left: 50,
+        left: gridLeft,
+        containLabel: true,
       },
       xAxis: {
         type: 'time',
@@ -78,24 +100,28 @@ export function MetricChart({ series, height = 200, yAxisFormatter }: Props) {
         },
         splitLine: { show: false },
       },
-      yAxis: {
+      yAxis: axisConfigs.map((axisConfig, index) => ({
         type: 'value',
         min: 0,
+        position: axisConfig.position ?? (index === 0 ? 'left' : 'right'),
         axisLine: { show: false },
         axisLabel: {
-          color: '#64748b',
+          color: axisConfig.color || '#64748b',
           fontSize: 10,
-          formatter: yAxisFormatter || ((v: number) => `${v}`),
+          margin: 8,
+          formatter: axisConfig.formatter || ((v: number) => `${v}`),
         },
         splitLine: {
+          show: axisConfig.splitLine ?? index === 0,
           lineStyle: { color: '#1e293b', type: 'dashed' },
         },
-      },
+      })),
       series: series.map((s, i) => ({
         name: s.name,
         type: 'line',
         smooth: true,
         symbol: 'none',
+        yAxisIndex: s.yAxisIndex ?? 0,
         lineStyle: { width: 2, color: s.color || defaultColors[i % defaultColors.length] },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
@@ -107,7 +133,7 @@ export function MetricChart({ series, height = 200, yAxisFormatter }: Props) {
       })),
       animation: false,
     }, true);
-  }, [series, yAxisFormatter]);
+  }, [series, yAxes, yAxisFormatter]);
 
   return (
     <div ref={chartRef} style={{ width: '100%', height }} />

@@ -113,6 +113,132 @@ body {
   font-size: 0.78rem;
 }
 
+.node-surface-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(32, 49, 71, 0.85);
+  background: linear-gradient(180deg, rgba(16, 27, 42, 0.98) 0%, rgba(10, 18, 31, 0.94) 100%);
+  box-shadow: 0 20px 55px rgba(2, 6, 23, 0.28);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.node-surface-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.node-card-shell:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.35);
+  background: linear-gradient(180deg, rgba(20, 33, 51, 0.98) 0%, rgba(11, 19, 32, 0.96) 100%);
+  box-shadow: 0 26px 70px rgba(2, 6, 23, 0.34);
+}
+
+.node-surface-shell-online {
+  border-color: rgba(56, 189, 248, 0.22);
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.34), 0 0 0 1px rgba(56, 189, 248, 0.05);
+}
+
+.node-surface-shell-online::after {
+  opacity: 1;
+  background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.14), transparent 34%);
+}
+
+.node-surface-shell-connecting {
+  border-color: rgba(245, 158, 11, 0.22);
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.34), 0 0 0 1px rgba(245, 158, 11, 0.05);
+}
+
+.node-surface-shell-connecting::after {
+  opacity: 1;
+  background: radial-gradient(circle at top right, rgba(245, 158, 11, 0.13), transparent 34%);
+}
+
+.node-surface-shell-offline {
+  border-color: rgba(239, 68, 68, 0.2);
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.34), 0 0 0 1px rgba(239, 68, 68, 0.05);
+}
+
+.node-surface-shell-offline::after {
+  opacity: 1;
+  background: radial-gradient(circle at top right, rgba(239, 68, 68, 0.12), transparent 34%);
+}
+
+.node-surface-shell-error {
+  border-color: rgba(251, 113, 133, 0.26);
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.36), 0 0 0 1px rgba(251, 113, 133, 0.06);
+}
+
+.node-surface-shell-error::after {
+  opacity: 1;
+  background: radial-gradient(circle at top right, rgba(244, 63, 94, 0.14), transparent 34%);
+}
+
+.node-badge-base {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  padding: 0.38rem 0.82rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  backdrop-filter: blur(12px);
+}
+
+.node-badge-source-agent {
+  border-color: rgba(34, 211, 238, 0.24);
+  background: rgba(6, 182, 212, 0.14);
+  color: #a5f3fc;
+}
+
+.node-badge-source-ssh {
+  border-color: rgba(100, 116, 139, 0.3);
+  background: rgba(51, 65, 85, 0.34);
+  color: #cbd5e1;
+}
+
+.node-badge-status-online {
+  border-color: rgba(125, 211, 252, 0.28);
+  background: rgba(14, 165, 233, 0.16);
+  box-shadow: inset 0 0 18px rgba(14, 165, 233, 0.08);
+  color: #e0f2fe;
+}
+
+.node-badge-status-connecting {
+  border-color: rgba(252, 211, 77, 0.28);
+  background: rgba(245, 158, 11, 0.16);
+  box-shadow: inset 0 0 18px rgba(245, 158, 11, 0.07);
+  color: #fde68a;
+}
+
+.node-badge-status-offline {
+  border-color: rgba(252, 165, 165, 0.24);
+  background: rgba(239, 68, 68, 0.16);
+  box-shadow: inset 0 0 18px rgba(239, 68, 68, 0.06);
+  color: #ffe4e6;
+}
+
+.node-badge-status-error {
+  border-color: rgba(251, 113, 133, 0.28);
+  background: rgba(190, 24, 93, 0.18);
+  box-shadow: inset 0 0 18px rgba(190, 24, 93, 0.08);
+  color: #ffe4e6;
+}
+
+.node-badge-risk {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fde68a;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
