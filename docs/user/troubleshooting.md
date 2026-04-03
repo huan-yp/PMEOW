@@ -32,6 +32,47 @@
 
 在正式部署中固定 `JWT_SECRET`，避免每次重启都生成新的临时签名密钥。否则旧 token 会立即失效，前端会表现成重新登录。
 
+## 忘记了 Web 管理密码
+
+### 关键事实
+
+- 当前实现没有预置默认密码。
+- 首次登录时写入的密码会以哈希形式存入 SQLite。
+- 系统不能直接显示旧密码明文，只能重置。
+
+### 重置方法
+
+对服务端数据库执行：
+
+```sql
+DELETE FROM settings WHERE key = 'password';
+```
+
+数据库位置通常是：
+
+- 本地默认部署：`data/monitor.db`
+- 自定义部署：`MONITOR_DB_PATH` 指向的位置
+- Docker 默认部署：容器内 `/data/monitor.db`
+
+删除后重新打开登录页，第一次输入的新密码就会被当作新的初始化密码保存。
+
+如果你当前机器没有安装 `sqlite3` 命令，但手头有 PMEOW 仓库，可以直接运行：
+
+```bash
+pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+```
+
+如果数据库不在默认位置，把 `data/monitor.db` 替换成真实数据库绝对路径即可。
+
+### 如果你还想让旧登录态马上失效
+
+仅删除 `password` 记录还不够。因为浏览器已经拿到的 JWT 不会因为密码变化自动失效。
+
+如果需要立即踢出所有现有会话，应同时：
+
+1. 轮换 `JWT_SECRET`
+2. 重启 Web 服务端
+
 ## SSH 节点测试连接失败
 
 ### 常见原因

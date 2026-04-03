@@ -117,6 +117,70 @@ Web API 的密钥上传接口会把文件保存到当前工作目录下的 `data
 
 这个模型适合单实验室、小范围运维场景，但不是多租户权限系统。当前默认只有管理员视角。
 
+## 如何重置 Web 登录密码
+
+先说结论：当前实现没有预置默认密码。系统初次登录时，如果数据库里没有保存密码，第一次提交到登录页的密码就会被写入数据库并成为新的管理员密码。
+
+因此，重置密码最直接的方法不是“找回明文”，而是删除数据库里 `settings` 表中的 `password` 这一行，让系统回到“未初始化密码”的状态。
+
+### 如果你还记得当前密码
+
+最简单的方式是直接登录 Web 控制台，在“设置”页修改密码。
+
+### 如果你已经忘记当前密码
+
+对服务端使用的 SQLite 数据库执行下面这条 SQL：
+
+```sql
+DELETE FROM settings WHERE key = 'password';
+```
+
+执行完成后：
+
+1. 打开 Web 登录页。
+2. 输入你想设置的新密码。
+3. 这次登录会被当作新的初始化密码写入数据库。
+
+### 常见数据库位置
+
+- 本地默认部署：`data/monitor.db`
+- 显式设置了 `MONITOR_DB_PATH`：以该环境变量指定的绝对路径为准
+- Docker 默认部署：容器内 `/data/monitor.db`
+
+### 常见操作示例
+
+如果你在宿主机上能直接访问数据库文件，可以执行：
+
+```bash
+sqlite3 data/monitor.db "DELETE FROM settings WHERE key='password';"
+```
+
+如果你是自定义数据库路径，可以执行：
+
+```bash
+sqlite3 "$MONITOR_DB_PATH" "DELETE FROM settings WHERE key='password';"
+```
+
+如果当前机器没有安装 `sqlite3` 命令，但你是在 PMEOW 仓库内操作，也可以直接复用项目依赖里的 `better-sqlite3`：
+
+```bash
+pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('/absolute/path/to/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+```
+
+例如本地默认部署可以写成：
+
+```bash
+pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+```
+
+如果你使用的是 Docker 部署，但不方便在容器内使用 `sqlite3`，也可以使用任意 SQLite 工具直接对容器内的 `/data/monitor.db` 执行上面的 SQL，或者在容器内运行同样的 Node 命令。
+
+### 一个重要边界
+
+删除或重置密码只会影响后续登录，不会自动让已经签发出去的 JWT 立即失效。
+
+如果你希望强制所有已登录浏览器马上重新登录，应该同时轮换 `JWT_SECRET` 并重启服务端。否则旧 token 在过期前仍然可能继续可用。
+
 ## 服务端部署后的推荐检查项
 
 第一次部署完成后，建议按下面顺序检查：
