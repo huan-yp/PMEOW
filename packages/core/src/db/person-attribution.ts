@@ -2,6 +2,8 @@ import { getDatabase } from './database.js';
 import { getGpuUsageByServerIdAndTimestamp } from './gpu-usage.js';
 import { getPersonById } from './persons.js';
 import { resolveTaskPerson, resolveRawUserPerson } from '../person/resolve.js';
+import { getAgentTask } from './agent-tasks.js';
+import { getLatestMetrics } from './metrics.js';
 import type {
   PersonSummaryItem,
   PersonTimelinePoint,
@@ -9,6 +11,8 @@ import type {
   ServerPersonActivity,
   AgentTaskUpdatePayload,
   MirroredAgentTaskRecord,
+  ResolvedGpuAllocationResponse,
+  ResolvedGpuAllocationSegment,
 } from '../types.js';
 
 export function insertPersonAttributionFact(fact: {
@@ -274,4 +278,129 @@ export function listPersonBindingSuggestions(): PersonBindingSuggestion[] {
     systemUser: row.rawUser,
     lastSeenAt: row.lastSeenAt,
   }));
+}
+
+function upsertResolvedSegment(
+  segmentMap: Map<string, ResolvedGpuAllocationSegment>,
+  nextSegment: ResolvedGpuAllocationSegment,
+): void {
+  const existing = segmentMap.get(nextSegment.ownerKey);
+  if (!existing) {
+    segmentMap.set(nextSegment.ownerKey, nextSegment);
+    return;
+  }
+
+  existing.usedMemoryMB += nextSegment.usedMemoryMB;
+  for (const sourceKind of nextSegment.sourceKinds) {
+    if (!existing.sourceKinds.includes(sourceKind)) {
+      existing.sourceKinds.push(sourceKind);
+    }
+  }
+  if (!existing.rawUser && nextSegment.rawUser) {
+    existing.rawUser = nextSegment.rawUser;
+  }
+}
+
+export function getResolvedGpuAllocation(serverId: string): ResolvedGpuAllocationResponse | null {
+  const metrics = getLatestMetrics(serverId);
+  if (!metrics || !metrics.gpuAllocation) return null;
+
+  const allocation = metrics.gpuAllocation;
+  const timestamp = metrics.timestamp;
+
+  const perGpu = allocation.perGpu.map(gpu => {
+    const segmentMap = new Map<string, ResolvedGpuAllocationSegment>();
+
+    for (const taskAllocation of gpu.pmeowTasks) {
+      const task = getAgentTask(taskAllocation.taskId);
+      const rawUser = task?.user;
+      const resolved = resolveTaskPerson(serverId, taskAllocation.taskId, rawUser, timestamp);
+
+      let segment: ResolvedGpuAllocationSegment;
+      if (resolved.person) {
+        segment = {
+          ownerKey: `person:${resolved.person.id}`,
+          ownerKind: 'person',
+          displayName: resolved.person.displayName,
+          usedMemoryMB: taskAllocation.actualVramMB,
+          personId: resolved.person.id,
+          rawUser,
+          sourceKinds: ['task'],
+        };
+      } else if (rawUser) {
+        segment = {
+          ownerKey: `user:${rawUser}`,
+          ownerKind: 'user',
+          displayName: rawUser,
+          usedMemoryMB: taskAllocation.actualVramMB,
+          rawUser,
+          sourceKinds: ['task'],
+        };
+      } else {
+        segment = {
+          ownerKey: 'unknown',
+          ownerKind: 'unknown',
+          displayName: 'Unknown',
+          usedMemoryMB: taskAllocation.actualVramMB,
+          sourceKinds: ['task'],
+        };
+      }
+      upsertResolvedSegment(segmentMap, segment);
+    }
+
+    for (const process of gpu.userProcesses) {
+      const resolved = resolveRawUserPerson(serverId, process.user, timestamp);
+
+      let segment: ResolvedGpuAllocationSegment;
+      if (resolved.person) {
+        segment = {
+          ownerKey: `person:${resolved.person.id}`,
+          ownerKind: 'person',
+          displayName: resolved.person.displayName,
+          usedMemoryMB: process.usedMemoryMB,
+          personId: resolved.person.id,
+          rawUser: process.user,
+          sourceKinds: ['user_process'],
+        };
+      } else {
+        segment = {
+          ownerKey: `user:${process.user}`,
+          ownerKind: 'user',
+          displayName: process.user,
+          usedMemoryMB: process.usedMemoryMB,
+          rawUser: process.user,
+          sourceKinds: ['user_process'],
+        };
+      }
+      upsertResolvedSegment(segmentMap, segment);
+    }
+
+    for (const process of gpu.unknownProcesses) {
+      upsertResolvedSegment(segmentMap, {
+        ownerKey: 'unknown',
+        ownerKind: 'unknown',
+        displayName: 'Unknown',
+        usedMemoryMB: process.usedMemoryMB,
+        sourceKinds: ['unknown_process'],
+      });
+    }
+
+    const segments = [...segmentMap.values()].sort((a, b) => {
+      if (b.usedMemoryMB !== a.usedMemoryMB) return b.usedMemoryMB - a.usedMemoryMB;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
+    return {
+      gpuIndex: gpu.gpuIndex,
+      totalMemoryMB: gpu.totalMemoryMB,
+      freeMB: Math.max(gpu.effectiveFreeMB, 0),
+      segments,
+    };
+  });
+
+  return {
+    serverId,
+    snapshotTimestamp: timestamp,
+    perGpu,
+  };
 }

@@ -301,6 +301,16 @@ export interface ServerStatus {
   latestMetrics?: MetricsSnapshot;
 }
 
+export interface ServerStatusEvent {
+  id?: number;
+  serverId: string;
+  fromStatus: ConnectionStatus;
+  toStatus: ConnectionStatus;
+  reason?: string;
+  lastSeen: number;
+  createdAt: number;
+}
+
 // ========================
 // Hook System
 // ========================
@@ -378,6 +388,7 @@ export interface AppSettings {
   securityHighGpuUtilizationPercent: number;
   securityHighGpuDurationMinutes: number;
   password: string;           // bcrypt hash, for web mode
+  agentMetricsTimeoutMs: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -396,6 +407,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   securityHighGpuUtilizationPercent: 90,
   securityHighGpuDurationMinutes: 120,
   password: '',
+  agentMetricsTimeoutMs: 15_000,
 };
 
 // ========================
@@ -599,4 +611,31 @@ export interface MobilePersonBootstrap {
   queuedTaskCount: number;
   boundNodeCount: number;
   unreadNotificationCount: number;
+}
+
+// ========================
+// Resolved GPU Allocation
+// ========================
+
+export interface ResolvedGpuAllocationSegment {
+  ownerKey: string;
+  ownerKind: 'person' | 'user' | 'unknown';
+  displayName: string;
+  usedMemoryMB: number;
+  personId?: string;
+  rawUser?: string;
+  sourceKinds: Array<'task' | 'user_process' | 'unknown_process'>;
+}
+
+export interface ResolvedPerGpuAllocation {
+  gpuIndex: number;
+  totalMemoryMB: number;
+  freeMB: number;
+  segments: ResolvedGpuAllocationSegment[];
+}
+
+export interface ResolvedGpuAllocationResponse {
+  serverId: string;
+  snapshotTimestamp: number;
+  perGpu: ResolvedPerGpuAllocation[];
 }

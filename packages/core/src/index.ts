@@ -11,6 +11,7 @@ export type {
 	SecurityEventDetails,
 	SecurityEventRecord,
 	SecurityEventType,
+	ServerStatusEvent,
 } from './types.js';
 export * from './agent/protocol.js';
 export { resolveAgentBinding, autoCreateAgentServer } from './agent/binding.js';
@@ -61,6 +62,7 @@ export {
 	saveSetting,
 	saveSettings,
 } from './db/settings.js';
+export { insertServerStatusEvent, listServerStatusEvents } from './db/server-status-events.js';
 export { Scheduler } from './scheduler.js';
 export { setAlertCallback } from './alerts.js';
 export { saveAlert, getAlerts, suppressAlert, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
@@ -99,6 +101,7 @@ export {
   getPersonTasks,
   getServerPersonActivity,
   listPersonBindingSuggestions,
+  getResolvedGpuAllocation,
 } from './db/person-attribution.js';
 export {
   createPersonMobileToken,
