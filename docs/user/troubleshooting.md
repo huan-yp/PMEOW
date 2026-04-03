@@ -51,6 +51,7 @@ DELETE FROM settings WHERE key = 'password';
 数据库位置通常是：
 
 - 本地默认部署：`data/monitor.db`
+- 使用根目录 workspace 脚本启动 Web 时，通常是 `packages/web/data/monitor.db`
 - 自定义部署：`MONITOR_DB_PATH` 指向的位置
 - Docker 默认部署：容器内 `/data/monitor.db`
 
@@ -60,6 +61,12 @@ DELETE FROM settings WHERE key = 'password';
 
 ```bash
 pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+```
+
+如果你是按 README 里的根目录 workspace 脚本启动的服务，更常见的真实路径其实是：
+
+```bash
+pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('packages/web/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
 ```
 
 如果数据库不在默认位置，把 `data/monitor.db` 替换成真实数据库绝对路径即可。

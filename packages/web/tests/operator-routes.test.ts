@@ -74,6 +74,30 @@ function createSnapshot(serverId: string, hostname: string, timestamp: number): 
 }
 
 describe('operator routes', () => {
+  it('hashes password updates before saving settings', async () => {
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const updateResponse = await request(baseUrl)
+      .put('/api/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ password: 'Yk8?mR4+uN1.' });
+
+    expect(updateResponse.status).toBe(200);
+
+    const settings = getSettings();
+    expect(settings.password).toEqual(expect.any(String));
+    expect(settings.password).not.toBe('Yk8?mR4+uN1.');
+    expect(settings.password.startsWith('$2')).toBe(true);
+
+    const reloginResponse = await request(baseUrl)
+      .post('/api/login')
+      .send({ password: 'Yk8?mR4+uN1.' });
+
+    expect(reloginResponse.status).toBe(200);
+    expect(reloginResponse.body.token).toEqual(expect.any(String));
+  });
+
   it('serves authenticated task queue, gpu overview, and security events', async () => {
     const server = createServer({
       name: 'gpu-operator',

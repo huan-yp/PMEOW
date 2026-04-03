@@ -92,6 +92,8 @@ pnpm start:web
 
 默认监听 `http://localhost:17200`。
 
+如果你直接在仓库根目录运行上面的 workspace 脚本，服务端默认 SQLite 往往会落在 `packages/web/data/monitor.db`，因为数据库相对路径是基于 Web 进程自身的当前工作目录解析的。
+
 ### Docker 部署
 
 ```bash

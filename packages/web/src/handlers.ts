@@ -3,6 +3,7 @@ import type { Scheduler } from '@monitor/core';
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
+import { hashPassword } from './auth.js';
 import {
   getAllServers, getServerById, createServer, updateServer, deleteServer,
   getLatestMetrics, getMetricsHistory,
@@ -173,7 +174,21 @@ export function setupRestRoutes(app: any, scheduler: Scheduler): void {
   });
 
   app.put('/api/settings', (req: any, res: any) => {
-    saveSettings(req.body);
+    const nextSettings = { ...(req.body ?? {}) };
+
+    if ('password' in nextSettings) {
+      const password = typeof nextSettings.password === 'string'
+        ? nextSettings.password.trim()
+        : '';
+
+      if (password) {
+        nextSettings.password = hashPassword(password);
+      } else {
+        delete nextSettings.password;
+      }
+    }
+
+    saveSettings(nextSettings);
     // If refreshInterval changed, restart scheduler
     scheduler.restart();
     res.json({ ok: true });

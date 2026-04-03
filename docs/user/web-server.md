@@ -91,6 +91,14 @@ docker compose up -d
 - 如果设置了 `MONITOR_DB_PATH`，会直接使用该路径，并自动创建父目录。
 - 如果没有设置，默认使用当前工作目录下的 `data/monitor.db`。
 
+这里的“当前工作目录”指的是 Web 服务进程自己的 cwd，不一定是你打开终端时看到的仓库根目录。
+
+在当前项目里，如果你直接从仓库根目录运行 `npm run start:web` 或 `pnpm start:web` 这类 workspace 脚本，Web 进程通常会以 `packages/web` 作为 cwd，因此默认数据库通常会出现在：
+
+```text
+packages/web/data/monitor.db
+```
+
 数据库采用 SQLite，并启用了：
 
 - `WAL` journal mode
@@ -144,6 +152,7 @@ DELETE FROM settings WHERE key = 'password';
 ### 常见数据库位置
 
 - 本地默认部署：`data/monitor.db`
+- 使用根目录 workspace 脚本启动 Web 时，通常是 `packages/web/data/monitor.db`
 - 显式设置了 `MONITOR_DB_PATH`：以该环境变量指定的绝对路径为准
 - Docker 默认部署：容器内 `/data/monitor.db`
 
@@ -171,6 +180,12 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 
 ```bash
 pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+```
+
+如果你是按 README 中的根目录 workspace 脚本方式启动 Web，更稳妥的写法通常是：
+
+```bash
+pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('packages/web/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
 ```
 
 如果你使用的是 Docker 部署，但不方便在容器内使用 `sqlite3`，也可以使用任意 SQLite 工具直接对容器内的 `/data/monitor.db` 执行上面的 SQL，或者在容器内运行同样的 Node 命令。
