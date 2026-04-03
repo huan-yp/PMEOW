@@ -490,3 +490,45 @@ export interface TaskOwnerOverrideRecord {
   createdAt: number;
   updatedAt: number;
 }
+
+export interface ResolvedPersonSummary {
+  id: string;
+  displayName: string;
+  email: string;
+  qq: string;
+}
+
+export interface PersonSummaryItem {
+  personId: string;
+  displayName: string;
+  currentVramMB: number;
+  runningTaskCount: number;
+  queuedTaskCount: number;
+  activeServerCount: number;
+  lastActivityAt: number;
+  vramOccupancyHours: number;
+  vramGigabyteHours: number;
+  taskRuntimeHours: number;
+}
+
+export interface PersonTimelinePoint {
+  bucketStart: number;
+  personId: string;
+  totalVramMB: number;
+  taskVramMB: number;
+  nonTaskVramMB: number;
+}
+
+export interface PersonBindingSuggestion {
+  serverId: string;
+  serverName: string;
+  systemUser: string;
+  lastSeenAt: number;
+}
+
+export interface ServerPersonActivity {
+  serverId: string;
+  people: Array<{ personId: string; displayName: string; currentVramMB: number; runningTaskCount: number }>;
+  unassignedVramMB: number;
+  unassignedUsers: string[];
+}
