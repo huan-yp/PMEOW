@@ -1,112 +1,119 @@
 # pmeow-agent
 
-Standalone Python agent for PMEOW GPU cluster monitoring. It runs on compute nodes, collects local metrics, tracks GPU ownership, maintains a local task queue, and connects back to the PMEOW Web service over Socket.IO.
+`pmeow-agent` 是 PMEOW 的独立 Python Agent。它运行在计算节点本地，负责本地指标采集、GPU 归属识别、本地任务队列，以及通过 Socket.IO 回连 PMEOW Web 服务。
 
-## Requirements
+如果你是在仓库内开发或部署节点，也建议同时阅读 [../docs/user/agent-nodes.md](../docs/user/agent-nodes.md)。
+
+## 运行要求
 
 - Python 3.10+
-- Linux (uses `/proc` for metric collection)
-- Optional: NVIDIA GPUs with `nvidia-smi` for GPU metrics
+- Linux（依赖 `/proc` 采集系统指标）
+- 可选：NVIDIA GPU 与 `nvidia-smi`，用于 GPU 指标和 GPU 归属视图
 
-## Installation
+## 安装
 
-### From PyPI
+### 从 PyPI 安装
 
 ```bash
 pip install pmeow-agent
 ```
 
-### From source (development)
+### 从源码安装（开发模式）
 
 ```bash
-cd agent/
+cd agent
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-## Usage
+## 使用方式
 
-### Run in the foreground
+### 前台运行
 
 ```bash
+export PMEOW_SERVER_URL=http://your-server:17200
 pmeow-agent run
-# compatibility alias
+
+# 兼容别名
 pmeow-agent daemon
 ```
 
-Foreground mode prints agent runtime logs to the console.
+当前更推荐写成 `pmeow-agent run`。前台模式会把 Agent 运行日志直接打印到当前终端，适合首次接入和现场排障。
 
-### Run in the background
+### 后台运行
 
 ```bash
+export PMEOW_SERVER_URL=http://your-server:17200
 export PMEOW_AGENT_LOG_FILE=~/.pmeow/agent.log
 pmeow-agent start
 pmeow-agent is-running
 pmeow-agent stop
 ```
 
-Background mode writes agent runtime logs to `PMEOW_AGENT_LOG_FILE` and keeps task stdout or stderr in `PMEOW_LOG_DIR`.
+后台模式会把 Agent 运行日志写入 `PMEOW_AGENT_LOG_FILE`，任务的 stdout 和 stderr 仍然写入 `PMEOW_LOG_DIR`。
 
-### Install as a systemd service
+### 安装为 systemd service
 
 ```bash
 sudo pmeow-agent install-service --enable --start
 sudo pmeow-agent uninstall-service
 ```
 
-Systemd supervision keeps the process in the foreground and captures runtime logs in journal.
+systemd 会以前台模式托管进程，运行日志进入 journal。
 
-### Submit a task
+### 提交任务
 
 ```bash
 pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
-# or without GPU requirements
+
+# 如果不需要 GPU
 pmeow-agent submit --pvram 0 --gpu 0 -- bash run_preprocessing.sh
 ```
 
-Options:
-- `--pvram` — Required VRAM per GPU in MB (default: 0)
-- `--gpu` — Number of GPUs required (default: 1)
-- `--priority` — Priority level, lower runs first (default: 10)
+常用参数：
 
-### Check queue status
+- `--pvram`：每张 GPU 需要的显存，单位 MB，默认 `0`
+- `--gpu`：需要的 GPU 数量，默认 `1`
+- `--priority`：优先级，数字越小越先调度，默认 `10`
+
+### 查看队列状态
 
 ```bash
 pmeow-agent status
 ```
 
-Prints counts of queued, running, completed, failed, and cancelled tasks.
+该命令会输出 queued、running、completed、failed 和 cancelled 等任务数量。
 
-### View task logs
+### 查看任务日志
 
 ```bash
 pmeow-agent logs <task_id>
 pmeow-agent logs <task_id> --tail 50
 ```
 
-### Cancel a task
+### 取消任务
 
 ```bash
 pmeow-agent cancel <task_id>
 ```
 
-### Run an attached Python task
+### 直接运行 Python 任务
 
 ```bash
 pmeow -vram=10g -gpus=2 --report train.py --epochs 50
 ```
 
-Rules:
+规则如下：
 
-- Tokens before the first `.py` path are interpreted as PMEOW flags (`-vram`, `-gpus`, `--priority`, `--report`)
-- Tokens after the script path are passed to Python unchanged
-- `--report` prints queue attempts and the current GPU occupancy summary until the task starts
-- Once GPUs are reserved, the same terminal becomes the Python process stdin, stdout, and stderr
+- 第一个 `.py` 路径之前的 token 会被解析为 PMEOW flags，例如 `-vram`、`-gpus`、`--priority`、`--report`
+- 脚本路径之后的参数会原样传给 Python
+- `--report` 会在排队期间打印调度尝试和当前 GPU 占用概览
+- GPU 资源就绪后，同一个终端会直接切换成 Python 进程的 stdin、stdout 和 stderr
 
-### Sample scheduling tasks
+### 可选的 PyTorch 样例任务
 
-PyTorch sample tasks are optional. Install a `torch` build yourself before using them. `pmeow-agent` does not declare `torch` as a default dependency.
+PyTorch 样例任务是可选能力。使用前请自行安装与当前 CUDA 运行时匹配的 `torch`；`pmeow-agent` 不会把 `torch` 作为默认依赖。
 
 ```bash
 pmeow -vram=8g -gpus=1 examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
@@ -114,58 +121,58 @@ pmeow -vram=12g -gpus=2 --report examples/tasks/pytorch_stagger.py --memories 5g
 pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
 ```
 
-### Pause / resume the queue
+### 暂停 / 恢复队列
 
 ```bash
 pmeow-agent pause
 pmeow-agent resume
 ```
 
-When paused, no new tasks are started. Running tasks continue to completion.
+队列暂停后不会再启动新任务，但已经 running 的任务会继续执行到结束。
 
-## Configuration
+## 环境变量
 
-All settings are configured via environment variables. Defaults are used when a variable is not set.
+Agent 通过环境变量配置；未设置时会使用默认值。
 
-| Variable | Default | Description |
+| 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PMEOW_SERVER_URL` | *(empty)* | PMEOW Web server base URL (e.g. `http://server:17200`) |
-| `PMEOW_AGENT_ID` | hostname | Unique identifier for this agent |
-| `PMEOW_COLLECTION_INTERVAL` | `5` | Seconds between metric collection cycles |
-| `PMEOW_HEARTBEAT_INTERVAL` | `30` | Seconds between heartbeat reports to server |
-| `PMEOW_HISTORY_WINDOW` | `120` | Seconds of GPU history kept for scheduling |
-| `PMEOW_VRAM_REDUNDANCY` | `0.1` | VRAM safety margin (0.0–1.0) — fraction reserved beyond task requirements |
-| `PMEOW_STATE_DIR` | `~/.pmeow/` | Directory for database and runtime state |
-| `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | Path to the Unix socket for CLI ↔ daemon communication |
-| `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | Directory where task stdout/stderr logs are stored |
-| `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | Pid file used by background mode |
-| `PMEOW_AGENT_LOG_FILE` | *(empty)* | Dedicated runtime log file used by background mode |
+| `PMEOW_SERVER_URL` | 空 | PMEOW Web 服务基础 URL，例如 `http://server:17200` |
+| `PMEOW_AGENT_ID` | hostname | 当前 Agent 的唯一标识 |
+| `PMEOW_COLLECTION_INTERVAL` | `5` | 指标采集间隔，单位秒 |
+| `PMEOW_HEARTBEAT_INTERVAL` | `30` | 心跳上报间隔，单位秒 |
+| `PMEOW_HISTORY_WINDOW` | `120` | 调度时参考的历史窗口，单位秒 |
+| `PMEOW_VRAM_REDUNDANCY` | `0.1` | 显存冗余系数，用于给非 PMEOW 进程预留安全余量 |
+| `PMEOW_STATE_DIR` | `~/.pmeow/` | 本地状态目录 |
+| `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | CLI 与 daemon 通信的 Unix socket |
+| `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | 任务 stdout 和 stderr 日志目录 |
+| `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | 后台模式使用的 pid 文件 |
+| `PMEOW_AGENT_LOG_FILE` | 空 | 后台模式使用的专用运行日志文件 |
 
-`PMEOW_SERVER_URL` should point at the PMEOW Web service base URL. The agent transport layer will connect to the Socket.IO `/agent` namespace automatically; do not append `/agent` yourself and do not use a raw WebSocket URL.
+`PMEOW_SERVER_URL` 需要指向 PMEOW Web 服务的基础 URL。Agent transport 会自动连接 Socket.IO `/agent` namespace；不要自己拼 `/agent`，也不要改成原始 WebSocket URL。
 
-## State directory
+## 状态目录
 
-By default, all agent state is stored under `~/.pmeow/`:
+默认情况下，所有 Agent 状态都保存在 `~/.pmeow/` 下：
 
-```
+```text
 ~/.pmeow/
-├── pmeow.db        # SQLite database (tasks, runtime state)
-├── pmeow.sock      # Unix domain socket (daemon control)
-├── pmeow-agent.pid # Pid file (background mode only)
+├── pmeow.db        # 本地 SQLite（任务和运行状态）
+├── pmeow.sock      # Unix domain socket（daemon 控制通道）
+├── pmeow-agent.pid # pid 文件，仅后台模式使用
 └── logs/
     ├── <task_id>.log
     └── ...
 ```
 
-## Development
+## 开发与测试
 
 ```bash
 pip install -e ".[dev]"
 pytest -v
 ```
 
-## Notes on server integration
+## 与服务端集成说明
 
-- The agent sends `agent:register`, `agent:metrics`, `agent:taskUpdate`, and `agent:heartbeat` over Socket.IO.
-- The server may send `server:cancelTask`, `server:pauseQueue`, `server:resumeQueue`, and `server:setPriority` back to the agent when the node is online.
-- Server-side binding is hostname-based. Keep the Web server's `servers.host` value aligned with the node hostname if you want automatic binding.
+- Agent 会通过 Socket.IO 向服务端发送 `agent:register`、`agent:metrics`、`agent:taskUpdate` 和 `agent:heartbeat`
+- 节点在线时，服务端可能会回发 `server:cancelTask`、`server:pauseQueue`、`server:resumeQueue` 和 `server:setPriority`
+- 服务端侧的自动绑定基于 hostname 精确匹配；如果你希望自动绑定成功，应让 Web 侧 `servers.host` 与节点 hostname 保持一致
