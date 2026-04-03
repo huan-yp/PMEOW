@@ -2,14 +2,21 @@
   "name": "server-monitor",
   "private": true,
   "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
   "description": "PMEOW - GPU cluster monitoring and scheduling platform for labs",
   "scripts": {
-    "dev:ui": "pnpm --filter @monitor/ui dev",
-    "dev:web": "pnpm --filter @monitor/web dev",
-    "build:core": "pnpm --filter @monitor/core exec tsc",
-    "build:ui": "pnpm --filter @monitor/ui build",
-    "build:web": "pnpm run build:core && pnpm run build:ui && pnpm --filter @monitor/web build",
-    "start:web": "pnpm --filter @monitor/web start"
+    "dev:ui": "npm run dev --workspace=@monitor/ui",
+    "dev:web": "npm run dev --workspace=@monitor/web",
+    "build:core": "npm run build --workspace=@monitor/core",
+    "build:ui": "npm run build --workspace=@monitor/ui",
+    "build:web": "npm run build:core && npm run build:ui && npm run build --workspace=@monitor/web",
+    "start:web": "npm run start --workspace=@monitor/web",
+    "test:core": "npm run test --workspace=@monitor/core",
+    "test:web": "npm run test --workspace=@monitor/web",
+    "typecheck:core": "npm run typecheck --workspace=@monitor/core",
+    "typecheck:web": "npm run typecheck --workspace=@monitor/web"
   },
   "engines": {
     "node": ">=20.0.0"

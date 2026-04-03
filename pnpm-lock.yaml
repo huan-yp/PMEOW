@@ -39,7 +39,7 @@ importers:
   packages/ui:
     dependencies:
       '@monitor/core':
-        specifier: workspace:*
+        specifier: file:../core
         version: link:../core
       echarts:
         specifier: ^5.5.0
@@ -106,7 +106,7 @@ importers:
   packages/web:
     dependencies:
       '@monitor/core':
-        specifier: workspace:*
+        specifier: file:../core
         version: link:../core
       bcryptjs:
         specifier: ^2.4.3
