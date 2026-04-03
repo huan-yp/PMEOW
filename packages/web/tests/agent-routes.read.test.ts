@@ -16,6 +16,7 @@ process.env.MONITOR_DB_PATH = ':memory:';
 
 const runtimes: WebRuntime[] = [];
 const clients: Socket[] = [];
+const DEFAULT_TIMESTAMP_MS = 1_700_000_000_000;
 
 function trackRuntime(runtime: WebRuntime): WebRuntime {
   runtimes.push(runtime);
@@ -150,7 +151,7 @@ function createGpuAllocation(taskId = 'task-1', user = 'alice'): GpuAllocationSu
 function createSnapshot(serverId: string, overrides: Partial<MetricsSnapshot> = {}): MetricsSnapshot {
   return {
     serverId,
-    timestamp: 1_000,
+    timestamp: DEFAULT_TIMESTAMP_MS,
     cpu: {
       usagePercent: 42,
       coreCount: 16,
@@ -280,7 +281,7 @@ describe('agent read routes', () => {
     const client = await connectAgent(baseUrl);
     const gpuAllocation = createGpuAllocation();
     const incomingSnapshot = createSnapshot('wrong-server-id', {
-      timestamp: 1_111,
+      timestamp: DEFAULT_TIMESTAMP_MS + 1_111,
       gpuAllocation,
     });
 
@@ -299,6 +300,54 @@ describe('agent read routes', () => {
       expect(getLatestGpuUsageByServerId(server.id)).toEqual(
         expectedGpuUsageRows(server.id, incomingSnapshot.timestamp),
       );
+    });
+  });
+
+  it('metrics ingress converts second-based timestamps to milliseconds before persistence', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-metrics-seconds',
+      host: 'gpu-metrics-seconds',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-metrics-seconds',
+    });
+    const client = await connectAgent(baseUrl);
+    const gpuAllocation = createGpuAllocation();
+    const secondBasedTimestamp = Date.now() / 1000 - 5.125;
+    const normalizedTimestamp = Math.round(secondBasedTimestamp * 1000);
+
+    client.emit('agent:register', {
+      agentId: 'agent-metrics-seconds',
+      hostname: 'gpu-metrics-seconds',
+      version: '1.0.0',
+    });
+    client.emit('agent:metrics', createSnapshot(server.id, {
+      timestamp: secondBasedTimestamp,
+      gpuAllocation,
+    }));
+
+    await waitForCondition(async () => {
+      expect(getLatestMetrics(server.id)?.timestamp).toBe(normalizedTimestamp);
+      expect(getLatestGpuUsageByServerId(server.id)).toEqual(
+        expectedGpuUsageRows(server.id, normalizedTimestamp),
+      );
+
+      const historyResponse = await api
+        .get(`/api/metrics/${server.id}/history?hours=1`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(historyResponse.status).toBe(200);
+      expect(historyResponse.body).toEqual([
+        expect.objectContaining({
+          serverId: server.id,
+          timestamp: normalizedTimestamp,
+        }),
+      ]);
     });
   });
 
@@ -347,7 +396,7 @@ describe('agent read routes', () => {
       requireGpuCount: 1,
       gpuIds: [0],
       priority: 7,
-      createdAt: 900,
+      createdAt: DEFAULT_TIMESTAMP_MS + 900,
     });
 
     await waitForCondition(async () => {
@@ -368,7 +417,7 @@ describe('agent read routes', () => {
           requireGpuCount: 1,
           gpuIds: [0],
           priority: 7,
-          createdAt: 900,
+          createdAt: DEFAULT_TIMESTAMP_MS + 900,
           startedAt: null,
           finishedAt: null,
           exitCode: null,
@@ -395,6 +444,64 @@ describe('agent read routes', () => {
     expect(missingServerResponse.status).toBe(404);
   });
 
+  it('task update ingress converts second-based lifecycle timestamps to milliseconds', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-task-seconds',
+      host: 'gpu-task-seconds',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-task-seconds',
+    });
+    const client = await connectAgent(baseUrl);
+    const createdAtSeconds = Date.now() / 1000 - 10.25;
+    const startedAtSeconds = createdAtSeconds + 2.5;
+    const finishedAtSeconds = startedAtSeconds + 12.75;
+
+    client.emit('agent:register', {
+      agentId: 'agent-task-seconds',
+      hostname: 'gpu-task-seconds',
+      version: '1.0.0',
+    });
+    client.emit('agent:taskUpdate', {
+      taskId: 'task-seconds',
+      status: 'completed',
+      command: 'python eval.py',
+      cwd: '/srv/jobs/eval',
+      user: 'bob',
+      createdAt: createdAtSeconds,
+      startedAt: startedAtSeconds,
+      finishedAt: finishedAtSeconds,
+      exitCode: 0,
+    });
+
+    await waitForCondition(async () => {
+      const response = await api
+        .get(`/api/servers/${server.id}/tasks/task-seconds`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        serverId: server.id,
+        taskId: 'task-seconds',
+        status: 'completed',
+        command: 'python eval.py',
+        cwd: '/srv/jobs/eval',
+        user: 'bob',
+        createdAt: Math.round(createdAtSeconds * 1000),
+        startedAt: Math.round(startedAtSeconds * 1000),
+        finishedAt: Math.round(finishedAtSeconds * 1000),
+        exitCode: 0,
+        gpuIds: null,
+        pid: null,
+      });
+    });
+  });
+
   it('gpu allocation endpoint returns the latest mirrored allocation', async () => {
     const { baseUrl } = await startRuntime();
     const token = await login(baseUrl);
@@ -418,11 +525,11 @@ describe('agent read routes', () => {
       version: '1.0.0',
     });
     client.emit('agent:metrics', createSnapshot(server.id, {
-      timestamp: 1_000,
+      timestamp: DEFAULT_TIMESTAMP_MS + 1_000,
       gpuAllocation: olderAllocation,
     }));
     client.emit('agent:metrics', createSnapshot(server.id, {
-      timestamp: 2_000,
+      timestamp: DEFAULT_TIMESTAMP_MS + 2_000,
       gpuAllocation: latestAllocation,
     }));
 
@@ -464,13 +571,13 @@ describe('agent read routes', () => {
       version: '1.0.0',
     });
     client.emit('agent:metrics', createSnapshot(server.id, {
-      timestamp: 3_000,
+      timestamp: DEFAULT_TIMESTAMP_MS + 3_000,
       gpuAllocation,
     }));
     client.emit('agent:taskUpdate', {
       taskId: 'task-disconnect',
       status: 'running',
-      startedAt: 3_100,
+      startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
       pid: 4_321,
     });
 
@@ -489,7 +596,7 @@ describe('agent read routes', () => {
           taskId: 'task-disconnect',
           status: 'running',
           gpuIds: null,
-          startedAt: 3_100,
+          startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
           finishedAt: null,
           exitCode: null,
           pid: 4_321,
@@ -519,7 +626,7 @@ describe('agent read routes', () => {
         taskId: 'task-disconnect',
         status: 'running',
         gpuIds: null,
-        startedAt: 3_100,
+        startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
         finishedAt: null,
         exitCode: null,
         pid: 4_321,
@@ -544,7 +651,7 @@ describe('agent read routes', () => {
     });
     const client = await connectAgent(baseUrl);
     const snapshot = createSnapshot(server.id, {
-      timestamp: 4_000,
+      timestamp: DEFAULT_TIMESTAMP_MS + 4_000,
     });
 
     client.emit('agent:register', {

@@ -4,7 +4,9 @@ import { useStore } from '../store/useStore.js';
 
 export function useMetricsSubscription() {
   const transport = useTransport();
-  const { setLatestMetrics, setStatus, addToast } = useStore();
+  const setLatestMetrics = useStore((state) => state.setLatestMetrics);
+  const setStatus = useStore((state) => state.setStatus);
+  const addToast = useStore((state) => state.addToast);
 
   useEffect(() => {
     const unsubs = [
@@ -13,6 +15,9 @@ export function useMetricsSubscription() {
       }),
       transport.onServerStatus((status) => {
         setStatus(status);
+        if (status.latestMetrics) {
+          setLatestMetrics(status.latestMetrics);
+        }
       }),
       transport.onAlert((alert) => {
         addToast(
@@ -43,7 +48,10 @@ export function useMetricsSubscription() {
 
 export function useLoadInitialData() {
   const transport = useTransport();
-  const { setServers, setStatuses, setHooks, setSettings } = useStore();
+  const setServers = useStore((state) => state.setServers);
+  const setStatuses = useStore((state) => state.setStatuses);
+  const setHooks = useStore((state) => state.setHooks);
+  const setSettings = useStore((state) => state.setSettings);
 
   useEffect(() => {
     async function load() {
@@ -57,7 +65,41 @@ export function useLoadInitialData() {
       setStatuses(statuses);
       setHooks(hooks);
       setSettings(settings);
+
+      const latestByServerId = new Map(
+        statuses
+          .filter((status) => status.latestMetrics !== undefined)
+          .map((status) => [status.serverId, status.latestMetrics!]),
+      );
+      const latestResults = await Promise.allSettled(
+        servers.map(async (server) => ({
+          serverId: server.id,
+          snapshot: await transport.getLatestMetrics(server.id),
+        })),
+      );
+
+      for (const result of latestResults) {
+        if (result.status !== 'fulfilled' || result.value.snapshot === null) {
+          continue;
+        }
+
+        const currentSnapshot = latestByServerId.get(result.value.serverId);
+        if (!currentSnapshot || result.value.snapshot.timestamp >= currentSnapshot.timestamp) {
+          latestByServerId.set(result.value.serverId, result.value.snapshot);
+        }
+      }
+
+      useStore.setState((state) => {
+        const nextLatestMetrics = new Map(state.latestMetrics);
+        latestByServerId.forEach((snapshot, serverId) => {
+          nextLatestMetrics.set(serverId, snapshot);
+        });
+
+        return {
+          latestMetrics: nextLatestMetrics,
+        };
+      });
     }
-    load();
+    load().catch(() => undefined);
   }, [transport, setServers, setStatuses, setHooks, setSettings]);
 }

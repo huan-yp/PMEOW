@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 import type { WebRuntime } from '../src/app.js';
 import { AgentTestStub, login, startTestRuntime, waitForCondition } from './setup.js';
 
+const DEFAULT_TIMESTAMP_MS = 1_700_000_000_000;
+
 function createUniqueHost(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
 }
@@ -234,7 +236,7 @@ describe('agent integration', () => {
       userPid: 2_201,
       unknownPid: 991,
     });
-    const incomingSnapshot = createSnapshot('wrong-server-id', host, 1_111, gpuAllocation);
+    const incomingSnapshot = createSnapshot('wrong-server-id', host, DEFAULT_TIMESTAMP_MS + 1_111, gpuAllocation);
 
     await agent.connect();
     agent.register({ agentId, hostname: host });
@@ -268,8 +270,8 @@ describe('agent integration', () => {
       requireGpuCount: 1,
       gpuIds: [0],
       priority: 9,
-      createdAt: 900,
-      startedAt: 1_000,
+      createdAt: DEFAULT_TIMESTAMP_MS + 900,
+      startedAt: DEFAULT_TIMESTAMP_MS + 1_000,
       pid: 4_321,
     });
 
@@ -294,8 +296,8 @@ describe('agent integration', () => {
           requireGpuCount: 1,
           gpuIds: [0],
           priority: 9,
-          createdAt: 900,
-          startedAt: 1_000,
+          createdAt: DEFAULT_TIMESTAMP_MS + 900,
+          startedAt: DEFAULT_TIMESTAMP_MS + 1_000,
           finishedAt: null,
           exitCode: null,
           pid: 4_321,
@@ -364,8 +366,8 @@ describe('agent integration', () => {
       userPid: 3_202,
       unknownPid: 1_002,
     });
-    const initialSnapshot = createSnapshot('stale-server-id', host, 2_000, initialAllocation);
-    const refreshedSnapshot = createSnapshot('stale-server-id-2', host, 3_000, refreshedAllocation);
+    const initialSnapshot = createSnapshot('stale-server-id', host, DEFAULT_TIMESTAMP_MS + 2_000, initialAllocation);
+    const refreshedSnapshot = createSnapshot('stale-server-id-2', host, DEFAULT_TIMESTAMP_MS + 3_000, refreshedAllocation);
 
     await initialAgent.connect();
     initialAgent.register({ agentId, hostname: host });
@@ -386,8 +388,8 @@ describe('agent integration', () => {
       requireGpuCount: 1,
       gpuIds: [0],
       priority: 5,
-      createdAt: 1_500,
-      startedAt: 2_100,
+      createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
+      startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
       pid: 6_001,
     });
 
@@ -412,8 +414,8 @@ describe('agent integration', () => {
           requireGpuCount: 1,
           gpuIds: [0],
           priority: 5,
-          createdAt: 1_500,
-          startedAt: 2_100,
+          createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
+          startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
           finishedAt: null,
           exitCode: null,
           pid: 6_001,
@@ -458,8 +460,8 @@ describe('agent integration', () => {
         requireGpuCount: 1,
         gpuIds: [0],
         priority: 5,
-        createdAt: 1_500,
-        startedAt: 2_100,
+        createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
+        startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
         finishedAt: null,
         exitCode: null,
         pid: 6_001,

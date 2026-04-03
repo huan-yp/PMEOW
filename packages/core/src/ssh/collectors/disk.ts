@@ -1,6 +1,27 @@
 import type { SSHManager } from '../manager.js';
 import type { DiskMetrics, DiskInfo } from '../../types.js';
 
+const SKIP_MOUNT_PREFIXES = [
+  '/mnt/wsl',
+  '/mnt/wslg',
+  '/var/lib/docker',
+];
+
+function shouldIncludeMountPoint(mountPoint: string): boolean {
+  const normalized = mountPoint.replace(/\/+$/, '') || '/';
+  if (!normalized) {
+    return false;
+  }
+
+  if (normalized === '/') {
+    return true;
+  }
+
+  return !SKIP_MOUNT_PREFIXES.some((prefix) => (
+    normalized === prefix || normalized.startsWith(`${prefix}/`)
+  ));
+}
+
 export async function collectDisk(ssh: SSHManager, serverId: string): Promise<DiskMetrics> {
   const script = `
     df -BG --output=source,target,size,used,avail,pcent -x tmpfs -x devtmpfs -x squashfs 2>/dev/null | tail -n+2
@@ -14,16 +35,21 @@ export async function collectDisk(ssh: SSHManager, serverId: string): Promise<Di
 
   // Parse df output
   const dfLines = sections[0].trim().split('\n').filter(l => l.trim());
-  const disks: DiskInfo[] = dfLines.map(line => {
+  const disks: DiskInfo[] = dfLines.flatMap((line) => {
     const parts = line.trim().split(/\s+/);
-    return {
+    const mountPoint = parts[1] || '';
+    if (!shouldIncludeMountPoint(mountPoint)) {
+      return [];
+    }
+
+    return [{
       filesystem: parts[0] || '',
-      mountPoint: parts[1] || '',
+      mountPoint,
       totalGB: parseFloat(parts[2]) || 0,
       usedGB: parseFloat(parts[3]) || 0,
       availableGB: parseFloat(parts[4]) || 0,
       usagePercent: parseInt(parts[5]) || 0,
-    };
+    }];
   });
 
   // Parse disk IO (two snapshots 0.5s apart)

@@ -96,6 +96,22 @@ function normalizeHeartbeatTimestamp(timestamp: number): number {
   return Math.round(timestamp);
 }
 
+function normalizeTimestamp(timestamp: number): number {
+  if (timestamp < MILLIS_TIMESTAMP_THRESHOLD) {
+    return Math.round(timestamp * 1000);
+  }
+
+  return Math.round(timestamp);
+}
+
+function normalizeOptionalTimestamp(timestamp: number | null | undefined): number | null | undefined {
+  if (timestamp === undefined || timestamp === null) {
+    return timestamp;
+  }
+
+  return normalizeTimestamp(timestamp);
+}
+
 function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSession {
   return {
     agentId,
@@ -138,13 +154,21 @@ function normalizeMetricsPayload(
     return undefined;
   }
 
-  if (payload.serverId === serverId) {
-    return payload;
+  const normalizedPayload = payload.serverId === serverId
+    ? payload
+    : {
+      ...payload,
+      serverId,
+    };
+
+  const normalizedTimestamp = normalizeTimestamp(normalizedPayload.timestamp);
+  if (normalizedTimestamp === normalizedPayload.timestamp) {
+    return normalizedPayload;
   }
 
   return {
-    ...payload,
-    serverId,
+    ...normalizedPayload,
+    timestamp: normalizedTimestamp,
   };
 }
 
@@ -157,13 +181,18 @@ function normalizeTaskUpdatePayload(
   }
 
   if (isAgentTaskUpdatePayload(payload)) {
-    if (payload.serverId === serverId) {
-      return payload;
-    }
+    const normalizedPayload = payload.serverId === serverId
+      ? payload
+      : {
+        ...payload,
+        serverId,
+      };
 
     return {
-      ...payload,
-      serverId,
+      ...normalizedPayload,
+      createdAt: normalizeOptionalTimestamp(normalizedPayload.createdAt),
+      startedAt: normalizeOptionalTimestamp(normalizedPayload.startedAt),
+      finishedAt: normalizeOptionalTimestamp(normalizedPayload.finishedAt),
     };
   }
 
@@ -176,9 +205,16 @@ function normalizeTaskUpdatePayload(
     serverId,
   };
 
-  return isAgentTaskUpdatePayload(normalizedPayload)
-    ? normalizedPayload
-    : undefined;
+  if (!isAgentTaskUpdatePayload(normalizedPayload)) {
+    return undefined;
+  }
+
+  return {
+    ...normalizedPayload,
+    createdAt: normalizeOptionalTimestamp(normalizedPayload.createdAt),
+    startedAt: normalizeOptionalTimestamp(normalizedPayload.startedAt),
+    finishedAt: normalizeOptionalTimestamp(normalizedPayload.finishedAt),
+  };
 }
 
 export function createAgentNamespace(
