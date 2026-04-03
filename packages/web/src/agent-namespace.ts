@@ -106,9 +106,9 @@ function normalizeTimestamp(timestamp: number): number {
   return Math.round(timestamp);
 }
 
-function normalizeOptionalTimestamp(timestamp: number | null | undefined): number | null | undefined {
-  if (timestamp === undefined || timestamp === null) {
-    return timestamp;
+function normalizeOptionalTimestamp(timestamp: number | null | undefined): number | undefined {
+  if (timestamp == null) {
+    return undefined;
   }
 
   return normalizeTimestamp(timestamp);
