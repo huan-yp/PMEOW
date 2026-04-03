@@ -173,15 +173,29 @@ export function updatePersonBinding(id: string, input: Partial<{
   effectiveTo: number | null;
 }>): PersonBindingRecord {
   const db = getDatabase();
+  const existing = db.prepare('SELECT * FROM person_bindings WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  if (!existing) throw new Error('Binding not found');
+
+  const sets: string[] = [];
+  const params: unknown[] = [];
   const now = Date.now();
+
   if (input.enabled !== undefined) {
-    db.prepare('UPDATE person_bindings SET enabled = ?, updatedAt = ? WHERE id = ?')
-      .run(input.enabled ? 1 : 0, now, id);
+    sets.push('enabled = ?');
+    params.push(input.enabled ? 1 : 0);
   }
   if (input.effectiveTo !== undefined) {
-    db.prepare('UPDATE person_bindings SET effectiveTo = ?, updatedAt = ? WHERE id = ?')
-      .run(input.effectiveTo, now, id);
+    sets.push('effectiveTo = ?');
+    params.push(input.effectiveTo);
   }
+
+  if (sets.length > 0) {
+    sets.push('updatedAt = ?');
+    params.push(now);
+    params.push(id);
+    db.prepare(`UPDATE person_bindings SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+  }
+
   return rowToBinding(db.prepare('SELECT * FROM person_bindings WHERE id = ?').get(id) as Record<string, unknown>);
 }
 
