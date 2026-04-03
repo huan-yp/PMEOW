@@ -9,6 +9,7 @@ import { DockerList } from '../components/DockerList.js';
 import { GpuAllocationBars } from '../components/GpuAllocationBars.js';
 import { ProgressBar } from '../components/ProgressBar.js';
 import { buildAdaptiveRateChart, formatBytesPerSecond } from '../utils/rates';
+import { formatMemoryPairGB, formatVramGB, formatVramPairGB } from '../utils/vram.js';
 import type { MetricsSnapshot, ProcessAuditRow, ServerPersonActivity, ResolvedGpuAllocationResponse } from '@monitor/core';
 
 type Tab = 'overview' | 'processes' | 'docker' | 'tasks';
@@ -286,7 +287,7 @@ export function ServerDetail() {
             </div>
             <div className="flex flex-col items-center rounded-lg border border-dark-border bg-dark-card p-4">
               <GaugeChart value={metrics?.memory.usagePercent ?? 0} label="内存" size={100} />
-              <p className="mt-1 text-xs text-slate-500">{metrics?.memory.usedMB ?? 0} / {metrics?.memory.totalMB ?? 0} MB</p>
+              <p className="mt-1 text-xs text-slate-500">{formatMemoryPairGB(metrics?.memory.usedMB ?? 0, metrics?.memory.totalMB ?? 0)}</p>
             </div>
             <div className="rounded-lg border border-dark-border bg-dark-card p-4 text-center">
               <p className="mb-2 text-xs text-slate-500">网络</p>
@@ -307,7 +308,7 @@ export function ServerDetail() {
                     <div className="text-right">
                       <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500/80">VRAM</p>
                       <p className="font-mono text-sm font-semibold tracking-tight text-slate-300">
-                        {metrics.gpu.usedMemoryMB}/{metrics.gpu.totalMemoryMB} MB
+                        {formatVramPairGB(metrics.gpu.usedMemoryMB, metrics.gpu.totalMemoryMB)}
                       </p>
                       <p className="text-[11px] text-slate-500">{metrics.gpu.temperatureC}°C</p>
                     </div>
@@ -405,12 +406,12 @@ export function ServerDetail() {
                 {personActivity.people.map((person) => (
                   <div key={person.personId} className="flex justify-between text-sm text-slate-300">
                     <span>{person.displayName}</span>
-                    <span className="text-slate-400">{person.currentVramMB} MB</span>
+                    <span className="text-slate-400">{formatVramGB(person.currentVramMB)}</span>
                   </div>
                 ))}
               </div>
               {personActivity.unassignedVramMB > 0 && (
-                <p className="mt-2 text-xs text-slate-500">未分配显存: {personActivity.unassignedVramMB} MB</p>
+                <p className="mt-2 text-xs text-slate-500">未分配显存: {formatVramGB(personActivity.unassignedVramMB)}</p>
               )}
             </div>
           )}

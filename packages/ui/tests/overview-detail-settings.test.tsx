@@ -344,7 +344,7 @@ describe('overview detail settings', () => {
     await user.click(await screen.findByRole('button', { name: '节点态势' }));
     expect(await screen.findByText('GPU 归属总览')).toBeTruthy();
     expect(await screen.findByText(/alice/)).toBeTruthy();
-    expect(await screen.findByText('16384 MB')).toBeTruthy();
+    expect(await screen.findByText('16.0 GB')).toBeTruthy();
     expect(transport.getGpuOverview).toHaveBeenCalledTimes(1);
   });
 
@@ -401,7 +401,7 @@ describe('overview detail settings', () => {
     expect(shell).toBeTruthy();
     expect(within(shell!).getByText('GPU 利用率')).toBeTruthy();
     expect(within(shell!).getByText('72%')).toBeTruthy();
-    expect(within(shell!).getByText('VRAM 28672/49152 MB')).toBeTruthy();
+    expect(within(shell!).getByText('VRAM 28.0/48.0 GB')).toBeTruthy();
     expect(within(shell!).getByText('VRAM')).toBeTruthy();
 
     unmount();
@@ -417,8 +417,110 @@ describe('overview detail settings', () => {
     expect(await screen.findByText('GPU 利用率')).toBeTruthy();
     expect(screen.getByText('72%')).toBeTruthy();
     expect(screen.getAllByText('VRAM').length).toBeGreaterThan(0);
-    expect(screen.getByText('28672/49152 MB')).toBeTruthy();
+    expect(screen.getByText('64.0/128.0 GB')).toBeTruthy();
+    expect(screen.getByText('28.0/48.0 GB')).toBeTruthy();
     expect(screen.getByText('61°C')).toBeTruthy();
+    expect(screen.getByText('24.0 GB')).toBeTruthy();
+    expect(screen.getByText('Task 6.0 GB')).toBeTruthy();
+    expect(screen.getByText('User 4.0 GB')).toBeTruthy();
+    expect(screen.getByText('Unknown 1.0 GB')).toBeTruthy();
+    expect(screen.getByText('Free 13.0 GB')).toBeTruthy();
+  });
+
+  it('renders resolved GPU allocation and person activity with GB-formatted VRAM values', async () => {
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    transport.getResolvedGpuAllocation = vi.fn(async () => ({
+      serverId: server.id,
+      snapshotTimestamp: 1_710_000_000_000,
+      perGpu: [
+        {
+          gpuIndex: 0,
+          totalMemoryMB: 12288,
+          freeMB: 512,
+          segments: [
+            {
+              ownerKey: 'person:person-1',
+              ownerKind: 'person',
+              displayName: 'Alice Example',
+              usedMemoryMB: 3584,
+              personId: 'person-1',
+              sourceKinds: ['task'],
+            },
+          ],
+        },
+      ],
+    }));
+    transport.getServerPersonActivity = vi.fn(async () => ({
+      serverId: server.id,
+      people: [
+        {
+          personId: 'person-1',
+          displayName: 'Alice Example',
+          currentVramMB: 4096,
+          runningTaskCount: 1,
+        },
+      ],
+      unassignedVramMB: 512,
+      unassignedUsers: ['root'],
+    }));
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    expect(await screen.findByRole('heading', { name: server.name })).toBeTruthy();
+    expect(await screen.findByText('Alice Example')).toBeTruthy();
+    expect(await screen.findByText('Alice Example 3.5 GB')).toBeTruthy();
+    expect(screen.getByText('12.0 GB')).toBeTruthy();
+    expect(screen.getByText('4.0 GB')).toBeTruthy();
+    expect(screen.getByText('Free 0.5 GB')).toBeTruthy();
+    expect(screen.getByText('未分配显存: 0.5 GB')).toBeTruthy();
+    expect(screen.getByTitle('Alice Example: 3.5 GB')).toBeTruthy();
+  });
+
+  it('shows process VRAM values in GB on the process tab', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    expect(await screen.findByRole('heading', { name: server.name })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '进程' }));
+
+    expect(await screen.findByRole('columnheader', { name: 'RSS GB' })).toBeTruthy();
+    expect(await screen.findByRole('columnheader', { name: 'VRAM GB' })).toBeTruthy();
+    expect(screen.getByText('0.1 GB')).toBeTruthy();
+    expect(screen.getByText('1.0 GB')).toBeTruthy();
   });
 
   it('keeps server detail stable when history and process audit requests fail', async () => {

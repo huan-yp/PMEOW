@@ -1,4 +1,5 @@
 import type { GpuAllocationSummary, ResolvedGpuAllocationResponse } from '@monitor/core';
+import { formatVramGB } from '../utils/vram.js';
 
 interface Props {
   allocation?: GpuAllocationSummary;
@@ -54,14 +55,14 @@ export function GpuAllocationBars({ allocation, resolved }: Props) {
               <div key={gpu.gpuIndex}>
                 <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
                   <span>GPU {gpu.gpuIndex}</span>
-                  <span>{gpu.totalMemoryMB} MB</span>
+                  <span>{formatVramGB(gpu.totalMemoryMB)}</span>
                 </div>
                 <div className="flex h-3 overflow-hidden rounded-full bg-dark-bg border border-dark-border/70">
                   {segments.filter((s) => s.value > 0).map((s) => (
                     <div
                       key={s.key}
                       style={{ width: `${(s.value / totalMB) * 100}%`, ...s.style }}
-                      title={`${s.label}: ${s.value} MB`}
+                      title={`${s.label}: ${formatVramGB(s.value)}`}
                     />
                   ))}
                 </div>
@@ -69,7 +70,7 @@ export function GpuAllocationBars({ allocation, resolved }: Props) {
                   {segments.map((s) => (
                     <span key={s.key} className="flex items-center gap-1">
                       <span className="inline-block h-2 w-2 rounded-full" style={s.style} />
-                      {s.label} {s.value} MB
+                      {s.label} {formatVramGB(s.value)}
                     </span>
                   ))}
                 </div>
@@ -111,7 +112,7 @@ export function GpuAllocationBars({ allocation, resolved }: Props) {
             <div key={gpu.gpuIndex}>
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
                 <span>GPU {gpu.gpuIndex}</span>
-                <span>{gpu.totalMemoryMB} MB</span>
+                <span>{formatVramGB(gpu.totalMemoryMB)}</span>
               </div>
               <div className="flex h-3 overflow-hidden rounded-full bg-dark-bg border border-dark-border/70">
                 {segments.filter((segment) => segment.value > 0).map((segment) => (
@@ -119,13 +120,13 @@ export function GpuAllocationBars({ allocation, resolved }: Props) {
                     key={segment.key}
                     className={segment.className}
                     style={{ width: `${(segment.value / totalMB) * 100}%` }}
-                    title={`${segment.label}: ${segment.value} MB`}
+                    title={`${segment.label}: ${formatVramGB(segment.value)}`}
                   />
                 ))}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-slate-500">
                 {segments.map((segment) => (
-                  <span key={segment.key}>{segment.label} {segment.value} MB</span>
+                  <span key={segment.key}>{segment.label} {formatVramGB(segment.value)}</span>
                 ))}
               </div>
             </div>

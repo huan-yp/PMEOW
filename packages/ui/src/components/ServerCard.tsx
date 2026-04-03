@@ -4,6 +4,7 @@ import { GaugeChart } from './GaugeChart.js';
 import { ProgressBar } from './ProgressBar.js';
 import { useStore } from '../store/useStore.js';
 import { formatBytesPerSecond } from '../utils/rates';
+import { formatVramPairGB } from '../utils/vram.js';
 
 function getGpuUtilTextClass(utilizationPercent: number) {
   if (utilizationPercent >= 90) {
@@ -174,7 +175,7 @@ export function ServerCard({ server, status, metrics }: Props) {
                     {metrics.gpu.utilizationPercent.toFixed(0)}%
                   </p>
                   <p className="font-mono text-[11px] font-medium tracking-tight text-slate-400">
-                    VRAM {metrics.gpu.usedMemoryMB}/{metrics.gpu.totalMemoryMB} MB
+                    VRAM {formatVramPairGB(metrics.gpu.usedMemoryMB, metrics.gpu.totalMemoryMB)}
                   </p>
                 </div>
               ) : (

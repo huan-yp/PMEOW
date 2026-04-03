@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { PersonRecord, PersonSummaryItem } from '@monitor/core';
+import { formatVramGB } from '../utils/vram.js';
 
 type PersonDirectoryRow = Pick<PersonRecord, 'id' | 'displayName' | 'email' | 'qq' | 'note'> & {
   currentVramMB: number;
@@ -30,28 +31,60 @@ function mergePersonDirectory(persons: PersonRecord[], summary: PersonSummaryIte
   });
 }
 
+function PeopleOverviewLoadingState() {
+  return (
+    <div className="space-y-4" role="status" aria-label="人员加载中">
+      <div className="rounded-2xl border border-dark-border bg-dark-card/50 px-4 py-3 text-sm text-slate-500">
+        正在加载人员目录...
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 3 }, (_value, index) => (
+          <div key={index} className="rounded-2xl border border-dark-border bg-dark-card p-5">
+            <div className="h-6 w-28 animate-pulse rounded bg-dark-bg/80" />
+            <div className="mt-3 h-4 w-44 animate-pulse rounded bg-dark-bg/70" />
+            <div className="mt-6 space-y-2">
+              <div className="h-4 w-32 animate-pulse rounded bg-dark-bg/70" />
+              <div className="h-4 w-36 animate-pulse rounded bg-dark-bg/70" />
+              <div className="h-3 w-24 animate-pulse rounded bg-dark-bg/60" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function PeopleOverview() {
   const transport = useTransport();
   const [rows, setRows] = useState<PersonDirectoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
-    void Promise.allSettled([transport.getPersons(), transport.getPersonSummary()])
-      .then(([personsResult, summaryResult]) => {
-        if (cancelled) {
-          return;
-        }
+    const load = async () => {
+      setLoading(true);
 
-        const persons = personsResult.status === 'fulfilled' ? personsResult.value : [];
-        const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : [];
-        setRows(mergePersonDirectory(persons, summary));
-      })
-      .catch(() => {
+      try {
+        const [personsResult, summaryResult] = await Promise.allSettled([transport.getPersons(), transport.getPersonSummary()]);
+
+        if (!cancelled) {
+          const persons = personsResult.status === 'fulfilled' ? personsResult.value : [];
+          const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : [];
+          setRows(mergePersonDirectory(persons, summary));
+        }
+      } catch {
         if (!cancelled) {
           setRows([]);
         }
-      });
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void load();
 
     return () => {
       cancelled = true;
@@ -72,7 +105,9 @@ export function PeopleOverview() {
           添加人员
         </Link>
       </div>
-      {rows.length === 0 ? (
+      {loading ? (
+        <PeopleOverviewLoadingState />
+      ) : rows.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-dark-border bg-dark-card/50 p-8 text-center">
           <p className="text-lg font-medium text-slate-100">还没有人员</p>
           <p className="mt-2 text-sm text-slate-400">先添加第一位人员，再继续查看归属与任务情况。</p>
@@ -90,9 +125,9 @@ export function PeopleOverview() {
               <p className="text-lg text-slate-100">{row.displayName}</p>
               <p className="mt-2 text-sm text-slate-500">{[row.email, row.qq].filter(Boolean).join(' · ') || row.note || '未填写联系信息'}</p>
               <div className="mt-4 space-y-1">
-              <p className="mt-2 text-sm text-slate-400">当前显存 {row.currentVramMB} MB</p>
-              <p className="mt-1 text-sm text-slate-400">运行 {row.runningTaskCount} · 排队 {row.queuedTaskCount}</p>
-              <p className="mt-1 text-xs text-slate-500">活跃节点 {row.activeServerCount}</p>
+                <p className="mt-2 text-sm text-slate-400">当前显存 {formatVramGB(row.currentVramMB)}</p>
+                <p className="mt-1 text-sm text-slate-400">运行 {row.runningTaskCount} · 排队 {row.queuedTaskCount}</p>
+                <p className="mt-1 text-xs text-slate-500">活跃节点 {row.activeServerCount}</p>
               </div>
             </Link>
           ))}

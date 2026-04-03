@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type {
@@ -45,6 +45,18 @@ const basePerson: PersonRecord = {
   createdAt: 1,
   updatedAt: 1,
 };
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
 
 function createMockTransport(overrides: Partial<TransportAdapter> = {}): TransportAdapter {
   return {
@@ -160,13 +172,59 @@ describe('person pages', () => {
     expect(screen.getByRole('link', { name: '添加人员' }).getAttribute('href')).toBe('/people/new');
     expect(await screen.findByText('Alice')).toBeTruthy();
     expect(await screen.findByText('Bob')).toBeTruthy();
-    expect(await screen.findByText(/4096 MB/)).toBeTruthy();
+    expect(await screen.findByText(/4.0 GB/)).toBeTruthy();
     expect(screen.queryByPlaceholderText('显示名称')).toBeNull();
     expect(screen.queryByText('绑定建议')).toBeNull();
     await waitFor(() => {
       expect(transport.getPersons).toHaveBeenCalledTimes(1);
       expect(transport.getPersonSummary).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('keeps a loading shell visible until the first people directory response settles', async () => {
+    const personsDeferred = createDeferred<PersonRecord[]>();
+    const summaryDeferred = createDeferred<PersonSummaryItem[]>();
+
+    render(
+      <TransportProvider
+        adapter={createMockTransport({
+          getPersons: vi.fn(() => personsDeferred.promise),
+          getPersonSummary: vi.fn(() => summaryDeferred.promise),
+        })}
+      >
+        <MemoryRouter initialEntries={['/people']}>
+          <Routes>
+            <Route path="/people" element={<PeopleOverview />} />
+          </Routes>
+        </MemoryRouter>
+      </TransportProvider>
+    );
+
+    expect(await screen.findByRole('heading', { name: '人员' })).toBeTruthy();
+    expect(screen.getByRole('status', { name: '人员加载中' })).toBeTruthy();
+    expect(screen.queryByText('还没有人员')).toBeNull();
+
+    await act(async () => {
+      personsDeferred.resolve([basePerson]);
+      summaryDeferred.resolve([
+        {
+          personId: 'person-1',
+          displayName: 'Alice',
+          currentVramMB: 4096,
+          runningTaskCount: 1,
+          queuedTaskCount: 0,
+          activeServerCount: 1,
+          lastActivityAt: Date.now(),
+          vramOccupancyHours: 2,
+          vramGigabyteHours: 8,
+          taskRuntimeHours: 1.5,
+        },
+      ]);
+      await Promise.all([personsDeferred.promise, summaryDeferred.promise]);
+    });
+
+    expect(await screen.findByText('Alice')).toBeTruthy();
+    expect(screen.queryByRole('status', { name: '人员加载中' })).toBeNull();
   });
 
   it('renders an empty-state CTA that enters the creation flow', async () => {
@@ -228,8 +286,18 @@ describe('person pages', () => {
   });
 
   it('renders person detail page', async () => {
+    const transport = createMockTransport({
+      getPersonTimeline: vi.fn(async () => [{
+        bucketStart: 1_710_000_000_000,
+        personId: 'person-1',
+        totalVramMB: 3584,
+        taskVramMB: 2048,
+        nonTaskVramMB: 1536,
+      }]),
+    });
+
     render(
-      <TransportProvider adapter={createMockTransport()}>
+      <TransportProvider adapter={transport}>
         <MemoryRouter initialEntries={['/people/person-1']}>
           <Routes>
             <Route path="/people/:id" element={<PersonDetail />} />
@@ -238,5 +306,6 @@ describe('person pages', () => {
       </TransportProvider>
     );
     expect(await screen.findByText('Alice')).toBeTruthy();
+    expect(await screen.findByText('3.5 GB')).toBeTruthy();
   });
 });

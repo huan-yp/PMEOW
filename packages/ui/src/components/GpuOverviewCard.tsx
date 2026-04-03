@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { GpuOverviewResponse } from '@monitor/core';
 import { useTransport } from '../transport/TransportProvider.js';
+import { formatVramGB } from '../utils/vram.js';
 
 export function GpuOverviewCard() {
   const transport = useTransport();
@@ -62,7 +63,7 @@ export function GpuOverviewCard() {
                 <p className="text-sm text-slate-200 truncate">{index + 1}. {item.user}</p>
                 <p className="text-xs text-slate-500">任务 {item.taskCount} · 进程 {item.processCount}</p>
               </div>
-              <span className="text-sm font-mono text-accent-blue shrink-0">{item.totalVramMB} MB</span>
+              <span className="text-sm font-mono text-accent-blue shrink-0">{formatVramGB(item.totalVramMB)}</span>
             </div>
           ))}
         </div>

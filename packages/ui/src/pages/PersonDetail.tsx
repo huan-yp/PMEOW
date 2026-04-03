@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { PersonRecord, PersonTimelinePoint, MirroredAgentTaskRecord, PersonBindingRecord } from '@monitor/core';
+import { formatVramGB } from '../utils/vram.js';
 
 async function adminFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('auth_token');
@@ -123,7 +124,7 @@ export function PersonDetail() {
               {timeline.map(t => (
                 <div key={t.bucketStart} className="flex justify-between text-sm text-slate-300">
                   <span>{new Date(t.bucketStart).toLocaleTimeString()}</span>
-                  <span>{t.totalVramMB} MB</span>
+                  <span>{formatVramGB(t.totalVramMB)}</span>
                 </div>
               ))}
             </div>
