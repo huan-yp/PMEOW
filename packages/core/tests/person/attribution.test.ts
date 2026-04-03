@@ -227,6 +227,7 @@ describe('person attribution', () => {
           {
             gpuIndex: 0,
             totalMemoryMB: 24576,
+            usedMemoryMB: 8704,
             pmeowTasks: [{ taskId: 'task-run-1', gpuIndex: 0, declaredVramMB: 8192, actualVramMB: 6144 }],
             userProcesses: [
               { pid: 2001, user: 'alice', gpuIndex: 0, usedMemoryMB: 1024, command: 'python train.py' },
@@ -250,7 +251,7 @@ describe('person attribution', () => {
         {
           gpuIndex: 0,
           totalMemoryMB: 24576,
-          freeMB: 16896,
+          freeMB: 15872,
           segments: [
             {
               ownerKey: `person:${alice.id}`,

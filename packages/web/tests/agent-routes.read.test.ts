@@ -113,6 +113,7 @@ function createGpuAllocation(taskId = 'task-1', user = 'alice'): GpuAllocationSu
       {
         gpuIndex: 0,
         totalMemoryMB: 24_576,
+        usedMemoryMB: 7_680,
         pmeowTasks: [
           {
             taskId,
@@ -745,6 +746,83 @@ describe('agent read routes', () => {
                 displayName: 'Unknown',
                 usedMemoryMB: 512,
               }),
+            ],
+          },
+        ],
+      });
+    });
+  });
+
+  it('gpu allocation resolved endpoint keeps unattributed GPU usage out of free memory', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-allocation-unattributed',
+      host: 'gpu-allocation-unattributed',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-allocation-unattributed',
+    });
+
+    const client = await connectAgent(baseUrl);
+
+    client.emit('agent:register', {
+      agentId: 'agent-allocation-unattributed',
+      hostname: 'gpu-allocation-unattributed',
+      version: '1.0.0',
+    });
+    client.emit('agent:metrics', createSnapshot(server.id, {
+      timestamp: DEFAULT_TIMESTAMP_MS + 2_500,
+      gpu: {
+        available: true,
+        totalMemoryMB: 16_384,
+        usedMemoryMB: 3_584,
+        memoryUsagePercent: 21.9,
+        utilizationPercent: 4,
+        temperatureC: 43,
+        gpuCount: 1,
+      },
+      gpuAllocation: {
+        perGpu: [
+          {
+            gpuIndex: 0,
+            totalMemoryMB: 16_384,
+            usedMemoryMB: 3_584,
+            pmeowTasks: [],
+            userProcesses: [],
+            unknownProcesses: [],
+            effectiveFreeMB: 16_384,
+          },
+        ],
+        byUser: [],
+      },
+    }));
+
+    await waitForCondition(async () => {
+      const response = await api
+        .get(`/api/servers/${server.id}/gpu-allocation/resolved`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        serverId: server.id,
+        snapshotTimestamp: DEFAULT_TIMESTAMP_MS + 2_500,
+        perGpu: [
+          {
+            gpuIndex: 0,
+            totalMemoryMB: 16384,
+            freeMB: 12800,
+            segments: [
+              {
+                ownerKey: 'unattributed',
+                ownerKind: 'unknown',
+                displayName: 'Unattributed',
+                usedMemoryMB: 3584,
+                sourceKinds: ['unknown_process'],
+              },
             ],
           },
         ],

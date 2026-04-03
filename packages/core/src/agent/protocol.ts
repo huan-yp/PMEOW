@@ -219,6 +219,7 @@ export function isPerGpuAllocationSummary(value: unknown): value is PerGpuAlloca
 
   return isInteger(value.gpuIndex)
     && isFiniteNumber(value.totalMemoryMB)
+    && (value.usedMemoryMB === undefined || isFiniteNumber(value.usedMemoryMB))
     && isArrayOf(value.pmeowTasks, isGpuTaskAllocation)
     && isArrayOf(value.userProcesses, isGpuUserProcess)
     && isArrayOf(value.unknownProcesses, isGpuUnknownProcess)

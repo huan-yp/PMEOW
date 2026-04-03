@@ -136,7 +136,12 @@ class TestMetricsSnapshot:
     def test_gpu_allocation_accepted(self):
         alloc = GpuAllocationSummary(
             per_gpu=[
-                PerGpuAllocationSummary(gpu_index=0, total_memory_mb=24576.0, effective_free_mb=12000.0)
+                PerGpuAllocationSummary(
+                    gpu_index=0,
+                    total_memory_mb=24576.0,
+                    used_memory_mb=4096.0,
+                    effective_free_mb=12000.0,
+                )
             ],
         )
         snap = _make_snapshot(gpu_allocation=alloc)
@@ -218,11 +223,12 @@ class TestMetricsSnapshot:
 
     def test_to_dict_with_gpu_allocation(self):
         alloc = GpuAllocationSummary(
-            per_gpu=[PerGpuAllocationSummary(gpu_index=0, total_memory_mb=24576.0)],
+            per_gpu=[PerGpuAllocationSummary(gpu_index=0, total_memory_mb=24576.0, used_memory_mb=2048.0)],
         )
         d = _make_snapshot(gpu_allocation=alloc).to_dict()
         assert "gpuAllocation" in d
         assert d["gpuAllocation"]["perGpu"][0]["gpuIndex"] == 0
+        assert d["gpuAllocation"]["perGpu"][0]["usedMemoryMB"] == 2048.0
 
 
 # ---------------------------------------------------------------------------

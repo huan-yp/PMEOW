@@ -20,6 +20,7 @@ const OWNER_PALETTE = [
 ];
 const FREE_COLOR = 'rgb(51, 65, 85)'; // slate-700
 const UNKNOWN_COLOR = '#f59e0b'; // amber-500
+const UNATTRIBUTED_COLOR = '#94a3b8'; // slate-400
 
 function hashOwnerKey(ownerKey: string): number {
   let hash = 0;
@@ -30,8 +31,50 @@ function hashOwnerKey(ownerKey: string): number {
 }
 
 function getOwnerColor(ownerKey: string, ownerKind: string): string {
+  if (ownerKey === 'unattributed') return UNATTRIBUTED_COLOR;
   if (ownerKind === 'unknown') return UNKNOWN_COLOR;
   return OWNER_PALETTE[hashOwnerKey(ownerKey) % OWNER_PALETTE.length];
+}
+
+function buildSegments(
+  totalMemoryMB: number,
+  baseSegments: Segment[],
+  reportedUsedMB?: number,
+  reportedFreeMB?: number,
+): Segment[] {
+  const segments = [...baseSegments];
+
+  if (reportedFreeMB !== undefined) {
+    segments.push({
+      key: 'free',
+      label: 'Free',
+      value: Math.max(reportedFreeMB, 0),
+      style: { backgroundColor: FREE_COLOR },
+    });
+    return segments;
+  }
+
+  const attributedUsedMB = segments.reduce((sum, segment) => sum + segment.value, 0);
+  const actualUsedMB = Math.max(reportedUsedMB ?? 0, attributedUsedMB);
+  const unattributedMB = Math.max(actualUsedMB - attributedUsedMB, 0);
+
+  if (unattributedMB > 0) {
+    segments.push({
+      key: 'unattributed',
+      label: 'Unattributed',
+      value: unattributedMB,
+      style: { backgroundColor: UNATTRIBUTED_COLOR },
+    });
+  }
+
+  segments.push({
+    key: 'free',
+    label: 'Free',
+    value: Math.max(totalMemoryMB - actualUsedMB, 0),
+    style: { backgroundColor: FREE_COLOR },
+  });
+
+  return segments;
 }
 
 export function GpuAllocationBars({ allocation, resolved }: Props) {
@@ -42,14 +85,12 @@ export function GpuAllocationBars({ allocation, resolved }: Props) {
         <div className="space-y-3">
           {resolved.perGpu.map((gpu) => {
             const totalMB = gpu.totalMemoryMB || 1;
-            const segments: Segment[] = gpu.segments.map((seg) => ({
+            const segments = buildSegments(gpu.totalMemoryMB, gpu.segments.map((seg) => ({
               key: seg.ownerKey,
               label: seg.displayName,
               value: seg.usedMemoryMB,
               style: { backgroundColor: getOwnerColor(seg.ownerKey, seg.ownerKind) },
-            }));
-            const freeMB = Math.max(gpu.freeMB, 0);
-            segments.push({ key: 'free', label: 'Free', value: freeMB, style: { backgroundColor: FREE_COLOR } });
+            })), undefined, gpu.freeMB);
 
             return (
               <div key={gpu.gpuIndex}>
@@ -99,14 +140,12 @@ export function GpuAllocationBars({ allocation, resolved }: Props) {
           const taskMB = gpu.pmeowTasks.reduce((sum, item) => sum + item.actualVramMB, 0);
           const userMB = gpu.userProcesses.reduce((sum, item) => sum + item.usedMemoryMB, 0);
           const unknownMB = gpu.unknownProcesses.reduce((sum, item) => sum + item.usedMemoryMB, 0);
-          const freeMB = Math.max(gpu.effectiveFreeMB, 0);
           const totalMB = gpu.totalMemoryMB || 1;
-          const segments: Segment[] = [
+          const segments = buildSegments(gpu.totalMemoryMB, [
             { key: 'task', label: 'Task', value: taskMB, className: 'bg-accent-blue' },
             { key: 'user', label: 'User', value: userMB, className: 'bg-accent-green' },
             { key: 'unknown', label: 'Unknown', value: unknownMB, className: 'bg-accent-yellow' },
-            { key: 'free', label: 'Free', value: freeMB, className: 'bg-slate-700' },
-          ];
+          ], gpu.usedMemoryMB);
 
           return (
             <div key={gpu.gpuIndex}>

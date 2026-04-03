@@ -472,7 +472,22 @@ export function getResolvedGpuAllocation(serverId: string): ResolvedGpuAllocatio
       });
     }
 
-    const segments = [...segmentMap.values()].sort((a, b) => {
+    const segments = [...segmentMap.values()];
+    const attributedUsedMB = segments.reduce((sum, segment) => sum + segment.usedMemoryMB, 0);
+    const actualUsedMB = Math.max(gpu.usedMemoryMB ?? 0, attributedUsedMB);
+    const unattributedUsedMB = Math.max(actualUsedMB - attributedUsedMB, 0);
+
+    if (unattributedUsedMB > 0) {
+      segments.push({
+        ownerKey: 'unattributed',
+        ownerKind: 'unknown',
+        displayName: 'Unattributed',
+        usedMemoryMB: unattributedUsedMB,
+        sourceKinds: ['unknown_process'],
+      });
+    }
+
+    segments.sort((a, b) => {
       if (b.usedMemoryMB !== a.usedMemoryMB) return b.usedMemoryMB - a.usedMemoryMB;
       return a.displayName.localeCompare(b.displayName);
     });
@@ -480,7 +495,7 @@ export function getResolvedGpuAllocation(serverId: string): ResolvedGpuAllocatio
     return {
       gpuIndex: gpu.gpuIndex,
       totalMemoryMB: gpu.totalMemoryMB,
-      freeMB: Math.max(gpu.effectiveFreeMB, 0),
+      freeMB: Math.max(gpu.totalMemoryMB - actualUsedMB, 0),
       segments,
     };
   });

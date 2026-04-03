@@ -11,6 +11,7 @@ from pmeow.collector.gpu import (
     collect_gpu,
     collect_gpu_processes,
     collect_per_gpu_total_memory,
+    collect_per_gpu_used_memory,
 )
 from pmeow.collector.gpu_attribution import (
     attribute_gpu_processes,
@@ -102,6 +103,14 @@ class TestPerGpuParsing:
         assert snap.used_memory_mb == 1200.0 + 800.0
         assert snap.utilization_percent == round((45 + 30) / 2.0, 1)
         assert snap.temperature_c == 60.0
+
+    def test_collect_per_gpu_used_memory(self):
+        side = _mock_run_factory({
+            "query-gpu=index,memory.used": "0, 3391\n1, 512\n",
+        })
+        with patch("pmeow.collector.gpu.subprocess.run", side_effect=side):
+            used = collect_per_gpu_used_memory()
+        assert used == {0: 3391.0, 1: 512.0}
 
 
 # ---------------------------------------------------------------------------
@@ -216,6 +225,19 @@ class TestAttributionUnknownProcess:
         assert isinstance(unk, GpuUnknownProcess)
         assert unk.pid == 7777
         assert unk.used_memory_mb == 512.0
+
+    def test_preserves_used_memory_without_visible_processes(self):
+        summary = attribute_gpu_processes(
+            gpu_processes=[],
+            running_tasks=[],
+            per_gpu_memory={0: 16384.0},
+            per_gpu_used_memory={0: 3391.0},
+        )
+        assert len(summary.per_gpu) == 1
+        gpu = summary.per_gpu[0]
+        assert gpu.gpu_index == 0
+        assert gpu.used_memory_mb == 3391.0
+        assert gpu.effective_free_mb == 16384.0
 
 
 # ---------------------------------------------------------------------------

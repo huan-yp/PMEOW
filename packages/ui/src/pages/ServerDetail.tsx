@@ -83,6 +83,8 @@ function getSourceVisual(sourceType: string) {
   };
 }
 
+const backButtonClassName = 'inline-flex shrink-0 items-center gap-2 rounded-full border border-sky-300/25 bg-slate-950/70 px-4 py-2 text-sm font-semibold text-sky-100 shadow-[0_16px_40px_rgba(14,165,233,0.12)] transition-colors hover:border-sky-200/45 hover:bg-slate-900 hover:text-white';
+
 export function ServerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -202,9 +204,14 @@ export function ServerDetail() {
 
   if (!server) {
     return (
-      <div className="p-6 text-center text-slate-500">
-        节点不存在
-        <button onClick={() => navigate('/')} className="ml-2 text-accent-blue underline">返回</button>
+      <div className="p-6">
+        <div className="mx-auto flex max-w-md flex-col items-center gap-4 rounded-3xl border border-dark-border bg-dark-card/80 px-6 py-10 text-center">
+          <p className="text-slate-300">节点不存在</p>
+          <button onClick={() => navigate('/')} className={backButtonClassName}>
+            <span aria-hidden="true">←</span>
+            <span>返回控制台</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -237,7 +244,10 @@ export function ServerDetail() {
     <div className="p-6">
       <div className={`node-surface-shell ${statusVisual.surfaceClassName} mb-6 rounded-3xl p-5`}>
         <div className="flex items-start gap-4">
-          <button onClick={() => navigate('/')} className="text-lg text-slate-500 transition-colors hover:text-slate-300">←</button>
+          <button onClick={() => navigate('/')} className={backButtonClassName}>
+            <span aria-hidden="true">←</span>
+            <span>返回控制台</span>
+          </button>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-xl font-bold text-slate-100">{server.name}</h1>

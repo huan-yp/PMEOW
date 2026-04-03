@@ -169,6 +169,7 @@ class GpuUnknownProcess:
 class PerGpuAllocationSummary:
     gpu_index: int
     total_memory_mb: float
+    used_memory_mb: float = 0.0
     pmeow_tasks: list[GpuTaskAllocation] = field(default_factory=list)
     user_processes: list[GpuUserProcess] = field(default_factory=list)
     unknown_processes: list[GpuUnknownProcess] = field(default_factory=list)

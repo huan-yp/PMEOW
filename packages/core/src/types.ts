@@ -110,6 +110,7 @@ export interface GpuUnknownProcess {
 export interface PerGpuAllocationSummary {
   gpuIndex: number;
   totalMemoryMB: number;
+  usedMemoryMB?: number;
   pmeowTasks: GpuTaskAllocation[];
   userProcesses: GpuUserProcess[];
   unknownProcesses: GpuUnknownProcess[];

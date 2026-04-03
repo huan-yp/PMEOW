@@ -11,7 +11,12 @@ from pmeow.models import MetricsSnapshot, TaskStatus
 from pmeow.collector.cpu import collect_cpu
 from pmeow.collector.disk import collect_disk
 from pmeow.collector.docker import collect_docker
-from pmeow.collector.gpu import collect_gpu, collect_gpu_processes, collect_per_gpu_total_memory
+from pmeow.collector.gpu import (
+    collect_gpu,
+    collect_gpu_processes,
+    collect_per_gpu_total_memory,
+    collect_per_gpu_used_memory,
+)
 from pmeow.collector.gpu_attribution import attribute_gpu_processes
 from pmeow.collector.memory import collect_memory
 from pmeow.collector.network import collect_network
@@ -33,8 +38,10 @@ def collect_snapshot(
         gpu_procs = collect_gpu_processes()
         running_tasks = list_tasks(task_store, TaskStatus.running)
         per_gpu_mem = collect_per_gpu_total_memory()
+        per_gpu_used = collect_per_gpu_used_memory()
         gpu_allocation = attribute_gpu_processes(
             gpu_procs, running_tasks, per_gpu_mem, redundancy_coefficient,
+            per_gpu_used_memory=per_gpu_used,
         )
 
     return MetricsSnapshot(

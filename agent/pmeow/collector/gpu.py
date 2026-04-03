@@ -135,14 +135,14 @@ def collect_gpu_processes() -> list[GpuProcessInfo]:
     return processes
 
 
-def collect_per_gpu_total_memory() -> dict[int, float]:
-    """Return a mapping of gpu_index → total memory in MB."""
+def _collect_per_gpu_memory_field(field: str) -> dict[int, float]:
     output = _run_smi([
-        "--query-gpu=index,memory.total",
+        f"--query-gpu=index,{field}",
         "--format=csv,noheader,nounits",
     ])
     if not output:
         return {}
+
     result: dict[int, float] = {}
     for line in output.splitlines():
         parts = [p.strip() for p in line.split(",")]
@@ -152,3 +152,13 @@ def collect_per_gpu_total_memory() -> dict[int, float]:
             except ValueError:
                 continue
     return result
+
+
+def collect_per_gpu_total_memory() -> dict[int, float]:
+    """Return a mapping of gpu_index → total memory in MB."""
+    return _collect_per_gpu_memory_field("memory.total")
+
+
+def collect_per_gpu_used_memory() -> dict[int, float]:
+    """Return a mapping of gpu_index → actual used memory in MB."""
+    return _collect_per_gpu_memory_field("memory.used")

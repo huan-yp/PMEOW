@@ -124,6 +124,7 @@ function createMetricsSnapshot(serverId = 'server-agent-1'): MetricsSnapshot {
         {
           gpuIndex: 0,
           totalMemoryMB: 24576,
+          usedMemoryMB: 11264,
           pmeowTasks: [{ taskId: 'task-run-1', gpuIndex: 0, declaredVramMB: 8192, actualVramMB: 6144 }],
           userProcesses: [{ pid: 4123, user: 'alice', gpuIndex: 0, usedMemoryMB: 4096, command: 'python train.py' }],
           unknownProcesses: [{ pid: 4888, gpuIndex: 0, usedMemoryMB: 1024, command: 'mystery' }],
@@ -381,6 +382,36 @@ describe('overview detail settings', () => {
     });
   });
 
+  it('shows a clear back button on server detail and navigates back to the console', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<div>控制台首页</div>} />
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    const backButton = await screen.findByRole('button', { name: /返回控制台/ });
+    expect(backButton.className).toContain('rounded-full');
+
+    await user.click(backButton);
+
+    expect(await screen.findByText('控制台首页')).toBeTruthy();
+  });
+
   it('separates GPU utilization and VRAM usage in monitoring views', async () => {
     const transport = createMockTransport();
     const server = createServer();
@@ -443,11 +474,11 @@ describe('overview detail settings', () => {
           segments: [
             {
               ownerKey: 'person:person-1',
-              ownerKind: 'person',
+              ownerKind: 'person' as const,
               displayName: 'Alice Example',
               usedMemoryMB: 3584,
               personId: 'person-1',
-              sourceKinds: ['task'],
+              sourceKinds: ['task' as const],
             },
           ],
         },
@@ -490,6 +521,56 @@ describe('overview detail settings', () => {
     expect(screen.getByText('Free 0.5 GB')).toBeTruthy();
     expect(screen.getByText('未分配显存: 0.5 GB')).toBeTruthy();
     expect(screen.getByTitle('Alice Example: 3.5 GB')).toBeTruthy();
+  });
+
+  it('shows unattributed GPU usage instead of counting it as free in the fallback allocation view', async () => {
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    metrics.gpu = {
+      available: true,
+      totalMemoryMB: 16384,
+      usedMemoryMB: 3584,
+      memoryUsagePercent: 21.9,
+      utilizationPercent: 4,
+      temperatureC: 43,
+      gpuCount: 1,
+    };
+    metrics.gpuAllocation = {
+      perGpu: [
+        {
+          gpuIndex: 0,
+          totalMemoryMB: 16384,
+          usedMemoryMB: 3584,
+          pmeowTasks: [],
+          userProcesses: [],
+          unknownProcesses: [],
+          effectiveFreeMB: 16384,
+        },
+      ],
+      byUser: [],
+    };
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    expect(await screen.findByRole('heading', { name: server.name })).toBeTruthy();
+    expect(screen.getByText('Unattributed 3.5 GB')).toBeTruthy();
+    expect(screen.getByText('Free 12.5 GB')).toBeTruthy();
+    expect(screen.queryByText('Free 16.0 GB')).toBeNull();
   });
 
   it('shows process VRAM values in GB on the process tab', async () => {

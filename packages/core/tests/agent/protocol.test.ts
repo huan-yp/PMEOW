@@ -111,6 +111,7 @@ describe('agent protocol', () => {
           {
             gpuIndex: 0,
             totalMemoryMB: 24576,
+            usedMemoryMB: 7680,
             pmeowTasks: [
               {
                 taskId: 'task-1',
