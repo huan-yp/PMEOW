@@ -1,0 +1,45 @@
+{
+  "name": "pmeow-web",
+  "version": "1.0.0",
+  "description": "PMEOW GPU cluster monitoring and scheduling web server — install globally and run",
+  "type": "module",
+  "bin": {
+    "pmeow-web": "./bin/pmeow-web.mjs"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.0",
+    "multer": "^2.1.1",
+    "socket.io": "^4.8.0",
+    "ssh2": "^1.16.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/huan-yp/PMEOW.git",
+    "directory": "packages/web-cli"
+  },
+  "license": "MIT",
+  "keywords": [
+    "gpu",
+    "monitoring",
+    "cluster",
+    "pmeow",
+    "server"
+  ]
+}

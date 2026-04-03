@@ -10,6 +10,14 @@ Standalone Python agent for PMEOW GPU cluster monitoring. It runs on compute nod
 
 ## Installation
 
+### From PyPI
+
+```bash
+pip install pmeow-agent
+```
+
+### From source (development)
+
 ```bash
 cd agent/
 python3 -m venv .venv

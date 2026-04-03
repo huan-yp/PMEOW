@@ -1,0 +1,57 @@
+name: Release Agent to PyPI
+
+on:
+  push:
+    tags:
+      - 'agent-v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify version matches tag
+        working-directory: agent
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#agent-v}"
+          PKG_VERSION=$(python -c "
+          import tomllib, pathlib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          print(data['project']['version'])
+          ")
+          echo "Tag version: $TAG_VERSION"
+          echo "Package version: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match pyproject.toml version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build sdist and wheel
+        working-directory: agent
+        run: python -m build
+
+      - name: Smoke test — install from wheel
+        run: |
+          python -m venv /tmp/smoke-test
+          /tmp/smoke-test/bin/pip install agent/dist/*.whl
+          /tmp/smoke-test/bin/pmeow-agent --help
+          /tmp/smoke-test/bin/pmeow --help
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: agent/dist/
