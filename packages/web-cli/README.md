@@ -11,8 +11,11 @@ npm install -g pmeow-web
 ## 使用
 
 ```bash
-# 使用默认参数启动（端口 17200）
+# 使用默认参数启动（默认绑定 0.0.0.0:17200）
 pmeow-web
+
+# 只绑定到本机回环地址
+pmeow-web --host 127.0.0.1
 
 # 指定端口
 pmeow-web --port 8080
@@ -31,6 +34,7 @@ pmeow-web --version
 
 | 参数 | 说明 |
 |---|---|
+| `--host <host>` | 指定绑定的主机或网卡地址；等价于设置 `HOST` |
 | `--port <port>` | 指定监听端口；等价于设置 `PORT` |
 | `--db <path>` | 指定 SQLite 数据库路径；等价于设置 `MONITOR_DB_PATH` |
 | `--help`, `-h` | 显示帮助信息 |
@@ -40,6 +44,7 @@ pmeow-web --version
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
+| `HOST` | `0.0.0.0` | Web 服务绑定地址 |
 | `PORT` | `17200` | Web 服务监听端口 |
 | `MONITOR_DB_PATH` | `./data/monitor.db` | SQLite 数据库路径 |
 | `JWT_SECRET` | 随机生成 | JWT 签名密钥；正式部署建议固定设置 |

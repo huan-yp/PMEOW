@@ -21,6 +21,7 @@ import {
 } from './agent-namespace.js';
 
 const DEFAULT_PORT = Number(process.env.PORT) || 17200;
+const DEFAULT_HOST = '0.0.0.0';
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 export interface WebRuntime {
@@ -38,6 +39,11 @@ export interface CreateWebRuntimeOptions {
   publicDir?: string;
   scheduler?: Scheduler;
   agentNamespace?: CreateAgentNamespaceOptions;
+}
+
+function getListenHost(): string {
+  const host = process.env.HOST?.trim();
+  return host && host.length > 0 ? host : DEFAULT_HOST;
 }
 
 function mountStaticAssets(app: Express, publicDir: string): void {
@@ -72,6 +78,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   });
 
   let currentPort = options.port ?? DEFAULT_PORT;
+  let currentHost = getListenHost();
   let started = false;
   let stoppingPromise: Promise<void> | null = null;
 
@@ -140,7 +147,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
 
       httpServer.once('error', onError);
       httpServer.once('listening', onListening);
-      httpServer.listen(currentPort);
+      httpServer.listen(currentPort, currentHost);
     });
 
     scheduler.start();

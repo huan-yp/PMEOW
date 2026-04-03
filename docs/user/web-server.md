@@ -29,7 +29,7 @@ pnpm dev:ui
 
 - `packages/web/src/server.ts` 通过 `tsx watch` 启动后端。
 - `packages/ui` 由 Vite 提供开发服务器。
-- 浏览器通常访问 `http://localhost:5173`。
+- 浏览器通常访问 `http://localhost:5129`。
 
 ### 生产模式
 
@@ -47,7 +47,7 @@ pnpm start:web
 2. 构建 `packages/ui`
 3. 构建 `packages/web` 并把 UI 产物复制到 `packages/web/dist/public`
 
-生产模式下默认监听 `17200`，直接访问 `http://localhost:17200`。
+生产模式下默认绑定 `0.0.0.0:17200`。本机访问用 `http://localhost:17200`，远端访问改成服务器实际 IP 或域名。
 
 ### 发行包模式
 
@@ -83,6 +83,7 @@ docker compose up -d
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `HOST` | `0.0.0.0` | Web 服务绑定地址 |
 | `PORT` | `17200` | Web 服务监听端口 |
 | `MONITOR_DB_PATH` | 当前工作目录下 `data/monitor.db` | SQLite 数据库绝对路径 |
 | `JWT_SECRET` | 未设置时使用临时随机值 | Web 登录 token 的签名密钥 |

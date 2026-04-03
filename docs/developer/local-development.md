@@ -51,7 +51,7 @@ pnpm dev:ui
 
 - `pnpm dev:web` 会先构建 `core`，再在 `packages/web` 下用 `tsx watch` 运行服务端。
 - `pnpm dev:ui` 会先构建 `core`，再启动 Vite 开发服务器。
-- 浏览器入口通常是 `http://localhost:5173`。
+- 浏览器入口通常是 `http://localhost:5129`。
 
 ### 运行接近生产的 Web 实例
 

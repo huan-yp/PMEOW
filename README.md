@@ -32,7 +32,7 @@ pnpm dev:web
 pnpm dev:ui
 ```
 
-打开 `http://localhost:5173`。第一次进入登录页时，输入的密码会被作为管理员密码初始化。
+打开 `http://localhost:5129`。第一次进入登录页时，输入的密码会被作为管理员密码初始化。
 
 ### 接近生产的 Web 启动
 
@@ -41,7 +41,9 @@ pnpm build:web
 pnpm start:web
 ```
 
-默认监听 `http://localhost:17200`。
+**注意网络安全问题！！！**
+
+默认绑定 `0.0.0.0:17200`，本机访问可用 `http://localhost:17200`。
 
 ### 发行包与 Docker
 

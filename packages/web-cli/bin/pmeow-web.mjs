@@ -13,20 +13,23 @@ if (argv.includes('--help') || argv.includes('-h')) {
 PMEOW GPU cluster monitoring and scheduling web server.
 
 Options:
+  --host <host>   Host/interface to bind (default: 0.0.0.0, env: HOST)
   --port <port>   Port to listen on (default: 17200, env: PORT)
   --db <path>     Path to SQLite database (env: MONITOR_DB_PATH)
   --help, -h      Show this help message
   --version, -v   Show version number
 
 Environment variables:
+  HOST              Bind host/interface (default: 0.0.0.0)
   PORT              Server port (default: 17200)
   MONITOR_DB_PATH   SQLite database path (default: ./data/monitor.db)
   JWT_SECRET        Secret for JWT token signing
 
 Examples:
-  pmeow-web                          Start with defaults
-  pmeow-web --port 8080              Start on port 8080
-  pmeow-web --db /var/lib/pmeow.db   Use custom database path
+  pmeow-web                               Start with defaults
+  pmeow-web --host 127.0.0.1              Bind to loopback only
+  pmeow-web --port 8080                   Start on port 8080
+  pmeow-web --db /var/lib/pmeow.db        Use custom database path
 `);
   exit(0);
 }
@@ -36,6 +39,12 @@ if (argv.includes('--version') || argv.includes('-v')) {
   const pkg = require(join(__dirname, '..', 'package.json'));
   console.log(pkg.version);
   exit(0);
+}
+
+// Parse --host
+const hostIdx = argv.indexOf('--host');
+if (hostIdx !== -1 && argv[hostIdx + 1]) {
+  process.env.HOST = argv[hostIdx + 1];
 }
 
 // Parse --port

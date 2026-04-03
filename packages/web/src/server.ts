@@ -28,7 +28,16 @@ process.on('SIGTERM', () => {
 
 try {
   const port = await runtime.start();
-  console.log(`[monitor] Web server running at http://localhost:${port}`);
+  const address = runtime.httpServer.address();
+  if (address && typeof address === 'object') {
+    const localHost = address.address === '0.0.0.0' ? 'localhost' : address.address;
+    const browserHost = localHost.includes(':') ? `[${localHost}]` : localHost;
+    console.log(
+      `[monitor] Web server listening on ${address.address}:${address.port} (local: http://${browserHost}:${address.port})`,
+    );
+  } else {
+    console.log(`[monitor] Web server running on port ${port}`);
+  }
 } catch (error) {
   console.error('[monitor] Failed to start web server:', error);
   await runtime.stop().catch(() => {});
