@@ -16,7 +16,7 @@ export function handleTaskUpdateForNotifications(update: AgentTaskUpdatePayload)
   if (status === 'queued') return;
 
   const resolved = resolveTaskPerson(serverId, taskId, user ?? '', Date.now());
-  if (!resolved) return;
+  if (!resolved || !resolved.person) return;
 
   const prefs = getPersonMobilePreferences(resolved.person.id);
   if (!shouldNotifyForTask(prefs, status)) return;

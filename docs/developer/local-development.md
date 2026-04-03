@@ -262,4 +262,34 @@ data/keys/
 1. 不要把 Agent 开发和 Web 开发混在一个共享状态目录里，隔离路径更省事。
 2. 改协议时同时更新 Web 端、Agent 端和文档，不要只改单边。
 3. 需要验证登录态时优先固定 `JWT_SECRET`，否则重启后容易误判为前端问题。
+
+## 移动端本地开发
+
+移动端路由在 Vite 开发服务器中直接可用，无需额外配置。
+
+### 管理员移动端
+
+1. 在桌面端正常登录获取 JWT。
+2. 在浏览器中打开 `/m/admin`。
+3. 使用 Chrome DevTools 的设备模拟模式查看移动端布局。
+
+### 个人移动端
+
+1. 先在桌面端人员详情页创建一个 person mobile token。
+2. 在浏览器中打开 `/m/me`。
+3. 在令牌输入框填入 `pmt_...` 令牌。
+
+### 相关测试
+
+移动端 UI 测试：
+
+```bash
+cd packages/ui && npx vitest run tests/mobile-admin-pages.test.tsx tests/mobile-person-pages.test.tsx
+```
+
+移动端接口测试：
+
+```bash
+cd packages/web && npx vitest run tests/mobile-admin-routes.test.ts tests/mobile-person-routes.test.ts
+```
 4. 需要验证生产链路时用 `pnpm build:web && pnpm start:web`，不要只看开发服务器是否正常。

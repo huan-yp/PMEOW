@@ -13,7 +13,8 @@
 2. [web-server.md](web-server.md) - 决定服务端以本地方式还是 Docker 方式部署。
 3. [agent-nodes.md](agent-nodes.md) - 让一台真实计算节点接入系统。
 4. [web-console.md](web-console.md) - 熟悉页面、操作入口和使用边界。
-5. [troubleshooting.md](troubleshooting.md) - 作为值班和排障参考。
+5. [mobile-app.md](mobile-app.md) - 移动端管理员和个人入口的使用方式。
+6. [troubleshooting.md](troubleshooting.md) - 作为值班和排障参考。
 
 ## 文档范围
 

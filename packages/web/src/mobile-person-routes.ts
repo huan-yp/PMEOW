@@ -53,7 +53,7 @@ export function setupMobilePersonRoutes(
 
   app.post('/api/mobile/me/tasks/:taskId/cancel', personAuth, (req, res) => {
     const personId = (req as any).personId as string;
-    const taskId = req.params.taskId;
+    const taskId = req.params.taskId as string;
 
     // Re-check ownership server-side
     const task = getAgentTask(taskId);
@@ -106,7 +106,7 @@ export function setupMobilePersonRoutes(
   });
 
   app.post('/api/mobile/me/notifications/:id/read', personAuth, (req, res) => {
-    markPersonNotificationRead(req.params.id);
+    markPersonNotificationRead(req.params.id as string);
     res.json({ success: true });
   });
 

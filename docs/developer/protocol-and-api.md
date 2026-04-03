@@ -44,6 +44,18 @@ Agent namespace 是 `/agent`。当前实现没有使用 JWT，而是依赖：
 
 这个模型适合受控内网，不应被当成公网零信任协议。
 
+### Person Mobile Token
+
+个人移动端使用独立的 token 体系，不共用管理员 JWT。请求时带：
+
+```text
+X-PMEOW-Person-Token: pmt_<hex>
+```
+
+Token 由管理员通过 REST API 或桌面端人员详情页创建。服务端存储 SHA256 hash，明文仅在创建时返回一次。Token 支持轮换（revoke + recreate）和吊销。
+
+Person mobile routes（`/api/mobile/me/*`）在 Express 中挂载于 admin JWT 中间件之前，因此不会触发 JWT 校验。
+
 ## REST API 分组
 
 ### 公开路由
@@ -146,6 +158,41 @@ Endpoints for person attribution management. All person data is optional — whe
 #### Compatibility note
 
 When no person data exists, existing monitoring and task APIs work unchanged. Person-aware webhook template variables (`{{personName}}`, `{{personEmail}}`, etc.) resolve to empty strings when no person is matched.
+
+#### Person mobile token management (admin JWT required)
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `POST` | `/api/persons/:id/mobile-token` | Create a mobile token for a person |
+| `POST` | `/api/persons/:id/mobile-token/rotate` | Rotate (revoke old + create new) |
+| `DELETE` | `/api/persons/:id/mobile-token` | Revoke the token |
+| `GET` | `/api/persons/:id/mobile-token/status` | Check whether a token exists |
+
+### Mobile admin routes (admin JWT required)
+
+These routes serve the administrator mobile view at `/m/admin`.
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `GET` | `/api/mobile/admin/summary` | Cluster summary (server/task counts) |
+| `GET` | `/api/mobile/admin/tasks` | Cross-node task list |
+| `GET` | `/api/mobile/admin/servers` | Server list with online status |
+| `GET` | `/api/mobile/admin/notifications` | Admin notification feed |
+
+### Mobile person routes (person token required)
+
+These routes serve the person mobile view at `/m/me`. Auth uses the `X-PMEOW-Person-Token` header instead of JWT.
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `GET` | `/api/mobile/me/bootstrap` | Person bootstrap (profile + counts) |
+| `GET` | `/api/mobile/me/tasks` | Person-scoped tasks |
+| `GET` | `/api/mobile/me/servers` | Person-bound servers |
+| `GET` | `/api/mobile/me/notifications` | Person notification feed |
+| `GET` | `/api/mobile/me/preferences` | Notification preferences |
+| `PUT` | `/api/mobile/me/preferences` | Update notification preferences |
+| `POST` | `/api/mobile/me/tasks/:taskId/cancel` | Cancel an owned task |
+| `POST` | `/api/mobile/me/notifications/:id/read` | Mark notification as read |
 
 ## UI 实时事件
 
