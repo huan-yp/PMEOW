@@ -23,7 +23,7 @@ export type {
 } from './agent/binding.js';
 export { AgentSessionRegistry } from './agent/registry.js';
 export type { AgentLiveSession } from './agent/registry.js';
-export { ingestAgentMetrics, ingestAgentTaskUpdate, flattenGpuAllocation } from './agent/ingest.js';
+export { ingestAgentMetrics, ingestAgentTaskUpdate, ingestAgentLocalUsers, flattenGpuAllocation } from './agent/ingest.js';
 export { SSHManager } from './ssh/manager.js';
 export * as collectors from './ssh/collectors/index.js';
 export { getDatabase, closeDatabase } from './db/database.js';
@@ -56,6 +56,7 @@ export {
 	deleteServer,
 } from './db/servers.js';
 export { saveMetrics, getLatestMetrics, getMetricsHistory, cleanOldMetrics } from './db/metrics.js';
+export { replaceServerLocalUsers, listServerLocalUsers } from './db/server-local-users.js';
 export { getAllHooks, getHookById, getHooksByServerId, createHook, updateHook, deleteHook, getHookLogs, addHookLog } from './db/hooks.js';
 export {
 	getSettings,

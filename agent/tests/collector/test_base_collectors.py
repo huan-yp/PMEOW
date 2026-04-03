@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from pmeow.collector.cpu import collect_cpu
 from pmeow.collector.disk import collect_disk
 from pmeow.collector.docker import collect_docker
+from pmeow.collector.local_users import collect_local_users
 from pmeow.collector.memory import collect_memory
 from pmeow.collector.processes import collect_processes
 from pmeow.collector.snapshot import collect_snapshot
@@ -74,3 +76,39 @@ def test_system_has_hostname():
     sys = collect_system()
     assert isinstance(sys.hostname, str)
     assert len(sys.hostname) > 0
+
+
+def test_local_user_collector_filters_system_accounts_by_default():
+    entries = [
+        SimpleNamespace(
+            pw_name="daemon",
+            pw_uid=1,
+            pw_gid=1,
+            pw_gecos="daemon",
+            pw_dir="/usr/sbin",
+            pw_shell="/usr/sbin/nologin",
+        ),
+        SimpleNamespace(
+            pw_name="nobody",
+            pw_uid=65534,
+            pw_gid=65534,
+            pw_gecos="nobody",
+            pw_dir="/nonexistent",
+            pw_shell="/usr/sbin/nologin",
+        ),
+        SimpleNamespace(
+            pw_name="alice",
+            pw_uid=1000,
+            pw_gid=1000,
+            pw_gecos="Alice Example",
+            pw_dir="/home/alice",
+            pw_shell="/bin/bash",
+        ),
+    ]
+
+    with patch("pmeow.collector.local_users._read_uid_min", return_value=1000):
+        with patch("pmeow.collector.local_users.pwd.getpwall", return_value=entries):
+            users = collect_local_users()
+
+    assert [user.username for user in users] == ["alice"]
+    assert users[0].home == "/home/alice"

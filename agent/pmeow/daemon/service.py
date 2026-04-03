@@ -7,13 +7,17 @@ import signal
 import socket
 import threading
 import time
+from typing import Iterable
 
 from pmeow import __version__
+from pmeow.collector.local_users import collect_local_users
 from pmeow.collector.snapshot import collect_snapshot
 from pmeow.config import AgentConfig
 from pmeow.executor.logs import append_task_log_line, ensure_task_log, read_task_log
 from pmeow.executor.runner import TaskRunner
 from pmeow.models import (
+    LocalUserRecord,
+    LocalUsersInventory,
     QueueState,
     TaskLaunchMode,
     TaskRecord,
@@ -64,6 +68,7 @@ class DaemonService:
                 agent_id=config.agent_id or socket.gethostname(),
                 heartbeat_interval=config.heartbeat_interval,
             )
+        self._last_local_users_signature: tuple[tuple[str, int, int, str, str, str], ...] | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -129,6 +134,34 @@ class DaemonService:
     # ------------------------------------------------------------------
     # Collection cycle
     # ------------------------------------------------------------------
+
+    def _local_user_signature(
+        self, users: Iterable[LocalUserRecord],
+    ) -> tuple[tuple[str, int, int, str, str, str], ...]:
+        return tuple(
+            (user.username, user.uid, user.gid, user.gecos, user.home, user.shell)
+            for user in users
+        )
+
+    def _send_local_users_if_changed(self, timestamp: float) -> None:
+        if not self.transport:
+            return
+
+        try:
+            users = collect_local_users()
+        except Exception:
+            log.exception("local user collection failed")
+            return
+
+        signature = self._local_user_signature(users)
+        if signature == self._last_local_users_signature:
+            return
+
+        self._last_local_users_signature = signature
+        self.transport.send_local_users(LocalUsersInventory(
+            timestamp=timestamp,
+            users=users,
+        ))
 
     def collect_cycle(self) -> None:
         """Run one collection ⟶ schedule ⟶ launch iteration."""
@@ -216,6 +249,7 @@ class DaemonService:
                         ))
 
         if self.transport:
+            self._send_local_users_if_changed(snapshot.timestamp)
             self.transport.send_metrics(snapshot)
             log.debug("sent metrics to server")
 

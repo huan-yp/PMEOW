@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock, patch
 
-from pmeow.models import TaskStatus, TaskUpdate
+from pmeow.models import LocalUserRecord, LocalUsersInventory, TaskStatus, TaskUpdate
 from pmeow.transport.client import AgentTransportClient
 
 
@@ -98,6 +98,42 @@ class TestSendTaskUpdate:
         assert d["pid"] == 42
         assert d["finishedAt"] is None
         assert d["exitCode"] is None
+
+
+class TestSendLocalUsers:
+    def test_local_users_payload_serializes_correctly(self):
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+        _force_connected(client, mock_sio)
+
+        inventory = LocalUsersInventory(
+            timestamp=1000.0,
+            users=[
+                LocalUserRecord(
+                    username="alice",
+                    uid=1000,
+                    gid=1000,
+                    gecos="Alice Example",
+                    home="/home/alice",
+                    shell="/bin/bash",
+                )
+            ],
+        )
+
+        client.send_local_users(inventory)
+
+        event, payload = _emit_payload(mock_sio)
+        assert event == "agent:localUsers"
+        assert payload["agentId"] == "test-agent"
+        assert payload["timestamp"] == 1000.0
+        assert payload["users"] == [{
+            "username": "alice",
+            "uid": 1000,
+            "gid": 1000,
+            "gecos": "Alice Example",
+            "home": "/home/alice",
+            "shell": "/bin/bash",
+        }]
 
 
 class TestInboundCommands:

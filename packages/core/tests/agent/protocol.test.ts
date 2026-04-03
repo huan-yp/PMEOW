@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AGENT_EVENT,
   SERVER_COMMAND,
+  isAgentLocalUsersPayload,
   isAgentMetricsEnvelope,
   isAgentRegisterPayload,
   isAgentTaskUpdatePayload,
@@ -82,6 +83,24 @@ describe('agent protocol', () => {
       createdAt: 1712010000,
       startedAt: 1712010010,
       pid: 1234,
+    })).toBe(true);
+  });
+
+  it('accepts a valid local users payload', () => {
+    expect(isAgentLocalUsersPayload({
+      serverId: 'server-1',
+      agentId: 'agent-1',
+      timestamp: 1712010000,
+      users: [
+        {
+          username: 'alice',
+          uid: 1000,
+          gid: 1000,
+          gecos: 'Alice Example',
+          home: '/home/alice',
+          shell: '/bin/bash',
+        },
+      ],
     })).toBe(true);
   });
 

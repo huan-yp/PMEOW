@@ -11,7 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import socketio
 
-from pmeow.models import MetricsSnapshot, TaskUpdate
+from pmeow.models import LocalUsersInventory, MetricsSnapshot, TaskUpdate
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +130,11 @@ class AgentTransportClient:
             "exitCode": update.exit_code,
             "pid": update.pid,
         })
+
+    def send_local_users(self, inventory: LocalUsersInventory) -> None:
+        payload = inventory.to_dict()
+        payload["agentId"] = self._agent_id
+        self._send_event("agent:localUsers", payload)
 
     def send_heartbeat(self) -> None:
         if not self._connected:

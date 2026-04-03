@@ -2,11 +2,14 @@ import {
   AGENT_EVENT,
   AgentDataSource,
   type AgentHeartbeatPayload,
+  type AgentLocalUsersPayload,
   type AgentRegisterPayload,
   AgentSessionRegistry,
   type AgentLiveSession,
   type AgentTaskUpdatePayload,
+  ingestAgentLocalUsers,
   ingestAgentTaskUpdate,
+  isAgentLocalUsersPayload,
   isAgentMetricsPayload,
   type Scheduler,
   SERVER_COMMAND,
@@ -47,6 +50,7 @@ interface AgentNamespaceClientEvents {
   [AGENT_EVENT.register]: (payload: AgentRegisterPayload) => void;
   [AGENT_EVENT.metrics]: (payload: unknown) => void;
   [AGENT_EVENT.taskUpdate]: (payload: unknown) => void;
+  [AGENT_EVENT.localUsers]: (payload: unknown) => void;
   [AGENT_EVENT.heartbeat]: (payload: AgentHeartbeatPayload) => void;
 }
 
@@ -219,6 +223,48 @@ function normalizeTaskUpdatePayload(
   };
 }
 
+function normalizeLocalUsersPayload(
+  payload: unknown,
+  serverId: string | undefined,
+  agentId: string,
+): AgentLocalUsersPayload | undefined {
+  if (!serverId) {
+    return undefined;
+  }
+
+  if (isAgentLocalUsersPayload(payload)) {
+    const normalizedPayload = {
+      ...payload,
+      serverId,
+      agentId,
+    };
+
+    return {
+      ...normalizedPayload,
+      timestamp: normalizeTimestamp(normalizedPayload.timestamp),
+    };
+  }
+
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+
+  const normalizedPayload = {
+    ...payload,
+    serverId,
+    agentId,
+  };
+
+  if (!isAgentLocalUsersPayload(normalizedPayload)) {
+    return undefined;
+  }
+
+  return {
+    ...normalizedPayload,
+    timestamp: normalizeTimestamp(normalizedPayload.timestamp),
+  };
+}
+
 export function createAgentNamespace(
   io: SocketServer,
   scheduler: Scheduler,
@@ -368,6 +414,20 @@ export function createAgentNamespace(
 
       ingestAgentTaskUpdate(update);
       onTaskUpdate?.(update);
+    });
+
+    socket.on(AGENT_EVENT.localUsers, (payload: unknown) => {
+      const state = socket.data.agentState;
+      if (!state || !isCurrentState(states, state)) {
+        return;
+      }
+
+      const inventory = normalizeLocalUsersPayload(payload, state.serverId, state.agentId);
+      if (!inventory) {
+        return;
+      }
+
+      ingestAgentLocalUsers(inventory);
     });
 
     socket.on('disconnect', () => {

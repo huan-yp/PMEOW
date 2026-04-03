@@ -5,6 +5,7 @@ import { upsertAgentTask } from '../../src/db/agent-tasks.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../../src/db/persons.js';
 import { resolveTaskPerson } from '../../src/person/resolve.js';
 import { saveMetrics } from '../../src/db/metrics.js';
+import { replaceServerLocalUsers } from '../../src/db/server-local-users.js';
 import {
   getPersonSummaries,
   getPersonTimeline,
@@ -59,6 +60,47 @@ describe('person attribution', () => {
     ]);
   });
 
+  it('includes local inventory users in binding candidates and suggestions without gpu facts', () => {
+    const now = Date.now();
+    const server = createServer({ name: 'gpu-local', host: 'gpu-local', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-local' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const binding = createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 1_000 });
+
+    replaceServerLocalUsers(server.id, now, [
+      { username: 'alice', uid: 1000, gid: 1000, gecos: 'Alice Example', home: '/home/alice', shell: '/bin/bash' },
+      { username: 'carol', uid: 1002, gid: 1002, gecos: 'Carol Example', home: '/home/carol', shell: '/bin/bash' },
+    ]);
+
+    expect(listPersonBindingCandidates()).toEqual([
+      {
+        serverId: server.id,
+        serverName: 'gpu-local',
+        systemUser: 'alice',
+        lastSeenAt: now,
+        activeBinding: {
+          bindingId: binding.id,
+          personId: alice.id,
+          personDisplayName: 'Alice',
+        },
+      },
+      {
+        serverId: server.id,
+        serverName: 'gpu-local',
+        systemUser: 'carol',
+        lastSeenAt: now,
+        activeBinding: null,
+      },
+    ]);
+    expect(listPersonBindingSuggestions()).toEqual([
+      {
+        serverId: server.id,
+        serverName: 'gpu-local',
+        systemUser: 'carol',
+        lastSeenAt: now,
+      },
+    ]);
+  });
+
   it('lists observed binding candidates with active binding metadata for bound and unbound users', () => {
     const now = Date.now();
     const server = createServer({ name: 'gpu-3', host: 'gpu-3', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-3' });
@@ -101,6 +143,41 @@ describe('person attribution', () => {
           personId: alice.id,
           personDisplayName: 'Alice',
         },
+      },
+    ]);
+  });
+
+  it('replaces local inventory rows while preserving observed unbound users from attribution facts', () => {
+    const now = Date.now();
+    const server = createServer({ name: 'gpu-4', host: 'gpu-4', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-4' });
+
+    replaceServerLocalUsers(server.id, now - 120_000, [
+      { username: 'alice', uid: 1000, gid: 1000, gecos: 'Alice Example', home: '/home/alice', shell: '/bin/bash' },
+    ]);
+
+    saveGpuUsageRows(server.id, now - 60_000, [
+      { gpuIndex: 0, ownerType: 'user', ownerId: 'carol', userName: 'carol', pid: 4001, command: 'python still-running.py', usedMemoryMB: 1024 },
+    ]);
+    recordGpuAttributionFacts(server.id, now - 60_000);
+
+    replaceServerLocalUsers(server.id, now, [
+      { username: 'bob', uid: 1001, gid: 1001, gecos: 'Bob Example', home: '/home/bob', shell: '/bin/bash' },
+    ]);
+
+    expect(listPersonBindingCandidates()).toEqual([
+      {
+        serverId: server.id,
+        serverName: 'gpu-4',
+        systemUser: 'bob',
+        lastSeenAt: now,
+        activeBinding: null,
+      },
+      {
+        serverId: server.id,
+        serverName: 'gpu-4',
+        systemUser: 'carol',
+        lastSeenAt: now - 60_000,
+        activeBinding: null,
       },
     ]);
   });

@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -16,6 +17,7 @@ from pmeow.config import AgentConfig
 from pmeow.daemon.service import DaemonService
 from pmeow.daemon.socket_server import SocketServer, send_request
 from pmeow.executor.logs import read_task_log
+from pmeow.models import LocalUserRecord
 from pmeow.models import TaskLaunchMode, TaskSpec, TaskStatus
 
 
@@ -240,6 +242,70 @@ def test_collect_cycle_requeues_expired_attached_launch(svc, monkeypatch):
 
     content = read_task_log(rec.id, svc.config.log_dir)
     assert "launch reservation expired" in content
+
+
+def test_collect_cycle_sends_local_users_only_when_inventory_changes(svc, monkeypatch):
+    svc.transport = MagicMock()
+    snapshots = [
+        [
+            LocalUserRecord(
+                username="alice",
+                uid=1000,
+                gid=1000,
+                gecos="Alice Example",
+                home="/home/alice",
+                shell="/bin/bash",
+            )
+        ],
+        [
+            LocalUserRecord(
+                username="alice",
+                uid=1000,
+                gid=1000,
+                gecos="Alice Example",
+                home="/home/alice",
+                shell="/bin/bash",
+            )
+        ],
+        [
+            LocalUserRecord(
+                username="alice",
+                uid=1000,
+                gid=1000,
+                gecos="Alice Example",
+                home="/home/alice",
+                shell="/bin/bash",
+            ),
+            LocalUserRecord(
+                username="bob",
+                uid=1001,
+                gid=1001,
+                gecos="Bob Example",
+                home="/home/bob",
+                shell="/bin/bash",
+            ),
+        ],
+    ]
+
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_snapshot",
+        lambda **kw: _fake_snapshot(),
+    )
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_local_users",
+        lambda: snapshots.pop(0),
+    )
+
+    svc.collect_cycle()
+    svc.collect_cycle()
+    svc.collect_cycle()
+
+    assert svc.transport.send_metrics.call_count == 3
+    assert svc.transport.send_local_users.call_count == 2
+    first_inventory = svc.transport.send_local_users.call_args_list[0].args[0]
+    second_inventory = svc.transport.send_local_users.call_args_list[1].args[0]
+    assert [user.username for user in first_inventory.users] == ["alice"]
+    assert [user.username for user in second_inventory.users] == ["alice", "bob"]
 
 
 # ------------------------------------------------------------------

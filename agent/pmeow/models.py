@@ -188,6 +188,28 @@ class GpuAllocationSummary:
     by_user: list[UserGpuUsageSummary] = field(default_factory=list)
 
 
+@dataclass
+class LocalUserRecord:
+    username: str
+    uid: int
+    gid: int
+    gecos: str
+    home: str
+    shell: str
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
+
+@dataclass
+class LocalUsersInventory:
+    timestamp: float
+    users: list[LocalUserRecord] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
+
 # ---------------------------------------------------------------------------
 # Collector snapshot models (mirrors TypeScript MetricsSnapshot)
 # ---------------------------------------------------------------------------

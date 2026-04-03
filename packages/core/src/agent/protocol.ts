@@ -1,5 +1,7 @@
 import type {
   AgentHeartbeatPayload,
+  AgentLocalUserRecord,
+  AgentLocalUsersPayload,
   AgentRegisterPayload,
   AgentTaskStatus,
   AgentTaskUpdatePayload,
@@ -15,6 +17,7 @@ import type {
 
 export type {
   AgentHeartbeatPayload,
+  AgentLocalUsersPayload,
   AgentRegisterPayload,
   AgentTaskUpdatePayload,
   MirroredAgentTaskRecord,
@@ -24,6 +27,7 @@ export const AGENT_EVENT = {
   register: 'agent:register',
   metrics: 'agent:metrics',
   taskUpdate: 'agent:taskUpdate',
+  localUsers: 'agent:localUsers',
   heartbeat: 'agent:heartbeat',
 } as const;
 
@@ -72,6 +76,11 @@ export interface AgentTaskUpdateEnvelope {
   data: AgentTaskUpdatePayload;
 }
 
+export interface AgentLocalUsersEnvelope {
+  event: typeof AGENT_EVENT.localUsers;
+  data: AgentLocalUsersPayload;
+}
+
 export interface AgentHeartbeatEnvelope {
   event: typeof AGENT_EVENT.heartbeat;
   data: AgentHeartbeatPayload;
@@ -81,6 +90,7 @@ export type AgentEventEnvelope =
   | AgentRegisterEnvelope
   | AgentMetricsEnvelope
   | AgentTaskUpdateEnvelope
+  | AgentLocalUsersEnvelope
   | AgentHeartbeatEnvelope;
 
 export interface ServerCancelTaskEnvelope {
@@ -297,6 +307,30 @@ export function isAgentTaskUpdatePayload(value: unknown): value is AgentTaskUpda
     && isOptionalInteger(value.pid);
 }
 
+export function isAgentLocalUserRecord(value: unknown): value is AgentLocalUserRecord {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return isString(value.username)
+    && isInteger(value.uid)
+    && isInteger(value.gid)
+    && isString(value.gecos)
+    && isString(value.home)
+    && isString(value.shell);
+}
+
+export function isAgentLocalUsersPayload(value: unknown): value is AgentLocalUsersPayload {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return isString(value.serverId)
+    && isString(value.agentId)
+    && isFiniteNumber(value.timestamp)
+    && isArrayOf(value.users, isAgentLocalUserRecord);
+}
+
 export function isAgentMetricsPayload(value: unknown): value is AgentMetricsPayload {
   if (!isRecord(value)) {
     return false;
@@ -351,6 +385,12 @@ export function isAgentTaskUpdateEnvelope(value: unknown): value is AgentTaskUpd
     && isAgentTaskUpdatePayload(value.data);
 }
 
+export function isAgentLocalUsersEnvelope(value: unknown): value is AgentLocalUsersEnvelope {
+  return hasEnvelopeShape(value)
+    && value.event === AGENT_EVENT.localUsers
+    && isAgentLocalUsersPayload(value.data);
+}
+
 export function isAgentHeartbeatEnvelope(value: unknown): value is AgentHeartbeatEnvelope {
   return hasEnvelopeShape(value)
     && value.event === AGENT_EVENT.heartbeat
@@ -361,6 +401,7 @@ export function isAgentEventEnvelope(value: unknown): value is AgentEventEnvelop
   return isAgentRegisterEnvelope(value)
     || isAgentMetricsEnvelope(value)
     || isAgentTaskUpdateEnvelope(value)
+    || isAgentLocalUsersEnvelope(value)
     || isAgentHeartbeatEnvelope(value);
 }
 

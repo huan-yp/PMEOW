@@ -2,7 +2,8 @@ import { upsertAgentTask } from '../db/agent-tasks.js';
 import { saveGpuUsageRows, type GpuUsageRowInput } from '../db/gpu-usage.js';
 import { saveMetrics } from '../db/metrics.js';
 import { recordGpuAttributionFacts, recordTaskAttributionFact } from '../db/person-attribution.js';
-import type { AgentTaskUpdatePayload, GpuAllocationSummary, MetricsSnapshot } from '../types.js';
+import { replaceServerLocalUsers } from '../db/server-local-users.js';
+import type { AgentLocalUsersPayload, AgentTaskUpdatePayload, GpuAllocationSummary, MetricsSnapshot } from '../types.js';
 
 export function ingestAgentMetrics(snapshot: MetricsSnapshot): void {
   saveMetrics(snapshot);
@@ -19,6 +20,10 @@ export function ingestAgentMetrics(snapshot: MetricsSnapshot): void {
 export function ingestAgentTaskUpdate(update: AgentTaskUpdatePayload): void {
   upsertAgentTask(update);
   recordTaskAttributionFact(update);
+}
+
+export function ingestAgentLocalUsers(payload: AgentLocalUsersPayload): void {
+  replaceServerLocalUsers(payload.serverId, payload.timestamp, payload.users);
 }
 
 export function flattenGpuAllocation(

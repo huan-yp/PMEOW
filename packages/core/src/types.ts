@@ -241,6 +241,22 @@ export interface AgentTaskUpdatePayload {
   pid?: number | null;
 }
 
+export interface AgentLocalUserRecord {
+  username: string;
+  uid: number;
+  gid: number;
+  gecos: string;
+  home: string;
+  shell: string;
+}
+
+export interface AgentLocalUsersPayload {
+  serverId: string;
+  agentId: string;
+  timestamp: number;
+  users: AgentLocalUserRecord[];
+}
+
 export interface MirroredAgentTaskRecord extends AgentTaskUpdatePayload {
   serverId: string;
 }

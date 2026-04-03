@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   flattenGpuAllocation,
+  ingestAgentLocalUsers,
   ingestAgentMetrics,
   ingestAgentTaskUpdate,
 } from '../../src/agent/ingest.js';
@@ -8,6 +9,7 @@ import { getAgentTask, getAgentTasksByServerId } from '../../src/db/agent-tasks.
 import { getDatabase } from '../../src/db/database.js';
 import { getLatestGpuUsageByServerId } from '../../src/db/gpu-usage.js';
 import { getLatestMetrics } from '../../src/db/metrics.js';
+import { listServerLocalUsers } from '../../src/db/server-local-users.js';
 import { createServer } from '../../src/db/servers.js';
 import type { GpuAllocationSummary, MetricsSnapshot } from '../../src/types.js';
 
@@ -317,6 +319,73 @@ describe('agent ingest', () => {
     expect(getLatestMetrics(server.id)).toEqual(snapshot);
     expect(gpuUsageCount.count).toBe(0);
     expect(getLatestGpuUsageByServerId(server.id)).toEqual([]);
+  });
+
+  it('stores local users with full-replace semantics outside metrics and gpu usage tables', () => {
+    const server = createAgentServer();
+
+    ingestAgentLocalUsers({
+      serverId: server.id,
+      agentId: 'agent-1',
+      timestamp: 1_712_010_000_000,
+      users: [
+        {
+          username: 'alice',
+          uid: 1000,
+          gid: 1000,
+          gecos: 'Alice Example',
+          home: '/home/alice',
+          shell: '/bin/bash',
+        },
+        {
+          username: 'bob',
+          uid: 1001,
+          gid: 1001,
+          gecos: 'Bob Example',
+          home: '/home/bob',
+          shell: '/bin/bash',
+        },
+      ],
+    });
+
+    ingestAgentLocalUsers({
+      serverId: server.id,
+      agentId: 'agent-1',
+      timestamp: 1_712_010_001_000,
+      users: [
+        {
+          username: 'bob',
+          uid: 1001,
+          gid: 1001,
+          gecos: 'Bob Example',
+          home: '/home/bob',
+          shell: '/bin/bash',
+        },
+      ],
+    });
+
+    const db = getDatabase();
+    const metricsCount = db.prepare(
+      'SELECT COUNT(*) AS count FROM metrics WHERE serverId = ?'
+    ).get(server.id) as { count: number };
+    const gpuUsageCount = db.prepare(
+      'SELECT COUNT(*) AS count FROM gpu_usage_stats WHERE serverId = ?'
+    ).get(server.id) as { count: number };
+
+    expect(listServerLocalUsers(server.id)).toEqual([
+      {
+        serverId: server.id,
+        username: 'bob',
+        uid: 1001,
+        gid: 1001,
+        gecos: 'Bob Example',
+        home: '/home/bob',
+        shell: '/bin/bash',
+        updatedAt: 1_712_010_001_000,
+      },
+    ]);
+    expect(metricsCount.count).toBe(0);
+    expect(gpuUsageCount.count).toBe(0);
   });
 
   it('does not create duplicate mirrored tasks for repeated task updates', () => {

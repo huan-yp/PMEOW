@@ -232,6 +232,25 @@ function initSchema(db: Database.Database): void {
       metadataJson TEXT NOT NULL DEFAULT '{}'
     );
 
+    CREATE TABLE IF NOT EXISTS server_local_users (
+      serverId TEXT NOT NULL,
+      username TEXT NOT NULL,
+      uid INTEGER NOT NULL,
+      gid INTEGER NOT NULL,
+      gecos TEXT NOT NULL DEFAULT '',
+      home TEXT NOT NULL DEFAULT '',
+      shell TEXT NOT NULL DEFAULT '',
+      updatedAt INTEGER NOT NULL,
+      PRIMARY KEY (serverId, username),
+      FOREIGN KEY (serverId) REFERENCES servers(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_server_local_users_server_updated
+      ON server_local_users(serverId, updatedAt DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_server_local_users_username
+      ON server_local_users(username);
+
     CREATE TABLE IF NOT EXISTS person_mobile_tokens (
       id TEXT PRIMARY KEY,
       personId TEXT NOT NULL,

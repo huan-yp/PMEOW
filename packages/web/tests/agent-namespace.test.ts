@@ -3,6 +3,8 @@ import {
   Scheduler,
   createServer,
   getServerById,
+  listPersonBindingCandidates,
+  listPersonBindingSuggestions,
 } from '@monitor/core';
 import { io as createClient, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -183,6 +185,63 @@ describe('createAgentNamespace', () => {
       expect(runtime.agentRegistry.getLastHeartbeat('agent-heartbeat')).toBe(heartbeatAt);
       expect(runtime.agentRegistry.getLastHeartbeat('agent-heartbeat')).toBeGreaterThan(initialHeartbeatAt);
       expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(true);
+    });
+  });
+
+  it('normalizes and ingests local user inventory events for binding queries', async () => {
+    const { runtime, baseUrl } = await startRuntime();
+    const server = createServer({
+      name: 'gpu-local-users',
+      host: 'gpu-local-users',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+    });
+    const client = await connectAgent(baseUrl);
+
+    client.emit('agent:register', {
+      agentId: 'agent-local-users',
+      hostname: 'gpu-local-users',
+      version: '1.0.0',
+    });
+
+    await waitForCondition(() => {
+      expect(getAgentDataSource(runtime, server.id).isConnected()).toBe(true);
+    });
+
+    client.emit('agent:localUsers', {
+      agentId: 'stale-agent-id',
+      timestamp: 1_712_010_000,
+      users: [
+        {
+          username: 'alice',
+          uid: 1000,
+          gid: 1000,
+          gecos: 'Alice Example',
+          home: '/home/alice',
+          shell: '/bin/bash',
+        },
+      ],
+    });
+
+    await waitForCondition(() => {
+      expect(listPersonBindingCandidates()).toEqual([
+        {
+          serverId: server.id,
+          serverName: 'gpu-local-users',
+          systemUser: 'alice',
+          lastSeenAt: 1_712_010_000_000,
+          activeBinding: null,
+        },
+      ]);
+      expect(listPersonBindingSuggestions()).toEqual([
+        {
+          serverId: server.id,
+          serverName: 'gpu-local-users',
+          systemUser: 'alice',
+          lastSeenAt: 1_712_010_000_000,
+        },
+      ]);
     });
   });
 
