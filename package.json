@@ -17,7 +17,8 @@
     "test:core": "npm run test --workspace=@monitor/core",
     "test:web": "npm run build:core && npm run test --workspace=@monitor/web",
     "typecheck:core": "npm run typecheck --workspace=@monitor/core",
-    "typecheck:web": "npm run build:core && npm run typecheck --workspace=@monitor/web"
+    "typecheck:web": "npm run build:core && npm run typecheck --workspace=@monitor/web",
+    "build:apk": "npm run build:core && npm run cap:build --workspace=@monitor/ui"
   },
   "engines": {
     "node": ">=20.0.0"

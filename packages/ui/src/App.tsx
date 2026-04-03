@@ -29,6 +29,8 @@ import { PersonTasks } from './mobile/screens/person/Tasks.js';
 import { PersonNodes } from './mobile/screens/person/Nodes.js';
 import { PersonNotifications } from './mobile/screens/person/Notifications.js';
 import { PersonSettings } from './mobile/screens/person/Settings.js';
+import { ConnectScreen } from './mobile/screens/ConnectScreen.js';
+import { getServerUrl } from './mobile/session/server-url.js';
 
 function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const links = [
@@ -188,14 +190,36 @@ export default function App({ adapter }: { adapter?: TransportAdapter }) {
   return (
     <TransportProvider adapter={adapter}>
       <BrowserRouter>
-        <AppRouter />
+        <CapacitorGate />
       </BrowserRouter>
     </TransportProvider>
   );
 }
 
+/** In Capacitor native environment, redirect to /connect if no server URL is configured. */
+function CapacitorGate() {
+  const location = useLocation();
+  const isNative = typeof (window as any).Capacitor?.isNativePlatform === 'function'
+    && (window as any).Capacitor.isNativePlatform();
+
+  if (isNative && !getServerUrl() && location.pathname !== '/connect') {
+    return <Navigate to="/connect" replace />;
+  }
+
+  return <AppRouter />;
+}
+
 function AppRouter() {
   const location = useLocation();
+
+  // Capacitor native: show connect screen if no server configured
+  if (location.pathname === '/connect') {
+    return (
+      <Routes>
+        <Route path="/connect" element={<ConnectScreen />} />
+      </Routes>
+    );
+  }
 
   // Person mobile routes bypass admin auth
   if (location.pathname.startsWith('/m/me')) {

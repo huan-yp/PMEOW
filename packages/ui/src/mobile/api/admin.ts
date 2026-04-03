@@ -1,3 +1,4 @@
+import { getServerUrl } from '../session/server-url.js';
 import type { MobileAdminSummary } from '@monitor/core';
 
 async function adminFetch<T>(url: string): Promise<T> {
@@ -5,7 +6,8 @@ async function adminFetch<T>(url: string): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const res = await window.fetch(url, { headers });
+  const base = getServerUrl() ?? '';
+  const res = await window.fetch(`${base}${url}`, { headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

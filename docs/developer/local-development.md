@@ -293,3 +293,69 @@ cd packages/ui && npx vitest run tests/mobile-admin-pages.test.tsx tests/mobile-
 cd packages/web && npx vitest run tests/mobile-admin-routes.test.ts tests/mobile-person-routes.test.ts
 ```
 4. 需要验证生产链路时用 `pnpm build:web && pnpm start:web`，不要只看开发服务器是否正常。
+
+## 构建 Android APK
+
+PMEOW 使用 Capacitor 将移动端 Web UI 打包为 Android APK。
+
+### 环境准备
+
+- **Android SDK** — 安装 Android Studio 或仅安装命令行工具，确保 `ANDROID_HOME` 或 `ANDROID_SDK_ROOT` 环境变量已设置
+- **JDK 17+** — Gradle 构建需要 Java
+- **Node.js 20+** 和 **pnpm 9+** — 与 Web 开发相同
+
+### 构建命令
+
+一键构建 debug APK：
+
+```bash
+pnpm build:apk
+```
+
+这等价于：
+
+```bash
+pnpm build:core
+cd packages/ui
+pnpm build          # Vite 构建 UI
+pnpm cap:sync       # 同步 web 资源到 android/
+pnpm apk:debug      # Gradle 构建 debug APK
+```
+
+生成的 APK 位于：
+
+```text
+packages/ui/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 在 Android Studio 中打开
+
+```bash
+cd packages/ui && pnpm cap:open
+```
+
+### 调试
+
+1. 在 Android 设备上启用开发者模式和 USB 调试。
+2. 连接设备后通过 Android Studio 运行应用。
+3. 在 Chrome 浏览器中打开 `chrome://inspect` 可以远程调试 WebView。
+
+### Capacitor 配置
+
+Capacitor 配置文件位于 `packages/ui/capacitor.config.ts`，主要配置：
+
+- `appId`: `dev.pmeow.app`
+- `webDir`: `dist` — Vite 构建产物目录
+- `server.androidScheme`: `https` — WebView 使用 HTTPS scheme
+- `server.allowNavigation`: `['*']` — 允许向任意服务器发请求
+- `android.allowMixedContent`: `true` — 兼容 HTTP 服务器
+
+### 相关脚本
+
+| 脚本 | 位置 | 说明 |
+| --- | --- | --- |
+| `pnpm build:apk` | 根目录 | 一键构建 debug APK |
+| `pnpm cap:sync` | packages/ui | 同步 web 资源到 Android 项目 |
+| `pnpm cap:build` | packages/ui | 构建 UI + 同步 |
+| `pnpm cap:open` | packages/ui | 打开 Android Studio |
+| `pnpm apk:debug` | packages/ui | Gradle 构建 debug APK |

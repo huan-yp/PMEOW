@@ -9,24 +9,31 @@
     "build": "vite build",
     "dev": "vite",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "cap:sync": "cap sync android",
+    "cap:build": "vite build && cap sync android",
+    "cap:open": "cap open android",
+    "apk:debug": "cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/core": "^6.2.1",
     "@monitor/core": "file:../core",
+    "echarts": "^5.5.0",
+    "echarts-for-react": "^3.0.2",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-router-dom": "^6.28.0",
-    "zustand": "^5.0.0",
-    "echarts": "^5.5.0",
-    "echarts-for-react": "^3.0.2",
-    "socket.io-client": "^4.8.0"
+    "socket.io-client": "^4.8.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/cli": "^6.2.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.0",
     "jsdom": "^25.0.1",

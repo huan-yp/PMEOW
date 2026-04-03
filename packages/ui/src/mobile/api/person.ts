@@ -1,4 +1,5 @@
 import { getPersonToken } from '../session/person-session.js';
+import { getServerUrl } from '../session/server-url.js';
 import type { MobilePersonBootstrap, PersonMobilePreferenceRecord, PersonMobileNotificationRecord, MirroredAgentTaskRecord } from '@monitor/core';
 
 async function personFetch<T>(url: string, options?: RequestInit): Promise<T> {
@@ -9,7 +10,8 @@ async function personFetch<T>(url: string, options?: RequestInit): Promise<T> {
   };
   if (token) headers['X-PMEOW-Person-Token'] = token;
 
-  const res = await window.fetch(url, { ...options, headers });
+  const base = getServerUrl() ?? '';
+  const res = await window.fetch(`${base}${url}`, { ...options, headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

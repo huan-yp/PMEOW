@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { MobileTabBar } from '../components/MobileTabBar.js';
 import { getPersonToken } from '../session/person-session.js';
+import { getServerUrl } from '../session/server-url.js';
 import { getPersonBootstrap } from '../api/person.js';
 
 export function MobilePersonLayout() {
@@ -12,6 +13,11 @@ export function MobilePersonLayout() {
   useEffect(() => {
     const token = getPersonToken();
     if (!token) {
+      // If running in Capacitor with server URL but no token, redirect to connect screen
+      if (getServerUrl()) {
+        navigate('/connect', { replace: true });
+        return;
+      }
       setValid(false);
       return;
     }
