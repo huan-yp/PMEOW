@@ -6,6 +6,10 @@ export function getSettings(): AppSettings {
   const db = getDatabase();
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const map = new Map(rows.map(r => [r.key, r.value]));
+  const getNumberSetting = (key: string, defaultValue: number): number => {
+    const value = Number.parseInt(map.get(key) ?? '', 10);
+    return Number.isNaN(value) ? defaultValue : value;
+  };
 
   return {
     refreshIntervalMs: parseInt(map.get('refreshIntervalMs') || '') || DEFAULT_SETTINGS.refreshIntervalMs,
@@ -20,6 +24,12 @@ export function getSettings(): AppSettings {
     apiPort: parseInt(map.get('apiPort') || '') || DEFAULT_SETTINGS.apiPort,
     apiToken: map.get('apiToken') ?? DEFAULT_SETTINGS.apiToken,
     historyRetentionDays: parseInt(map.get('historyRetentionDays') || '') || DEFAULT_SETTINGS.historyRetentionDays,
+    securityMiningKeywords: map.has('securityMiningKeywords')
+      ? JSON.parse(map.get('securityMiningKeywords')!)
+      : DEFAULT_SETTINGS.securityMiningKeywords,
+    securityUnownedGpuMinutes: getNumberSetting('securityUnownedGpuMinutes', DEFAULT_SETTINGS.securityUnownedGpuMinutes),
+    securityHighGpuUtilizationPercent: getNumberSetting('securityHighGpuUtilizationPercent', DEFAULT_SETTINGS.securityHighGpuUtilizationPercent),
+    securityHighGpuDurationMinutes: getNumberSetting('securityHighGpuDurationMinutes', DEFAULT_SETTINGS.securityHighGpuDurationMinutes),
     password: map.get('password') ?? DEFAULT_SETTINGS.password,
   };
 }

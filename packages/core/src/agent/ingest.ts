@@ -44,6 +44,7 @@ export function flattenGpuAllocation(
         ownerId: process.user,
         userName: process.user,
         pid: process.pid,
+        command: process.command,
         usedMemoryMB: process.usedMemoryMB,
       });
     }
@@ -53,6 +54,7 @@ export function flattenGpuAllocation(
         gpuIndex: allocation.gpuIndex,
         ownerType: 'unknown',
         pid: process.pid,
+        command: process.command,
         usedMemoryMB: process.usedMemoryMB,
       });
     }

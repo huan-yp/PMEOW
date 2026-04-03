@@ -104,6 +104,7 @@ export interface GpuUnknownProcess {
   pid: number;
   gpuIndex: number;
   usedMemoryMB: number;
+  command?: string;
 }
 
 export interface PerGpuAllocationSummary {
@@ -124,6 +125,91 @@ export interface UserGpuUsageSummary {
 export interface GpuAllocationSummary {
   perGpu: PerGpuAllocationSummary[];
   byUser: UserGpuUsageSummary[];
+}
+
+export type SecurityEventType = 'suspicious_process' | 'unowned_gpu' | 'marked_safe';
+
+export interface SecurityEventDetails {
+  reason: string;
+  pid?: number;
+  user?: string;
+  command?: string;
+  gpuIndex?: number;
+  taskId?: string | null;
+  keyword?: string;
+  targetEventId?: number;
+  durationMinutes?: number;
+  usedMemoryMB?: number;
+}
+
+export interface SecurityEventRecord {
+  id: number;
+  serverId: string;
+  eventType: SecurityEventType;
+  fingerprint: string;
+  details: SecurityEventDetails;
+  resolved: boolean;
+  resolvedBy: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+export interface ProcessAuditRow {
+  pid: number;
+  user: string;
+  command: string;
+  cpuPercent: number;
+  memPercent: number;
+  rss: number;
+  gpuMemoryMB: number;
+  ownerType: 'task' | 'user' | 'unknown' | 'none';
+  taskId?: string | null;
+  suspiciousReasons: string[];
+}
+
+export interface AgentTaskQueueGroup {
+  serverId: string;
+  serverName: string;
+  queued: MirroredAgentTaskRecord[];
+  running: MirroredAgentTaskRecord[];
+  recent: MirroredAgentTaskRecord[];
+}
+
+export interface GpuOverviewUserSummary {
+  user: string;
+  totalVramMB: number;
+  taskCount: number;
+  processCount: number;
+  serverIds: string[];
+}
+
+export interface GpuOverviewServerSummary {
+  serverId: string;
+  serverName: string;
+  totalUsedMB: number;
+  totalTaskMB: number;
+  totalNonTaskMB: number;
+}
+
+export interface GpuOverviewResponse {
+  generatedAt: number;
+  users: GpuOverviewUserSummary[];
+  servers: GpuOverviewServerSummary[];
+}
+
+export interface GpuUsageSummaryItem {
+  user: string;
+  totalVramMB: number;
+  taskVramMB: number;
+  nonTaskVramMB: number;
+}
+
+export interface GpuUsageTimelinePoint {
+  bucketStart: number;
+  user: string;
+  totalVramMB: number;
+  taskVramMB: number;
+  nonTaskVramMB: number;
 }
 
 export interface AgentRegisterPayload {
@@ -287,6 +373,10 @@ export interface AppSettings {
   apiPort: number;
   apiToken: string;
   historyRetentionDays: number;
+  securityMiningKeywords: string[];
+  securityUnownedGpuMinutes: number;
+  securityHighGpuUtilizationPercent: number;
+  securityHighGpuDurationMinutes: number;
   password: string;           // bcrypt hash, for web mode
 }
 
@@ -301,6 +391,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   apiPort: 17210,
   apiToken: '',
   historyRetentionDays: 7,
+  securityMiningKeywords: ['xmrig', 'ethminer', 'nbminer'],
+  securityUnownedGpuMinutes: 30,
+  securityHighGpuUtilizationPercent: 90,
+  securityHighGpuDurationMinutes: 120,
   password: '',
 };
 
@@ -312,6 +406,7 @@ export interface CoreEvents {
   metricsUpdate: (data: MetricsSnapshot) => void;
   serverStatus: (status: ServerStatus) => void;
   alert: (alert: AlertEvent) => void;
+  securityEvent: (event: SecurityEventRecord) => void;
   hookTriggered: (log: HookLog) => void;
   notify: (title: string, body: string) => void;
 }

@@ -135,6 +135,7 @@ function initSchema(db: Database.Database): void {
       userName TEXT,
       taskId TEXT,
       pid INTEGER,
+      command TEXT,
       usedMemoryMB REAL NOT NULL,
       declaredVramMB REAL
     );
@@ -144,6 +145,34 @@ function initSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_server_gpu_time
       ON gpu_usage_stats(serverId, gpuIndex, timestamp DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_user_time
+      ON gpu_usage_stats(userName, timestamp DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_task_time
+      ON gpu_usage_stats(taskId, timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS security_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      serverId TEXT NOT NULL,
+      eventType TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      detailsJson TEXT NOT NULL,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      resolvedBy TEXT,
+      createdAt INTEGER NOT NULL,
+      resolvedAt INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_security_events_server_created_at
+      ON security_events(serverId, createdAt DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_security_events_resolved_created_at
+      ON security_events(resolved, createdAt DESC);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_security_events_open_fingerprint
+      ON security_events(serverId, eventType, fingerprint)
+      WHERE resolved = 0;
   `);
 
   ensureColumns(db, 'servers', [
@@ -178,9 +207,39 @@ function initSchema(db: Database.Database): void {
     { name: 'userName', definition: 'TEXT' },
     { name: 'taskId', definition: 'TEXT' },
     { name: 'pid', definition: 'INTEGER' },
+    { name: 'command', definition: 'TEXT' },
     { name: 'usedMemoryMB', definition: 'REAL NOT NULL DEFAULT 0' },
     { name: 'declaredVramMB', definition: 'REAL' },
   ]);
+
+  ensureColumns(db, 'security_events', [
+    { name: 'serverId', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'eventType', definition: "TEXT NOT NULL DEFAULT 'suspicious_process'" },
+    { name: 'fingerprint', definition: "TEXT NOT NULL DEFAULT ''" },
+    { name: 'detailsJson', definition: "TEXT NOT NULL DEFAULT '{}'" },
+    { name: 'resolved', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'resolvedBy', definition: 'TEXT' },
+    { name: 'createdAt', definition: 'INTEGER NOT NULL DEFAULT 0' },
+    { name: 'resolvedAt', definition: 'INTEGER' },
+  ]);
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_user_time
+      ON gpu_usage_stats(userName, timestamp DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_task_time
+      ON gpu_usage_stats(taskId, timestamp DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_security_events_server_created_at
+      ON security_events(serverId, createdAt DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_security_events_resolved_created_at
+      ON security_events(resolved, createdAt DESC);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_security_events_open_fingerprint
+      ON security_events(serverId, eventType, fingerprint)
+      WHERE resolved = 0;
+  `);
 }
 
 function ensureColumns(db: Database.Database, tableName: string, columns: SchemaColumn[]): void {

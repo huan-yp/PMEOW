@@ -1,5 +1,17 @@
 // Core package - public API
 export * from './types.js';
+export type {
+	AgentTaskQueueGroup,
+	GpuOverviewResponse,
+	GpuOverviewServerSummary,
+	GpuOverviewUserSummary,
+	GpuUsageSummaryItem,
+	GpuUsageTimelinePoint,
+	ProcessAuditRow,
+	SecurityEventDetails,
+	SecurityEventRecord,
+	SecurityEventType,
+} from './types.js';
 export * from './agent/protocol.js';
 export { resolveAgentBinding } from './agent/binding.js';
 export type {
@@ -14,9 +26,24 @@ export { ingestAgentMetrics, ingestAgentTaskUpdate, flattenGpuAllocation } from 
 export { SSHManager } from './ssh/manager.js';
 export * as collectors from './ssh/collectors/index.js';
 export { getDatabase, closeDatabase } from './db/database.js';
-export { upsertAgentTask, getAgentTask, getAgentTasksByServerId, deleteAgentTasksByServerId } from './db/agent-tasks.js';
-export { saveGpuUsageRows, getLatestGpuUsageByServerId, cleanOldGpuUsage } from './db/gpu-usage.js';
+export { upsertAgentTask, getAgentTask, getAgentTasksByServerId, deleteAgentTasksByServerId, getAgentTaskQueueGroups } from './db/agent-tasks.js';
+export {
+	saveGpuUsageRows,
+	getLatestGpuUsageByServerId,
+	getGpuOverview,
+	getGpuUsageSummary,
+	getGpuUsageTimelineByUser,
+	getLatestUnownedGpuDurationMinutes,
+	cleanOldGpuUsage,
+} from './db/gpu-usage.js';
 export type { GpuUsageRowInput, StoredGpuUsageRow } from './db/gpu-usage.js';
+export {
+	createSecurityEvent,
+	findOpenSecurityEvent,
+	listSecurityEvents,
+	markSecurityEventSafe,
+} from './db/security-events.js';
+export type { SecurityEventInput, SecurityEventQuery } from './db/security-events.js';
 export {
 	getAllServers,
 	getServerById,
@@ -29,7 +56,11 @@ export {
 } from './db/servers.js';
 export { saveMetrics, getLatestMetrics, getMetricsHistory, cleanOldMetrics } from './db/metrics.js';
 export { getAllHooks, getHookById, getHooksByServerId, createHook, updateHook, deleteHook, getHookLogs, addHookLog } from './db/hooks.js';
-export { getSettings, saveSetting, saveSettings } from './db/settings.js';
+export {
+	getSettings,
+	saveSetting,
+	saveSettings,
+} from './db/settings.js';
 export { Scheduler } from './scheduler.js';
 export { setAlertCallback } from './alerts.js';
 export { saveAlert, getAlerts, suppressAlert, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
@@ -42,3 +73,6 @@ export { isAgentCommandDataSource } from './datasource/types.js';
 export { SSHDataSource } from './datasource/ssh-datasource.js';
 export { AgentDataSource } from './datasource/agent-datasource.js';
 export { createDataSource } from './datasource/factory.js';
+export { buildProcessAuditRows } from './security/audit.js';
+export { buildSecurityFingerprint, analyzeSecuritySnapshot } from './security/analyzer.js';
+export { processSecuritySnapshot } from './security/pipeline.js';

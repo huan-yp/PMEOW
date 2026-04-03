@@ -2,9 +2,11 @@ import { EventEmitter } from 'events';
 import { getAllServers, getServerById } from './db/servers.js';
 import { saveMetrics, cleanOldMetrics } from './db/metrics.js';
 import { ingestAgentMetrics } from './agent/ingest.js';
+import { cleanOldGpuUsage } from './db/gpu-usage.js';
 import { getSettings } from './db/settings.js';
 import { checkAlerts } from './alerts.js';
 import { evaluateHooks } from './hooks/engine.js';
+import { processSecuritySnapshot } from './security/pipeline.js';
 import { createDataSource } from './datasource/factory.js';
 import { SSHManager } from './ssh/manager.js';
 import { SSHDataSource } from './datasource/ssh-datasource.js';
@@ -104,6 +106,7 @@ export class Scheduler extends EventEmitter {
     this.cleanupTimerId = setInterval(() => {
       const s = getSettings();
       cleanOldMetrics(s.historyRetentionDays);
+      cleanOldGpuUsage(s.historyRetentionDays);
     }, 60 * 60 * 1000);
   }
 
@@ -230,6 +233,11 @@ export class Scheduler extends EventEmitter {
     const server = getServerById(serverId);
     if (server) {
       checkAlerts(snapshot, settings, server);
+
+      const securityEvents = processSecuritySnapshot(serverId, settings, snapshot.timestamp, snapshot);
+      for (const event of securityEvents) {
+        this.emit('securityEvent', event);
+      }
     }
 
     // Evaluate hooks

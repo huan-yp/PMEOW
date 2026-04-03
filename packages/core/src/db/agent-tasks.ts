@@ -1,5 +1,6 @@
 import { getDatabase } from './database.js';
-import type { AgentTaskStatus, MirroredAgentTaskRecord } from '../types.js';
+import { getAllServers } from './servers.js';
+import type { AgentTaskQueueGroup, AgentTaskStatus, MirroredAgentTaskRecord } from '../types.js';
 
 interface RawAgentTaskRow {
   taskId: string;
@@ -105,6 +106,41 @@ export function deleteAgentTasksByServerId(serverId: string): number {
   const db = getDatabase();
   const result = db.prepare('DELETE FROM agent_tasks WHERE serverId = ?').run(serverId);
   return result.changes;
+}
+
+export function getAgentTaskQueueGroups(): AgentTaskQueueGroup[] {
+  const db = getDatabase();
+  const agentServers = getAllServers()
+    .filter(server => server.sourceType === 'agent')
+    .sort((left, right) => left.createdAt - right.createdAt || left.name.localeCompare(right.name));
+
+  const selectQueued = db.prepare(`
+    SELECT *
+    FROM agent_tasks
+    WHERE serverId = ? AND status = 'queued'
+    ORDER BY COALESCE(priority, 0) DESC, COALESCE(createdAt, 0) DESC, taskId ASC
+  `);
+  const selectRunning = db.prepare(`
+    SELECT *
+    FROM agent_tasks
+    WHERE serverId = ? AND status = 'running'
+    ORDER BY COALESCE(startedAt, 0) DESC, taskId ASC
+  `);
+  const selectRecent = db.prepare(`
+    SELECT *
+    FROM agent_tasks
+    WHERE serverId = ? AND status IN ('completed', 'failed', 'cancelled')
+    ORDER BY COALESCE(finishedAt, 0) DESC, taskId ASC
+    LIMIT 20
+  `);
+
+  return agentServers.map(server => ({
+    serverId: server.id,
+    serverName: server.name,
+    queued: (selectQueued.all(server.id) as RawAgentTaskRow[]).map(rowToAgentTask),
+    running: (selectRunning.all(server.id) as RawAgentTaskRow[]).map(rowToAgentTask),
+    recent: (selectRecent.all(server.id) as RawAgentTaskRow[]).map(rowToAgentTask),
+  }));
 }
 
 function mergeAgentTask(
