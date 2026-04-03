@@ -3,6 +3,7 @@ import {
   getAgentTask,
   getAgentTasksByServerId,
   getLatestMetrics,
+  getResolvedGpuAllocation,
   getServerById,
   isServerSetPriorityPayload,
 } from '@monitor/core';
@@ -131,6 +132,15 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
     }
 
     res.json(getLatestMetrics(serverId)?.gpuAllocation ?? null);
+  });
+
+  app.get('/api/servers/:id/gpu-allocation/resolved', (req: Request, res: Response) => {
+    const serverId = requireServer(req, res);
+    if (!serverId) {
+      return;
+    }
+
+    res.json(getResolvedGpuAllocation(serverId));
   });
 
   app.post('/api/servers/:id/tasks/:taskId/cancel', (req: Request, res: Response) => {

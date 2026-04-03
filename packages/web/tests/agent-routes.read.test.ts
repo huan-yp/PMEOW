@@ -1,6 +1,8 @@
 import {
   Scheduler,
   closeDatabase,
+  createPerson,
+  createPersonBinding,
   createServer,
   getLatestGpuUsageByServerId,
   getLatestMetrics,
@@ -668,6 +670,104 @@ describe('agent read routes', () => {
 
     const response = await api
       .get(`/api/servers/${server.id}/gpu-allocation`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toBeNull();
+  });
+
+  it('gpu allocation resolved endpoint returns the latest person-resolved allocation', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-allocation-resolved',
+      host: 'gpu-allocation-resolved',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-allocation-resolved',
+    });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+
+    createPersonBinding({
+      personId: alice.id,
+      serverId: server.id,
+      systemUser: 'alice',
+      source: 'manual',
+      effectiveFrom: DEFAULT_TIMESTAMP_MS,
+    });
+
+    const client = await connectAgent(baseUrl);
+
+    client.emit('agent:register', {
+      agentId: 'agent-allocation-resolved',
+      hostname: 'gpu-allocation-resolved',
+      version: '1.0.0',
+    });
+    client.emit('agent:taskUpdate', {
+      serverId: server.id,
+      taskId: 'task-new',
+      status: 'running',
+      user: 'alice',
+      startedAt: DEFAULT_TIMESTAMP_MS + 1_500,
+    });
+    client.emit('agent:metrics', createSnapshot(server.id, {
+      timestamp: DEFAULT_TIMESTAMP_MS + 2_000,
+      gpuAllocation: createGpuAllocation('task-new', 'alice'),
+    }));
+
+    await waitForCondition(async () => {
+      const response = await api
+        .get(`/api/servers/${server.id}/gpu-allocation/resolved`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        serverId: server.id,
+        snapshotTimestamp: DEFAULT_TIMESTAMP_MS + 2_000,
+        perGpu: [
+          {
+            gpuIndex: 0,
+            totalMemoryMB: 24576,
+            freeMB: 16896,
+            segments: [
+              expect.objectContaining({
+                ownerKey: `person:${alice.id}`,
+                ownerKind: 'person',
+                displayName: 'Alice',
+                usedMemoryMB: 7168,
+              }),
+              expect.objectContaining({
+                ownerKey: 'unknown',
+                ownerKind: 'unknown',
+                displayName: 'Unknown',
+                usedMemoryMB: 512,
+              }),
+            ],
+          },
+        ],
+      });
+    });
+  });
+
+  it('gpu allocation resolved endpoint returns null when no gpu allocation exists', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-allocation-resolved-null',
+      host: 'gpu-allocation-resolved-null',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-allocation-resolved-null',
+    });
+
+    const response = await api
+      .get(`/api/servers/${server.id}/gpu-allocation/resolved`)
       .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
