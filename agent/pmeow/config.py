@@ -23,6 +23,8 @@ class AgentConfig:
     state_dir: str = field(default_factory=_default_state_dir)
     socket_path: str = field(default_factory=lambda: os.path.expanduser("~/.pmeow/pmeow.sock"))
     log_dir: str = field(default_factory=lambda: os.path.expanduser("~/.pmeow/logs/"))
+    pid_file: str = field(default_factory=lambda: os.path.expanduser("~/.pmeow/pmeow-agent.pid"))
+    agent_log_file: str | None = None
 
 
 def validate_interval(value: int, name: str) -> int:
@@ -46,6 +48,12 @@ def validate_redundancy_coefficient(value: float) -> float:
 def validate_path(value: str) -> str:
     """Normalize a path to an absolute path."""
     return str(Path(os.path.expanduser(value)).resolve())
+
+
+def validate_optional_path(value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    return validate_path(value)
 
 
 def load_config() -> AgentConfig:
@@ -75,6 +83,12 @@ def load_config() -> AgentConfig:
         _float("PMEOW_VRAM_REDUNDANCY", 0.1)
     )
 
+    state_dir = validate_path(env.get("PMEOW_STATE_DIR", "~/.pmeow/"))
+    socket_path = validate_path(env.get("PMEOW_SOCKET_PATH", str(Path(state_dir) / "pmeow.sock")))
+    log_dir = validate_path(env.get("PMEOW_LOG_DIR", str(Path(state_dir) / "logs")))
+    pid_file = validate_path(env.get("PMEOW_PID_FILE", str(Path(state_dir) / "pmeow-agent.pid")))
+    agent_log_file = validate_optional_path(env.get("PMEOW_AGENT_LOG_FILE"))
+
     return AgentConfig(
         server_url=env.get("PMEOW_SERVER_URL", ""),
         agent_id=agent_id,
@@ -82,7 +96,9 @@ def load_config() -> AgentConfig:
         heartbeat_interval=heartbeat_interval,
         history_window_seconds=history_window_seconds,
         vram_redundancy_coefficient=vram_redundancy_coefficient,
-        state_dir=validate_path(env.get("PMEOW_STATE_DIR", "~/.pmeow/")),
-        socket_path=validate_path(env.get("PMEOW_SOCKET_PATH", "~/.pmeow/pmeow.sock")),
-        log_dir=validate_path(env.get("PMEOW_LOG_DIR", "~/.pmeow/logs/")),
+        state_dir=state_dir,
+        socket_path=socket_path,
+        log_dir=log_dir,
+        pid_file=pid_file,
+        agent_log_file=agent_log_file,
     )
