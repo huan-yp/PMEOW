@@ -1,6 +1,15 @@
 # 常见问题与排障
 
-这份文档按症状整理常见问题。优先级从“服务起不来”到“数据不对”再到“任务行为不符合预期”。
+这份文档按症状整理常见问题。优先级从“服务起不来”到“数据不对”再到“任务、人员和移动端行为不符合预期”。
+
+## 建议先用这个顺序缩小范围
+
+如果你不知道该从哪里开始，按下面顺序通常最省时间：
+
+1. 先确认进程是否真的在运行。
+2. 再确认 URL、端口、路径和权限。
+3. 然后确认认证、hostname 绑定或 live session 是否正确。
+4. 最后再怀疑调度、告警、人员归属或 UI 展示本身。
 
 ## Web 服务端起不来
 
@@ -57,28 +66,7 @@ DELETE FROM settings WHERE key = 'password';
 
 删除后重新打开登录页，第一次输入的新密码就会被当作新的初始化密码保存。
 
-如果你当前机器没有安装 `sqlite3` 命令，但手头有 PMEOW 仓库，可以直接运行：
-
-```bash
-pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
-```
-
-如果你是按 README 里的根目录 workspace 脚本启动的服务，更常见的真实路径其实是：
-
-```bash
-pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('packages/web/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
-```
-
-如果数据库不在默认位置，把 `data/monitor.db` 替换成真实数据库绝对路径即可。
-
-### 如果你还想让旧登录态马上失效
-
-仅删除 `password` 记录还不够。因为浏览器已经拿到的 JWT 不会因为密码变化自动失效。
-
-如果需要立即踢出所有现有会话，应同时：
-
-1. 轮换 `JWT_SECRET`
-2. 重启 Web 服务端
+如果你还想让旧登录态马上失效，应同时轮换 `JWT_SECRET` 并重启 Web 服务端。
 
 ## SSH 节点测试连接失败
 
@@ -90,7 +78,7 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 
 ### 处理方式
 
-1. 先在“服务器管理”页点击“测试连接”。
+1. 先在“节点”页点击“测试连接”。
 2. 确认目标主机可以从服务端所在机器访问。
 3. 确认密钥路径真实存在且权限正确。
 4. 如果使用上传密钥，确认文件已经进入工作目录下的 `data/keys/`。
@@ -110,7 +98,21 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 - 如果重复服务器记录导致匹配不唯一，自动绑定不会成功。
 - Agent 心跳是维持 live session 的必要条件，session 超时后服务端会认为 Agent 离线。
 
-## Tasks 页面有数据，但任务一直停在 queued
+## Agent 节点在线，但没有“任务”标签或控制接口返回失败
+
+### 常见原因
+
+- 服务器记录还没有切到 Agent 数据源
+- live session 已经断开
+- 目标节点虽然存在任务镜像，但当前并没有可附着的 Agent 连接
+
+### 处理方式
+
+1. 先看节点详情顶部的数据源徽标是否已经是 `Agent`。
+2. 再看状态是否处于在线，而不是连接中、异常或离线。
+3. 回到节点本地检查 `pmeow-agent run`、`pmeow-agent start` 或 systemd 是否还活着。
+
+## 任务一直停在 queued
 
 ### 常见原因
 
@@ -121,8 +123,8 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 
 ### 处理方式
 
-1. 先看 Tasks 页面对应节点是否处于暂停状态。
-2. 再看服务器详情里的 GPU allocation 和进程审计。
+1. 先看“任务调度”页对应节点是否处于暂停状态。
+2. 再看节点详情里的 GPU allocation 和进程审计。
 3. 在节点本地执行 `pmeow-agent status` 和 `pmeow-agent logs <task_id>`。
 4. 核对提交任务时的 `--pvram` 和 `--gpu` 是否过于激进。
 
@@ -140,7 +142,50 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 
 先在节点本地确认 `nvidia-smi` 是否可执行，再确认 Agent 进程运行用户是否能读取相关信息。
 
-## Security 里把事件标记为安全后，问题还在
+## 人员目录为空，或者任务没有归属到人员
+
+### 常见原因
+
+- 还没有创建任何人员档案
+- 人员档案存在，但没有建立服务器用户名绑定
+- 工作负载来自尚未绑定的系统用户名
+
+### 处理方式
+
+1. 先确认“人员”页里是否已经存在对应人员。
+2. 进入人员详情确认绑定关系是否启用。
+3. 如果节点上已经观测到未绑定用户，优先使用“从服务器用户开始”的创建向导。
+
+要注意，person 数据是可选层。即使完全没有人员档案，监控、任务和安全事件也会继续工作，只是不会补充人员归属字段。
+
+## 创建人员向导卡在最后一步，不能提交
+
+### 常见原因
+
+- 你选择了一个已经绑定给其他人员的系统用户名
+- 还没有勾选“我确认转移已绑定账号”
+
+### 处理方式
+
+向导当前会要求你显式确认绑定迁移，避免误把已有账号直接转给新人员。这不是 bug，而是当前设计的一部分。
+
+## 移动端无法连接
+
+### 常见原因
+
+- 服务器地址写错，缺了协议或端口
+- 人员令牌已被吊销或轮换
+- 管理员密码错误
+- Android 设备不信任当前 HTTPS 证书
+
+### 处理方式
+
+1. 先确认你输入的是完整的 PMEOW Web 基础 URL。
+2. 如果是个人模式，确认令牌是最新生成的那一条。
+3. 如果是管理员模式，密码与桌面端管理员登录一致。
+4. 如果是 Android 原生壳，且你刚清除了应用数据，首次连接会先回到 `/connect`，这是正常行为。
+
+## 安全审计里把事件标记为安全后，问题还在
 
 这是当前设计的正常行为。`mark safe` 只会把安全事件记录标记为已处理，不会：
 
@@ -177,13 +222,4 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 - Agent daemon 已经明显失去连接状态
 - Docker 容器或本地进程在升级后加载了旧配置
 
-但如果你怀疑是 hostname 冲突、数据库污染或队列资源判断错误，应该先看数据再重启。重启只能清 session，不能修复错误配置。
-
-## 最后一个排障顺序建议
-
-如果你不知道该从哪里开始，按下面顺序通常最省时间：
-
-1. 先确认进程是否真的在运行。
-2. 再确认 URL、端口、路径和权限。
-3. 然后确认节点是否真的绑定到正确的服务器记录。
-4. 最后再怀疑调度、告警或安全规则本身。
+但如果你怀疑是 hostname 冲突、数据库污染、人员绑定错误或队列资源判断错误，应该先看数据再重启。重启只能清 session，不能修复错误配置。

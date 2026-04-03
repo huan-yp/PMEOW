@@ -10,10 +10,11 @@
 - pnpm 9+
 - Python 3.10+
 - 可选：Docker 和 docker compose，用于验证打包与部署路径
+- 可选：Android Studio 和 JDK，用于调试 Capacitor Android 打包
 
 ## 仓库初始化
 
-### TypeScript Monorepo
+### TypeScript Monorepo 初始化
 
 在仓库根目录执行：
 
@@ -21,9 +22,9 @@
 pnpm install
 ```
 
-这会安装 `packages/core`、`packages/ui` 和 `packages/web` 所需依赖。
+这会安装 `packages/core`、`packages/ui`、`packages/web` 和 `packages/web-cli` 所需依赖。
 
-### Python Agent
+### Python Agent 初始化
 
 Agent 不在 pnpm workspace 内，需要单独初始化：
 
@@ -48,9 +49,9 @@ pnpm dev:ui
 
 说明：
 
-- `pnpm dev:web` 会在 `packages/web` 下用 `tsx watch` 运行服务端
-- `pnpm dev:ui` 会启动 Vite 开发服务器
-- 浏览器入口通常是 `http://localhost:5173`
+- `pnpm dev:web` 会先构建 `core`，再在 `packages/web` 下用 `tsx watch` 运行服务端。
+- `pnpm dev:ui` 会先构建 `core`，再启动 Vite 开发服务器。
+- 浏览器入口通常是 `http://localhost:5173`。
 
 ### 运行接近生产的 Web 实例
 
@@ -82,6 +83,21 @@ pmeow-agent stop
 
 如果你只想跑 Agent 测试而不连接真实服务端，可以保持 `PMEOW_SERVER_URL` 为空，专注于本地 socket、队列和采集层测试。
 
+### 调试移动端或构建 Android 包
+
+```bash
+pnpm build:apk
+pnpm --filter @monitor/ui apk:debug
+```
+
+如果你需要继续打开 Android 工程：
+
+```bash
+pnpm --filter @monitor/ui cap:open
+```
+
+`pnpm build:apk` 会先构建 `core`，再在 UI 包内执行 Vite 构建和 Capacitor sync。
+
 ## 常用命令速查
 
 ### 根级命令
@@ -89,6 +105,7 @@ pmeow-agent stop
 ```bash
 pnpm dev:web
 pnpm dev:ui
+pnpm build:core
 pnpm build:web
 pnpm build:web-cli
 pnpm start:web
@@ -96,6 +113,7 @@ pnpm test:core
 pnpm test:web
 pnpm typecheck:core
 pnpm typecheck:web
+pnpm build:apk
 ```
 
 ### 包级命令
@@ -104,7 +122,7 @@ pnpm typecheck:web
 
 - `packages/core`: `build`, `dev`, `test`, `test:watch`, `typecheck`
 - `packages/web`: `dev`, `build`, `start`, `test`, `test:watch`, `typecheck`
-- `packages/ui`: `dev`, `build`, `test`, `typecheck`
+- `packages/ui`: `dev`, `build`, `test`, `typecheck`, `cap:sync`, `cap:build`, `cap:open`, `apk:debug`
 - `packages/web-cli`: `build`
 
 ### Agent 命令
@@ -118,50 +136,6 @@ pytest -v
 pmeow-agent status
 pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
 ```
-
-## CI 与发版
-
-当前仓库已经内置了 GitHub Actions 的校验和发版流程，维护时主要看下面四个文件：
-
-- `.github/workflows/ci.yml`：PR 和 push 的通用校验
-- `.github/workflows/release-agent.yml`：PyPI 发版
-- `.github/workflows/release-web.yml`：npm 发版
-- `.github/workflows/release-docker.yml`：Web 服务 Docker 镜像发版
-
-### 版本源与 tag 规则
-
-- Python Agent 的版本源是 `agent/pyproject.toml`
-- npm Web 发行包的版本源是 `packages/web-cli/package.json`
-- Agent 发版 tag 形如 `agent-v0.1.0`
-- Web 发版 tag 形如 `web-v1.0.0`
-
-CI 会强校验 tag 和包内版本是否一致；不一致时会直接失败，不会继续发布。
-
-### 本地发版前最小检查
-
-发布前至少建议在本地跑通下面几步：
-
-```bash
-pnpm test:core
-pnpm --filter @monitor/web test
-pnpm build:web-cli
-
-cd agent
-. .venv/bin/activate
-python3 -m pytest -v
-```
-
-其中 `pnpm build:web-cli` 会先构建 `core`、`ui`、`web`，再构建最终对外发布的 `pmeow-web` 包。
-
-### GitHub 侧前置配置
-
-第一次启用发版前，需要先在 GitHub 和 registry 侧完成这些准备：
-
-- 在 GitHub 创建 `release` environment
-- 为 npm 配置 `NPM_TOKEN` secret
-- 在 PyPI 为 `pmeow-agent` 配置 Trusted Publisher
-
-Web 的 Docker workflow 默认推送到 `ghcr.io/<owner>/<repo>`，使用 GitHub 自带 token，不需要额外再配 Docker 发布 token。
 
 ## 本地环境变量
 
@@ -190,7 +164,7 @@ Web 的 Docker workflow 默认推送到 `ghcr.io/<owner>/<repo>`，使用 GitHub
 - `PMEOW_PID_FILE`
 - `PMEOW_AGENT_LOG_FILE`
 
-如果你同时跑多个本地 Agent 实例，一定要给它们分配不同的状态目录、socket 路径、pid 文件和 runtime log 文件，否则很容易互相污染。
+如果你同时跑多个本地 Agent 实例，一定要给它们分配不同的状态目录、socket 路径、pid 文件和运行日志 `runtime log` 文件，否则很容易互相污染。
 
 ## 本地数据位置
 
@@ -220,14 +194,15 @@ data/keys/
 
 ## 几种典型开发路径
 
-### 改 UI 页面
+### 改桌面 UI 或移动端 UI
 
 优先运行：
 
 - `pnpm dev:ui`
 - `pnpm dev:web`
+- `pnpm --filter @monitor/ui test`
 
-如果只是改静态展示逻辑，大多数情况下不需要单独 build。
+如果改动涉及移动端连接流程，再补跑 Android 构建链路。
 
 ### 改 REST API 或服务端行为
 
@@ -247,21 +222,57 @@ data/keys/
 - `pnpm typecheck:core`
 - `pnpm test:web`
 
-因为 `core` 改动很容易影响 Web 侧路由和 UI 传输层。
+因为 `core` 改动很容易影响 Web 侧路由、UI 传输层和移动端数据读取。
 
 ### 改 Agent
 
 优先运行：
 
 - `pytest -v`
-- 本地 `pmeow-agent daemon`
+- 本地 `pmeow-agent run`
 - 如果涉及协议变化，再联调一份 Web 服务
+
+## CI 与发版
+
+当前仓库已经内置了 GitHub Actions 的校验和发版流程，维护时主要看下面四个文件：
+
+- `.github/workflows/ci.yml`：PR 和 push 的通用校验
+- `.github/workflows/release-agent.yml`：PyPI 发版
+- `.github/workflows/release-web.yml`：npm 发版
+- `.github/workflows/release-docker.yml`：Web 服务 Docker 镜像发版
+
+### 版本源与 tag 规则
+
+- Python Agent 的版本源是 `agent/pyproject.toml`
+- npm Web 发行包的版本源是 `packages/web-cli/package.json`
+- Agent 发版 tag 形如 `agent-v0.1.0`
+- Web 发版 tag 形如 `web-v1.0.0`
+
+CI 会强校验 tag 和包内版本是否一致；不一致时会直接失败，不会继续发布。
+
+### 本地发版前最小检查
+
+发布前至少建议在本地跑通下面几步：
+
+```bash
+pnpm test:core
+pnpm test:web
+pnpm --filter @monitor/ui test
+pnpm build:web-cli
+
+cd agent
+. .venv/bin/activate
+pytest -v
+```
+
+其中 `pnpm build:web-cli` 会先构建 `core`、`ui`、`web`，再构建最终对外发布的 `pmeow-web` 包。
 
 ## 开发时的几个稳定做法
 
 1. 不要把 Agent 开发和 Web 开发混在一个共享状态目录里，隔离路径更省事。
 2. 改协议时同时更新 Web 端、Agent 端和文档，不要只改单边。
 3. 需要验证登录态时优先固定 `JWT_SECRET`，否则重启后容易误判为前端问题。
+4. 需要验证接近生产的资源链路时，用 `pnpm build:web && pnpm start:web` 补跑一遍，不要只看开发服务器是否正常。
 
 ## 移动端本地开发
 
@@ -275,7 +286,7 @@ data/keys/
 
 ### 个人移动端
 
-1. 先在桌面端人员详情页创建一个 person mobile token。
+1. 先在桌面端人员详情页创建一个个人移动端 Token。
 2. 在浏览器中打开 `/m/me`。
 3. 在令牌输入框填入 `pmt_...` 令牌。
 
@@ -284,15 +295,14 @@ data/keys/
 移动端 UI 测试：
 
 ```bash
-cd packages/ui && npx vitest run tests/mobile-admin-pages.test.tsx tests/mobile-person-pages.test.tsx
+pnpm --filter @monitor/ui exec vitest run tests/mobile-admin-pages.test.tsx tests/mobile-person-pages.test.tsx
 ```
 
 移动端接口测试：
 
 ```bash
-cd packages/web && npx vitest run tests/mobile-admin-routes.test.ts tests/mobile-person-routes.test.ts
+pnpm --filter @monitor/web exec vitest run tests/mobile-admin-routes.test.ts tests/mobile-person-routes.test.ts
 ```
-4. 需要验证生产链路时用 `pnpm build:web && pnpm start:web`，不要只看开发服务器是否正常。
 
 ## 构建 Android APK
 
@@ -318,7 +328,7 @@ pnpm build:apk
 pnpm build:core
 cd packages/ui
 pnpm build          # Vite 构建 UI
-pnpm cap:sync       # 同步 web 资源到 android/
+pnpm cap:sync       # 同步 Web 资源到 android/
 pnpm apk:debug      # Gradle 构建 debug APK
 ```
 

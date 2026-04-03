@@ -21,9 +21,15 @@ Agent 运行在计算节点本地，负责：
 - 如果需要 GPU 指标，主机上要有 `nvidia-smi`
 - 目标节点能访问 PMEOW Web 服务端
 
-## 从源码安装
+## 安装方式
 
-在计算节点上执行：
+### 从 PyPI 安装
+
+```bash
+pip install pmeow-agent
+```
+
+### 从源码安装
 
 ```bash
 cd agent
@@ -32,7 +38,7 @@ python3 -m venv .venv
 pip install -e ".[dev]"
 ```
 
-如果你只打算运行 Agent 而不是开发它，也可以根据自己的部署方式把源码放到固定目录，再用虚拟环境安装。
+如果你只打算运行 Agent 而不是开发它，也可以把源码放到固定目录后再用虚拟环境安装。
 
 ## 关键环境变量
 
@@ -66,7 +72,7 @@ export PMEOW_SERVER_URL=http://your-server:17200
 pmeow-agent run
 ```
 
-适合初次接入和现场排障，runtime log 直接看当前终端。
+当前 `pmeow-agent daemon` 仍然是兼容别名，但更推荐写成 `pmeow-agent run`。前台方式适合初次接入和现场排障，runtime log 直接看当前终端。
 
 ### 后台
 
@@ -88,6 +94,16 @@ sudo journalctl -u pmeow-agent -f
 ```
 
 适合长期托管。systemd 负责进程生命周期，journal 负责 runtime log。
+
+## 节点绑定是怎么发生的
+
+Agent 启动后会向服务端 `/agent` namespace 发送注册、指标、任务状态和心跳事件。绑定过程由服务端按 hostname 完成：
+
+- 如果 `servers.host` 中存在唯一精确匹配的服务器记录，就会自动绑定到该 `serverId`。
+- 绑定成功后，该服务器的数据源会切换为 Agent 模式。
+- 如果同一个 hostname 对应多条服务器记录，自动绑定会失败，需要先清理重复配置。
+
+因此，在正式接入前，最稳妥的做法是先在 Web 端创建服务器记录，并把 `host` 配置成节点真实 hostname。
 
 ## 本地 CLI 工作流
 
@@ -139,22 +155,6 @@ pmeow -vram=12g -gpus=2 --report examples/tasks/pytorch_stagger.py --memories 5g
 pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
 ```
 
-## 节点绑定是怎么发生的
-
-Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
-
-- `agentId`
-- `hostname`
-- `version`
-
-服务端会用 hostname 去匹配 `servers.host`：
-
-- 如果能找到唯一精确匹配的服务器记录，就会自动绑定到该 `serverId`。
-- 绑定成功后，该服务器的数据源会切换为 Agent 模式。
-- 如果同一个 hostname 对应多条服务器记录，自动绑定会失败，需要先清理重复配置。
-
-因此，在正式接入前，最稳妥的做法是先在 Web 端创建服务器记录，并把 `host` 配置成节点真实 hostname。
-
 ## 节点本地会生成哪些文件
 
 默认状态目录是 `~/.pmeow/`：
@@ -171,7 +171,7 @@ Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
 
 - `pmeow.db`：本地 SQLite，保存任务和运行时状态
 - `pmeow.sock`：CLI 和 daemon 的控制通道
-- `logs/`：任务 stdout/stderr 日志
+- `logs/`：任务 stdout 和 stderr 日志
 
 ## 推荐的首次接入流程
 
@@ -179,7 +179,7 @@ Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
 2. 确认服务器记录的 `host` 与节点 hostname 一致。
 3. 在节点上安装 Agent 并导出 `PMEOW_SERVER_URL`。
 4. 以前台方式启动 `pmeow-agent run`，先确认没有报错。
-5. 回到 Web 控制台查看“概览”“Tasks”“服务器详情”是否出现队列与 GPU allocation 数据。
+5. 回到 Web 控制台查看“控制台”“任务调度”“节点详情”是否出现队列与 GPU allocation 数据。
 6. 确认无误后，再切换到 systemd 持久运行。
 
 ## 节点使用边界
