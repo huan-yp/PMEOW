@@ -1,7 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { PersonRecord, PersonTimelinePoint, MirroredAgentTaskRecord, PersonBindingRecord } from '@monitor/core';
+
+async function adminFetch<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem('auth_token');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> ?? {}),
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await window.fetch(url, { ...options, headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
 
 export function PersonDetail() {
   const { id } = useParams<{ id: string }>();
@@ -10,6 +22,9 @@ export function PersonDetail() {
   const [timeline, setTimeline] = useState<PersonTimelinePoint[]>([]);
   const [tasks, setTasks] = useState<MirroredAgentTaskRecord[]>([]);
   const [bindings, setBindings] = useState<PersonBindingRecord[]>([]);
+  const [tokenStatus, setTokenStatus] = useState<{ hasToken: boolean; createdAt?: number; lastUsedAt?: number | null } | null>(null);
+  const [newToken, setNewToken] = useState<string | null>(null);
+  const [tokenLoading, setTokenLoading] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -18,6 +33,53 @@ export function PersonDetail() {
     void transport.getPersonTasks(id).then(setTasks).catch(() => setTasks([]));
     void transport.getPersonBindings(id).then(setBindings).catch(() => setBindings([]));
   }, [id, transport]);
+
+  const refreshTokenStatus = useCallback(() => {
+    if (!id) return;
+    void adminFetch<{ hasToken: boolean; createdAt?: number; lastUsedAt?: number | null }>(
+      `/api/persons/${encodeURIComponent(id)}/mobile-token/status`,
+    ).then(setTokenStatus).catch(() => setTokenStatus({ hasToken: false }));
+  }, [id]);
+
+  useEffect(() => { refreshTokenStatus(); }, [refreshTokenStatus]);
+
+  const handleCreateToken = async () => {
+    if (!id) return;
+    setTokenLoading(true);
+    setNewToken(null);
+    try {
+      const res = await adminFetch<{ plainToken: string }>(`/api/persons/${encodeURIComponent(id)}/mobile-token`, { method: 'POST' });
+      setNewToken(res.plainToken);
+      refreshTokenStatus();
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const handleRotateToken = async () => {
+    if (!id) return;
+    setTokenLoading(true);
+    setNewToken(null);
+    try {
+      const res = await adminFetch<{ plainToken: string }>(`/api/persons/${encodeURIComponent(id)}/mobile-token/rotate`, { method: 'POST' });
+      setNewToken(res.plainToken);
+      refreshTokenStatus();
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const handleRevokeToken = async () => {
+    if (!id) return;
+    setTokenLoading(true);
+    setNewToken(null);
+    try {
+      await adminFetch(`/api/persons/${encodeURIComponent(id)}/mobile-token`, { method: 'DELETE' });
+      refreshTokenStatus();
+    } finally {
+      setTokenLoading(false);
+    }
+  };
 
   if (!person) return <div className="p-6 text-slate-400">加载中...</div>;
 
@@ -81,6 +143,42 @@ export function PersonDetail() {
                 <span className={t.status === 'running' ? 'text-green-400' : 'text-slate-400'}>{t.status}</span>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+      <div className="rounded-2xl border border-dark-border bg-dark-card p-5">
+        <h2 className="text-sm text-slate-400 mb-3">移动端访问令牌</h2>
+        {tokenStatus === null ? (
+          <p className="text-sm text-slate-500">加载中...</p>
+        ) : tokenStatus.hasToken ? (
+          <div className="space-y-3">
+            <p className="text-sm text-green-400">令牌已创建</p>
+            {tokenStatus.lastUsedAt && (
+              <p className="text-xs text-slate-500">
+                最近使用: {new Date(tokenStatus.lastUsedAt).toLocaleString()}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => void handleRotateToken()} disabled={tokenLoading} className="rounded px-3 py-1 text-xs bg-yellow-600 text-white hover:bg-yellow-500 disabled:opacity-50">
+                轮换令牌
+              </button>
+              <button onClick={() => void handleRevokeToken()} disabled={tokenLoading} className="rounded px-3 py-1 text-xs bg-red-600 text-white hover:bg-red-500 disabled:opacity-50">
+                吊销令牌
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-500">尚未创建移动端令牌</p>
+            <button onClick={() => void handleCreateToken()} disabled={tokenLoading} className="rounded px-3 py-1 text-xs bg-accent-blue text-white hover:bg-blue-500 disabled:opacity-50">
+              创建令牌
+            </button>
+          </div>
+        )}
+        {newToken && (
+          <div className="mt-3 rounded-lg border border-yellow-600/40 bg-yellow-900/20 p-3">
+            <p className="text-xs text-yellow-400 mb-1">请复制令牌，此后将不再显示：</p>
+            <code className="text-xs text-yellow-200 break-all select-all">{newToken}</code>
           </div>
         )}
       </div>
