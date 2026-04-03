@@ -100,3 +100,15 @@ export {
   getServerPersonActivity,
   listPersonBindingSuggestions,
 } from './db/person-attribution.js';
+export {
+  createPersonMobileToken,
+  rotatePersonMobileToken,
+  revokePersonMobileToken,
+  resolvePersonMobileToken,
+  getPersonMobileTokenStatus,
+} from './db/person-mobile-tokens.js';
+export type { CreatePersonMobileTokenResult } from './db/person-mobile-tokens.js';
+export {
+  getPersonMobilePreferences,
+  updatePersonMobilePreferences,
+} from './db/person-mobile-preferences.js';

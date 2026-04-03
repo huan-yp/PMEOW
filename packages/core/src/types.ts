@@ -541,3 +541,62 @@ export interface ServerPersonActivity {
   unassignedVramMB: number;
   unassignedUsers: string[];
 }
+
+// ========================
+// Person Mobile
+// ========================
+
+export interface PersonMobileTokenRecord {
+  id: string;
+  personId: string;
+  label: string;
+  tokenHash: string;
+  createdAt: number;
+  rotatedAt: number | null;
+  revokedAt: number | null;
+  lastUsedAt: number | null;
+}
+
+export interface PersonMobilePreferenceRecord {
+  personId: string;
+  notifyTaskStarted: boolean;
+  notifyTaskCompleted: boolean;
+  notifyTaskFailed: boolean;
+  notifyTaskCancelled: boolean;
+  notifyNodeStatus: boolean;
+  notifyGpuAvailable: boolean;
+  minAvailableGpuCount: number;
+  minAvailableVramGB: number | null;
+  updatedAt: number;
+}
+
+export type PersonMobileNotificationCategory = 'task' | 'node' | 'gpu';
+
+export interface PersonMobileNotificationRecord {
+  id: string;
+  personId: string;
+  category: PersonMobileNotificationCategory;
+  eventType: string;
+  title: string;
+  body: string;
+  payloadJson: string;
+  dedupeKey: string;
+  createdAt: number;
+  readAt: number | null;
+}
+
+export interface MobileAdminSummary {
+  serverCount: number;
+  onlineServerCount: number;
+  totalRunningTasks: number;
+  totalQueuedTasks: number;
+  unreadNotificationCount: number;
+}
+
+export interface MobilePersonBootstrap {
+  person: PersonRecord;
+  runningTaskCount: number;
+  queuedTaskCount: number;
+  boundNodeCount: number;
+  unreadNotificationCount: number;
+}

@@ -231,6 +231,53 @@ function initSchema(db: Database.Database): void {
       resolutionSource TEXT NOT NULL,
       metadataJson TEXT NOT NULL DEFAULT '{}'
     );
+
+    CREATE TABLE IF NOT EXISTS person_mobile_tokens (
+      id TEXT PRIMARY KEY,
+      personId TEXT NOT NULL,
+      label TEXT NOT NULL DEFAULT '',
+      tokenHash TEXT NOT NULL,
+      createdAt INTEGER NOT NULL,
+      rotatedAt INTEGER,
+      revokedAt INTEGER,
+      lastUsedAt INTEGER,
+      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS person_mobile_preferences (
+      personId TEXT PRIMARY KEY,
+      notifyTaskStarted INTEGER NOT NULL DEFAULT 1,
+      notifyTaskCompleted INTEGER NOT NULL DEFAULT 1,
+      notifyTaskFailed INTEGER NOT NULL DEFAULT 1,
+      notifyTaskCancelled INTEGER NOT NULL DEFAULT 1,
+      notifyNodeStatus INTEGER NOT NULL DEFAULT 1,
+      notifyGpuAvailable INTEGER NOT NULL DEFAULT 0,
+      minAvailableGpuCount INTEGER NOT NULL DEFAULT 1,
+      minAvailableVramGB REAL,
+      updatedAt INTEGER NOT NULL,
+      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS person_mobile_notifications (
+      id TEXT PRIMARY KEY,
+      personId TEXT NOT NULL,
+      category TEXT NOT NULL,
+      eventType TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      payloadJson TEXT NOT NULL DEFAULT '{}',
+      dedupeKey TEXT NOT NULL DEFAULT '',
+      createdAt INTEGER NOT NULL,
+      readAt INTEGER,
+      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_person_mobile_notifications_person_created
+      ON person_mobile_notifications(personId, createdAt DESC);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_person_mobile_notifications_dedupe
+      ON person_mobile_notifications(personId, dedupeKey)
+      WHERE dedupeKey != '';
   `);
 
   ensureColumns(db, 'servers', [
