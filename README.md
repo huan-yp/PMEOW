@@ -1,3 +1,5 @@
+<img align="right" width="200" src="crop-logo.png" alt="PMEOW — 面向高校实验室的 GPU 集群调度系统">
+
 # PMEOW
 
 实验室 GPU 集群监控与本地调度平台。
@@ -8,6 +10,16 @@
 - Python Agent 运行在计算节点本地，负责指标采集、GPU 归属识别、本地任务队列、执行器和自主调度
 
 服务端是观察者和干预点，不负责替 Agent 做二次排队调度。
+
+<br clear="both">
+
+## Operator Visibility Surface
+
+- Tasks：新增跨 Agent 节点的任务队列视图，按服务器聚合 queued、running、recent 三类任务，并支持取消任务、提高优先级、暂停队列、恢复队列。
+- Security：新增安全审计视图，汇总可疑进程与无主 GPU 占用事件，支持按节点与时间窗口筛选，并允许操作员将事件标记为安全。
+- Overview：总览页新增 GPU 使用分布卡片，展示当前集群按用户聚合的显存占用、任务数和非任务进程占用情况。
+- Server Detail：节点详情页新增 Tasks tab、GPU 分配条和进程审计表，可同时查看 PMEOW 任务占用、用户进程占用、未知占用以及可疑原因。
+- Settings：设置页新增安全审计配置，展示挖矿关键词、无归属 GPU 持续分钟阈值、高 GPU 利用率阈值与持续时间等字段，并补充 Agent 部署说明；当前安全审计检测已接入的是挖矿关键词和无归属 GPU 持续分钟阈值，高 GPU 利用率相关字段仍为预留设置项。
 
 ## 当前能力
 
@@ -101,6 +113,28 @@ Agent 会通过 Socket.IO `/agent` namespace 连接服务端，并按 `PMEOW_AGE
 - `POST /api/servers/:id/tasks/:taskId/priority`
 
 这些接口只在目标服务器存在、目标任务存在（任务相关接口）且 live Agent session 已附着时返回成功；不会对镜像任务状态做乐观写入。
+
+## Operator APIs
+
+只读与查询接口：
+
+- `GET /api/task-queue`
+- `GET /api/servers/:id/process-audit`
+- `GET /api/security/events`
+- `GET /api/gpu-overview`
+- `GET /api/gpu-usage/summary`
+- `GET /api/gpu-usage/by-user`
+- `GET /api/servers/:id/tasks`
+- `GET /api/servers/:id/tasks/:taskId`
+- `GET /api/servers/:id/gpu-allocation`
+
+控制接口：
+
+- `POST /api/security/events/:id/mark-safe`
+- `POST /api/servers/:id/tasks/:taskId/cancel`
+- `POST /api/servers/:id/queue/pause`
+- `POST /api/servers/:id/queue/resume`
+- `POST /api/servers/:id/tasks/:taskId/priority`
 
 ## 测试
 
