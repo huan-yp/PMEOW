@@ -135,3 +135,17 @@ class TestTaskRunner:
 
         runner.cancel(task.id)
         assert runner.get_running_pids() == {}
+
+    def test_runner_appends_to_existing_task_log(self, tmp_path) -> None:
+        from pmeow.executor.logs import append_task_log_line
+
+        log_dir = str(tmp_path)
+        append_task_log_line("append-task", log_dir, "[queued] waiting for GPUs")
+        runner = TaskRunner()
+        task = _make_task("echo hello", cwd=str(tmp_path), task_id="append-task")
+        proc = runner.start(task, gpu_ids=[0], log_dir=log_dir)
+        proc.wait(timeout=10)
+        runner.check_completed()
+        content = read_task_log("append-task", log_dir)
+        assert "[queued] waiting for GPUs" in content
+        assert "hello" in content

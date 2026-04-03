@@ -8,13 +8,15 @@ import socket
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from pmeow.config import AgentConfig
 from pmeow.daemon.service import DaemonService
 from pmeow.daemon.socket_server import SocketServer, send_request
-from pmeow.models import TaskSpec, TaskStatus
+from pmeow.executor.logs import read_task_log
+from pmeow.models import TaskLaunchMode, TaskSpec, TaskStatus
 
 
 @pytest.fixture()
@@ -160,3 +162,81 @@ def test_socket_roundtrip(tmp_state):
         srv.shutdown()
         from pmeow.store.database import close_database
         close_database(svc.db)
+
+
+# ------------------------------------------------------------------
+# collect_cycle — attached task handling
+# ------------------------------------------------------------------
+
+def _fake_snapshot(per_gpu=None):
+    gpu_alloc = None
+    if per_gpu is not None:
+        gpu_alloc = SimpleNamespace(per_gpu=per_gpu)
+    return SimpleNamespace(timestamp=time.time(), gpu_allocation=gpu_alloc)
+
+
+def test_collect_cycle_reserves_attached_task_and_writes_report(svc, monkeypatch):
+    """Submit attached task → collect_cycle should reserve (not spawn) and write log."""
+    from pmeow.models import PerGpuAllocationSummary
+    from pmeow.queue.scheduler import ScheduleDecision
+
+    gpu = PerGpuAllocationSummary(
+        gpu_index=0, total_memory_mb=16000.0, effective_free_mb=12000.0,
+    )
+
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_snapshot",
+        lambda **kw: _fake_snapshot(per_gpu=[gpu]),
+    )
+    monkeypatch.setattr(
+        svc.scheduler, "try_schedule",
+        lambda db, per_gpu: [ScheduleDecision(task_id=rec.id, gpu_ids=[0])],
+    )
+
+    spec = _make_spec(
+        launch_mode=TaskLaunchMode.attached_python,
+        report_requested=True,
+    )
+    rec = svc.submit_task(spec)
+
+    svc.collect_cycle()
+
+    # Task should be in launching state, NOT running
+    from pmeow.store.tasks import get_task
+    task = get_task(svc.db, rec.id)
+    assert task.status == TaskStatus.launching
+
+    # Runner should NOT have started a process
+    assert svc.runner.get_running_pids() == {}
+
+    # Log should contain "launch reserved"
+    content = read_task_log(rec.id, svc.config.log_dir)
+    assert "launch reserved" in content
+
+
+def test_collect_cycle_requeues_expired_attached_launch(svc, monkeypatch):
+    """An attached task past its deadline should be requeued by collect_cycle."""
+    from pmeow.store.tasks import get_task, reserve_attached_launch
+
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_snapshot",
+        lambda **kw: _fake_snapshot(),
+    )
+
+    spec = _make_spec(launch_mode=TaskLaunchMode.attached_python)
+    rec = svc.submit_task(spec)
+
+    # Manually reserve with an already-expired deadline
+    reserve_attached_launch(
+        svc.db, rec.id, gpu_ids=[0],
+        launch_deadline=time.time() - 10, reserved_at=time.time() - 20,
+    )
+    assert get_task(svc.db, rec.id).status == TaskStatus.launching
+
+    svc.collect_cycle()
+
+    task = get_task(svc.db, rec.id)
+    assert task.status == TaskStatus.queued
+
+    content = read_task_log(rec.id, svc.config.log_dir)
+    assert "launch reservation expired" in content

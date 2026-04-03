@@ -12,14 +12,35 @@ def get_task_log_path(task_id: str, log_dir: str) -> str:
     return os.path.join(log_dir, f"{task_id}.log")
 
 
-def open_task_log(task_id: str, log_dir: str) -> IO[bytes]:
-    """Open (or create) the log file for *task_id* in binary write mode.
+def ensure_task_log(task_id: str, log_dir: str) -> str:
+    """Create the log directory and an empty log file if it doesn't exist.
 
-    Creates the log directory if it does not exist.
+    Returns the path to the log file.  Existing files are not truncated.
     """
     os.makedirs(log_dir, exist_ok=True)
     path = get_task_log_path(task_id, log_dir)
-    return open(path, "wb")
+    if not os.path.exists(path):
+        open(path, "xb").close()
+    return path
+
+
+def open_task_log(task_id: str, log_dir: str, append: bool = False) -> IO[bytes]:
+    """Open (or create) the log file for *task_id* in binary write mode.
+
+    Creates the log directory if it does not exist.
+    When *append* is ``True``, existing content is preserved.
+    """
+    os.makedirs(log_dir, exist_ok=True)
+    path = get_task_log_path(task_id, log_dir)
+    return open(path, "ab" if append else "wb")
+
+
+def append_task_log_line(task_id: str, log_dir: str, message: str) -> None:
+    """Append a single text line to the task log file."""
+    os.makedirs(log_dir, exist_ok=True)
+    path = get_task_log_path(task_id, log_dir)
+    with open(path, "a") as fh:
+        fh.write(message + "\n")
 
 
 def read_task_log(task_id: str, log_dir: str, tail: int = 100) -> str:

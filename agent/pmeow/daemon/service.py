@@ -11,21 +11,32 @@ import time
 from pmeow import __version__
 from pmeow.collector.snapshot import collect_snapshot
 from pmeow.config import AgentConfig
-from pmeow.executor.logs import read_task_log
+from pmeow.executor.logs import append_task_log_line, ensure_task_log, read_task_log
 from pmeow.executor.runner import TaskRunner
-from pmeow.models import QueueState, TaskRecord, TaskSpec, TaskStatus, TaskUpdate
+from pmeow.models import (
+    QueueState,
+    TaskLaunchMode,
+    TaskRecord,
+    TaskSpec,
+    TaskStatus,
+    TaskUpdate,
+)
 from pmeow.queue.history import GpuHistoryTracker
 from pmeow.queue.scheduler import QueueScheduler
 from pmeow.store.database import close_database, open_database
 from pmeow.store.runtime import is_queue_paused, set_queue_paused
 from pmeow.store.tasks import (
+    append_task_event,
     attach_runtime,
     cancel_task as db_cancel_task,
     create_task,
     finish_task,
     get_task,
     list_tasks as db_list_tasks,
+    requeue_expired_attached_launches,
+    reserve_attached_launch,
 )
+from pmeow.task_reporting import format_launch_report, format_waiting_report
 from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
@@ -103,6 +114,17 @@ class DaemonService:
         self.stop()
 
     # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _record_task_message(
+        self, task_id: str, event_type: str, message: str
+    ) -> None:
+        """Write *message* to both the task log file and the task_events table."""
+        append_task_log_line(task_id, self.config.log_dir, message)
+        append_task_event(self.db, task_id, event_type, time.time(), message)
+
+    # ------------------------------------------------------------------
     # Collection cycle
     # ------------------------------------------------------------------
 
@@ -122,6 +144,15 @@ class DaemonService:
             # Record GPU history
             self.history.record(snapshot.timestamp, per_gpu)
 
+            # Requeue expired attached launches
+            requeued = requeue_expired_attached_launches(self.db, time.time())
+            for task_id in requeued:
+                self._record_task_message(
+                    task_id, "launch_reservation_expired",
+                    "launch reservation expired — task requeued",
+                )
+                log.info("task %s: launch reservation expired, requeued", task_id)
+
             # Reap completed tasks
             for task_id, exit_code in self.runner.check_completed():
                 finished_at = time.time()
@@ -135,6 +166,13 @@ class DaemonService:
                         exit_code=exit_code,
                     ))
 
+            # Write queue probe reports for queued attached tasks
+            queued_tasks = db_list_tasks(self.db, TaskStatus.queued)
+            for t in queued_tasks:
+                if t.launch_mode == TaskLaunchMode.attached_python and t.report_requested:
+                    msg = format_waiting_report(t, per_gpu)
+                    self._record_task_message(t.id, "queue_probe", msg)
+
             # Scheduling
             if not is_queue_paused(self.db):
                 decisions = self.scheduler.try_schedule(self.db, per_gpu)
@@ -142,6 +180,22 @@ class DaemonService:
                     task = get_task(self.db, dec.task_id)
                     if task is None:
                         continue
+
+                    if task.launch_mode == TaskLaunchMode.attached_python:
+                        # Reserve GPUs for attached launch instead of spawning
+                        launch_deadline = time.time() + 30.0
+                        reserve_attached_launch(
+                            self.db, task.id, dec.gpu_ids,
+                            launch_deadline, time.time(),
+                        )
+                        msg = format_launch_report(task, dec.gpu_ids, per_gpu)
+                        self._record_task_message(task.id, "launch_reserved", msg)
+                        log.info(
+                            "reserved attached launch %s (gpus=%s)",
+                            task.id, dec.gpu_ids,
+                        )
+                        continue
+
                     proc = self.runner.start(task, dec.gpu_ids, self.config.log_dir)
                     started_at = time.time()
                     attach_runtime(
@@ -169,7 +223,13 @@ class DaemonService:
 
     def submit_task(self, spec: TaskSpec) -> TaskRecord:
         with self._lock:
-            return create_task(self.db, spec)
+            rec = create_task(self.db, spec)
+            ensure_task_log(rec.id, self.config.log_dir)
+            self._record_task_message(
+                rec.id, "submitted",
+                f"task submitted: {rec.command!r} (mode={rec.launch_mode.value})",
+            )
+            return rec
 
     def cancel_task(self, task_id: str) -> bool:
         with self._lock:
@@ -191,6 +251,10 @@ class DaemonService:
     def list_tasks(self, status: TaskStatus | None = None) -> list[TaskRecord]:
         with self._lock:
             return db_list_tasks(self.db, status)
+
+    def get_task(self, task_id: str) -> TaskRecord | None:
+        with self._lock:
+            return get_task(self.db, task_id)
 
     def get_logs(self, task_id: str, tail: int = 100) -> str:
         return read_task_log(task_id, self.config.log_dir)

@@ -34,7 +34,7 @@ class TaskRunner:
         Sets ``CUDA_VISIBLE_DEVICES``, redirects stdout+stderr to a log
         file, and runs the command inside the task's ``cwd``.
         """
-        log_fh = open_task_log(task.id, log_dir)
+        log_fh = open_task_log(task.id, log_dir, append=True)
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_ids)
 
