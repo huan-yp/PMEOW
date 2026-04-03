@@ -2,17 +2,17 @@
 
 <img align="right" width="400" src="assets/logo.png" alt="PMEOW — 面向高校实验室的 GPU 集群调度系统">
 
-PMEOW 是面向实验室和小型 GPU 集群的监控与节点本地调度平台。依托东南大学 [PALM 实验室](https://palm.seu.edu.cn/) 开发，旨在提供一个轻量级、易部署、功能实用的解决方案，帮助实验室管理员和研究人员更高效地管理和使用 GPU 资源。
+PMEOW 是面向实验室和小型 GPU 集群的监控与节点本地调度平台。由 [I++ 俱乐部](https://ippclub.org/) 依托东南大学 [PALM 实验室](https://palm.seu.edu.cn/) 开发，旨在提供一个轻量级、易部署、功能实用的解决方案，帮助实验室管理员和研究人员更高效地管理和使用 GPU 资源。
+
+**本项目采用 GNU Affero General Public License v3.0（AGPLv3，AGPL-3.0-only）。如需以闭源方式集成，或希望获得替代商业授权，请联系作者。**
 
 <br clear="both">
 
-## 当前已落地能力
+## 快速部署
 
-- Web 控制台：控制台、节点、人员、钩子规则、告警、任务调度、安全审计、设置。
-- 双节点接入模式：同一个系统同时支持 SSH 节点和 Agent 节点，并允许逐台迁移。
-- Agent 本地执行链路：指标采集、任务镜像、GPU allocation、取消、暂停、恢复和优先级控制。
-- People 与 access：人员目录、绑定向导、人员详情、移动端访问令牌生命周期。
-- 移动端入口：管理员移动视图和个人移动视图，Android 可通过 Capacitor 打包。
+**务必注意网络安全！！！！**
+
+本方式只适合快速体验，**不建议在生产环境使用**。
 
 ### 启动 Web 服务端
 
@@ -21,18 +21,13 @@ pnpm build:web
 pnpm start:web
 ```
 
-**注意网络安全问题！！！**
-
 默认绑定 `0.0.0.0:17200`，本机访问可用 `http://localhost:17200`。
 
-生产环境使用请看 [Web 服务端部署文档](docs/user/web-server.md)。
+首次访问时会要求设置密码，**请设置强密码**。
 
-## 第一次接入节点
+### 接入计算节点
 
-- SSH 节点：在“节点”页面新增服务器，填写 `host`、`port`、`username` 和私钥路径，先跑一次测试连接。
-- Agent 节点：先在 Web 端创建服务器记录，并让 `host` 与节点真实 hostname 一致；随后在节点上安装 `pmeow-agent`，设置 `PMEOW_SERVER_URL`，再执行 `pmeow-agent run`。
-
-如果 hostname 唯一精确匹配，服务端会把该服务器切换到 Agent 模式，并开始显示任务和 GPU allocation 数据。
+在节点上安装 `pmeow-agent`，设置环境变量 `PMEOW_SERVER_URL` 为 Web 服务端地址（例如 `http://localhost:17200`），再执行 `pmeow-agent run`（前台运行）。
 
 ## 文档导航
 
@@ -46,9 +41,18 @@ pnpm start:web
 - [docs/developer/README.md](docs/developer/README.md) - 架构、开发、协议、测试
 
 `docs/superpowers/` 保留为设计与规划档案，不替代当前操作手册。
-## 开源协议
 
+## 关于我们
 
+- [I++ 俱乐部](https://ippclub.org/)
+- [PALM 实验室](https://palm.seu.edu.cn/)
 
+## 合作与商业授权
+
+如果您是高校实验室管理员，欢迎您联系我们定制化部署 PMEOW。
+
+如果您是企业用户并希望闭源商用，请联系我们商讨商业授权事宜。
+
+[电子邮件](mailto:huan_yp@qq.com)
 
 
