@@ -91,6 +91,29 @@ pmeow-agent logs <task_id> --tail 50
 pmeow-agent cancel <task_id>
 ```
 
+### Run an attached Python task
+
+```bash
+pmeow -vram=10g -gpus=2 --report train.py --epochs 50
+```
+
+Rules:
+
+- Tokens before the first `.py` path are interpreted as PMEOW flags (`-vram`, `-gpus`, `--priority`, `--report`)
+- Tokens after the script path are passed to Python unchanged
+- `--report` prints queue attempts and the current GPU occupancy summary until the task starts
+- Once GPUs are reserved, the same terminal becomes the Python process stdin, stdout, and stderr
+
+### Sample scheduling tasks
+
+PyTorch sample tasks are optional. Install a `torch` build yourself before using them. `pmeow-agent` does not declare `torch` as a default dependency.
+
+```bash
+pmeow -vram=8g -gpus=1 examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
+pmeow -vram=12g -gpus=2 --report examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
+pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
+```
+
 ### Pause / resume the queue
 
 ```bash

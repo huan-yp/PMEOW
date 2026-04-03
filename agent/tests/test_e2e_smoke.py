@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 import threading
@@ -9,9 +10,12 @@ import time
 
 import pytest
 
+from pmeow.cli_python import PythonInvocation, run_python_invocation
 from pmeow.config import AgentConfig
 from pmeow.daemon.service import DaemonService
+from pmeow.daemon.socket_server import SocketServer
 from pmeow.models import TaskSpec, TaskStatus
+from pmeow.store.database import close_database
 
 
 @pytest.fixture()
@@ -103,3 +107,75 @@ def test_e2e_submit_and_complete(daemon_service: DaemonService):
             stop.set()
             daemon_thread.join(timeout=5)
         svc.stop()
+
+
+def test_e2e_attached_python_flow(tmp_path):
+    """Submit an attached python task through the full sugar path, verify logs and status."""
+    state_dir = str(tmp_path / "state")
+    log_dir = str(tmp_path / "logs")
+    socket_path = str(tmp_path / "pmeow.sock")
+    script = tmp_path / "attached_demo.py"
+    script.write_text(
+        "import sys\n"
+        "print('attached hello')\n"
+        "line = sys.stdin.readline()\n"
+        "print(line.strip())\n"
+    )
+    os.makedirs(state_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+
+    config = AgentConfig(
+        server_url="",
+        agent_id="attached-node",
+        collection_interval=1,
+        heartbeat_interval=30,
+        history_window_seconds=30,
+        vram_redundancy_coefficient=0.1,
+        state_dir=state_dir,
+        socket_path=socket_path,
+        log_dir=log_dir,
+    )
+    svc = DaemonService(config)
+    srv = SocketServer(socket_path, svc)
+    srv_thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    srv_thread.start()
+    time.sleep(0.2)
+
+    stop = threading.Event()
+
+    def _loop():
+        while not stop.is_set():
+            try:
+                svc.collect_cycle()
+            except Exception:
+                pass
+            stop.wait(0.2)
+
+    daemon_thread = threading.Thread(target=_loop, daemon=True)
+    daemon_thread.start()
+
+    try:
+        exit_code = run_python_invocation(
+            PythonInvocation(
+                socket_path=socket_path,
+                require_vram_mb=0,
+                require_gpu_count=0,
+                priority=10,
+                report=True,
+                script_path=str(script.resolve()),
+                script_args=[],
+            ),
+            stdin_source=io.BytesIO(b"hello from stdin\n"),
+        )
+
+        assert exit_code == 0
+        task = svc.list_tasks()[0]
+        assert task.status == TaskStatus.completed
+        content = svc.get_logs(task.id)
+        assert "attached hello" in content
+        assert "hello from stdin" in content
+    finally:
+        stop.set()
+        daemon_thread.join(timeout=5)
+        srv.shutdown()
+        close_database(svc.db)

@@ -114,6 +114,31 @@ pmeow-agent resume
 
 当前 CLI 的 `submit` 命令会把命令行剩余部分拼成一条 shell 命令字符串，并记录当前工作目录和当前系统用户名。
 
+## Python 直达模式
+
+除了 `pmeow-agent submit` 命令，你也可以用更简洁的语法直接提交 Python 脚本：
+
+```bash
+pmeow -vram=10g -gpus=2 --report train.py --epochs 50
+```
+
+规则：
+
+- `.py` 路径之前的 token 是 PMEOW flags（`-vram`、`-gpus`、`--priority`、`--report`）
+- `.py` 路径之后的 token 原样传给 Python
+- `--report` 在排队期间打印队列尝试和 GPU 占用概览
+- GPU 资源到位后，当前终端直接变成 Python 进程的 stdin、stdout 和 stderr
+
+### 可选 PyTorch 样例任务
+
+以下样例任务用于测试调度逻辑，需要你自己安装 `torch`。`pmeow-agent` 不会把 `torch` 作为默认依赖。
+
+```bash
+pmeow -vram=8g -gpus=1 examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
+pmeow -vram=12g -gpus=2 --report examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
+pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
+```
+
 ## 节点绑定是怎么发生的
 
 Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
