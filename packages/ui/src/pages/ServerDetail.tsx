@@ -7,7 +7,7 @@ import { GaugeChart } from '../components/GaugeChart.js';
 import { ProcessTable } from '../components/ProcessTable.js';
 import { DockerList } from '../components/DockerList.js';
 import { GpuAllocationBars } from '../components/GpuAllocationBars.js';
-import type { MetricsSnapshot, ProcessAuditRow } from '@monitor/core';
+import type { MetricsSnapshot, ProcessAuditRow, ServerPersonActivity } from '@monitor/core';
 
 type Tab = 'overview' | 'processes' | 'docker' | 'tasks';
 
@@ -27,6 +27,7 @@ export function ServerDetail() {
   const [tab, setTab] = useState<Tab>('overview');
   const [history, setHistory] = useState<MetricsSnapshot[]>([]);
   const [processAudit, setProcessAudit] = useState<ProcessAuditRow[]>([]);
+  const [personActivity, setPersonActivity] = useState<ServerPersonActivity | null>(null);
   const requestScopeRef = useRef({ serverId: id, version: 0 });
   const historyRequestIdRef = useRef(0);
   const processAuditRequestIdRef = useRef(0);
@@ -113,6 +114,11 @@ export function ServerDetail() {
   useEffect(() => {
     void loadProcessAudit();
   }, [loadProcessAudit]);
+
+  useEffect(() => {
+    if (!id) return;
+    void transport.getServerPersonActivity(id).then(setPersonActivity).catch(() => setPersonActivity(null));
+  }, [id, transport]);
 
   // Append new metrics to history
   useEffect(() => {
@@ -288,6 +294,23 @@ export function ServerDetail() {
               <div><span className="text-slate-500">负载</span><p className="text-slate-300 mt-0.5">{metrics?.system.loadAvg1} / {metrics?.system.loadAvg5} / {metrics?.system.loadAvg15}</p></div>
             </div>
           </div>
+
+          {personActivity && personActivity.people.length > 0 && (
+            <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+              <h3 className="text-sm text-slate-400 mb-2">人员活动</h3>
+              <div className="space-y-2">
+                {personActivity.people.map(p => (
+                  <div key={p.personId} className="flex justify-between text-sm text-slate-300">
+                    <span>{p.displayName}</span>
+                    <span className="text-slate-400">{p.currentVramMB} MB</span>
+                  </div>
+                ))}
+              </div>
+              {personActivity.unassignedVramMB > 0 && (
+                <p className="mt-2 text-xs text-slate-500">未分配显存: {personActivity.unassignedVramMB} MB</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

@@ -154,6 +154,17 @@ function createMockTransport() {
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     uploadKey: vi.fn<(file: File) => Promise<{ path: string }>>(async (_file) => ({ path: '/tmp/key' })),
+    getPersons: vi.fn(async () => []),
+    createPerson: vi.fn(async () => ({ id: 'p1', displayName: '', email: '', qq: '', note: '', customFields: {}, status: 'active' as const, createdAt: 1, updatedAt: 1 })),
+    updatePerson: vi.fn(async () => ({ id: 'p1', displayName: '', email: '', qq: '', note: '', customFields: {}, status: 'active' as const, createdAt: 1, updatedAt: 1 })),
+    getPersonBindings: vi.fn(async () => []),
+    createPersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual' as const, enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
+    updatePersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual' as const, enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
+    getPersonBindingSuggestions: vi.fn(async () => []),
+    getPersonSummary: vi.fn(async () => []),
+    getPersonTimeline: vi.fn(async () => []),
+    getPersonTasks: vi.fn(async () => []),
+    getServerPersonActivity: vi.fn(async () => ({ serverId: 's1', people: [], unassignedVramMB: 0, unassignedUsers: [] })),
   };
 }
 

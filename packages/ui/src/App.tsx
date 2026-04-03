@@ -15,11 +15,16 @@ import { Alerts } from './pages/Alerts.js';
 import { TaskQueue } from './pages/TaskQueue.js';
 import { Security } from './pages/Security.js';
 import { Login } from './pages/Login.js';
+import { PeopleOverview } from './pages/PeopleOverview.js';
+import { PeopleManage } from './pages/PeopleManage.js';
+import { PersonDetail } from './pages/PersonDetail.js';
 
 function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const links = [
     { to: '/', icon: DashboardIcon, label: '控制台' },
     { to: '/servers', icon: ServerIcon, label: '节点' },
+    { to: '/people', icon: PeopleIcon, label: '人员' },
+    { to: '/people/manage', icon: PeopleIcon, label: '人员管理' },
     { to: '/hooks', icon: HookIcon, label: '钩子规则' },
     { to: '/alerts', icon: AlertIcon, label: '告警' },
     { to: '/tasks', icon: TaskIcon, label: '任务调度' },
@@ -89,6 +94,9 @@ function AppContent() {
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/tasks" element={<TaskQueue />} />
           <Route path="/security" element={<Security />} />
+          <Route path="/people" element={<PeopleOverview />} />
+          <Route path="/people/manage" element={<PeopleManage />} />
+          <Route path="/people/:id" element={<PersonDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -230,6 +238,15 @@ function ShieldIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
         d="M12 3l7 4v5c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V7l7-4zm-2.5 8.5l1.5 1.5 3.5-3.5" />
+    </svg>
+  );
+}
+
+function PeopleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
     </svg>
   );
 }

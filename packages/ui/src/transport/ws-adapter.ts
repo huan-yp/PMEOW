@@ -5,6 +5,9 @@ import type {
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
   AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
+  PersonRecord, PersonBindingRecord, PersonBindingSuggestion,
+  PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
+  MirroredAgentTaskRecord,
 } from '@monitor/core';
 import type { SecurityEventQuery } from './types.js';
 
@@ -309,5 +312,50 @@ export class WebSocketAdapter implements TransportAdapter {
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
+  }
+
+  // Person attribution
+  async getPersons(): Promise<PersonRecord[]> {
+    return this.fetch('/api/persons');
+  }
+
+  async createPerson(input: { displayName: string; email?: string; qq?: string; note?: string; customFields: Record<string, string> }): Promise<PersonRecord> {
+    return this.fetch('/api/persons', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  async updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; customFields: Record<string, string> }>): Promise<PersonRecord> {
+    return this.fetch(`/api/persons/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+
+  async getPersonBindings(personId: string): Promise<PersonBindingRecord[]> {
+    return this.fetch(`/api/persons/${personId}/bindings`);
+  }
+
+  async createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source: string; effectiveFrom: number }): Promise<PersonBindingRecord> {
+    return this.fetch('/api/person-bindings', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  async updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord> {
+    return this.fetch(`/api/person-bindings/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+
+  async getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]> {
+    return this.fetch('/api/person-binding-suggestions');
+  }
+
+  async getPersonSummary(hours = 168): Promise<PersonSummaryItem[]> {
+    return this.fetch(`/api/persons/summary?hours=${hours}`);
+  }
+
+  async getPersonTimeline(personId: string, hours = 168): Promise<PersonTimelinePoint[]> {
+    return this.fetch(`/api/persons/${personId}/timeline?hours=${hours}`);
+  }
+
+  async getPersonTasks(personId: string, hours = 168): Promise<MirroredAgentTaskRecord[]> {
+    return this.fetch(`/api/persons/${personId}/tasks?hours=${hours}`);
+  }
+
+  async getServerPersonActivity(serverId: string): Promise<ServerPersonActivity> {
+    return this.fetch(`/api/servers/${serverId}/person-activity`);
   }
 }

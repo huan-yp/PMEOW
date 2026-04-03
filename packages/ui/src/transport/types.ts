@@ -3,6 +3,9 @@ import type {
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
   AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
+  PersonRecord, PersonBindingRecord, PersonBindingSuggestion,
+  PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
+  MirroredAgentTaskRecord,
 } from '@monitor/core';
 
 export interface SecurityEventQuery {
@@ -75,4 +78,17 @@ export interface TransportAdapter {
 
   // Key upload
   uploadKey(file: File): Promise<{ path: string }>;
+
+  // Person attribution
+  getPersons(): Promise<PersonRecord[]>;
+  createPerson(input: { displayName: string; email?: string; qq?: string; note?: string; customFields: Record<string, string> }): Promise<PersonRecord>;
+  updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; customFields: Record<string, string> }>): Promise<PersonRecord>;
+  getPersonBindings(personId: string): Promise<PersonBindingRecord[]>;
+  createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source: string; effectiveFrom: number }): Promise<PersonBindingRecord>;
+  updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord>;
+  getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]>;
+  getPersonSummary(hours?: number): Promise<PersonSummaryItem[]>;
+  getPersonTimeline(personId: string, hours?: number): Promise<PersonTimelinePoint[]>;
+  getPersonTasks(personId: string, hours?: number): Promise<MirroredAgentTaskRecord[]>;
+  getServerPersonActivity(serverId: string): Promise<ServerPersonActivity>;
 }
