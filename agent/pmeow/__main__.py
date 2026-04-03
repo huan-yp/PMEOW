@@ -167,6 +167,13 @@ _HANDLERS = {
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = list(sys.argv[1:] if argv is None else argv)
+
+    from pmeow.cli_python import detect_python_invocation, run_python_invocation
+    invocation = detect_python_invocation(argv)
+    if invocation is not None:
+        raise SystemExit(run_python_invocation(invocation))
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
