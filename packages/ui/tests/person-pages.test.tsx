@@ -181,17 +181,16 @@ describe('person pages', () => {
     });
   });
 
-  it('keeps a loading shell visible until the first people directory response settles', async () => {
+  it('renders the people list before summary stats finish loading', async () => {
     const personsDeferred = createDeferred<PersonRecord[]>();
     const summaryDeferred = createDeferred<PersonSummaryItem[]>();
+    const transport = createMockTransport({
+      getPersons: vi.fn(() => personsDeferred.promise),
+      getPersonSummary: vi.fn(() => summaryDeferred.promise),
+    });
 
     render(
-      <TransportProvider
-        adapter={createMockTransport({
-          getPersons: vi.fn(() => personsDeferred.promise),
-          getPersonSummary: vi.fn(() => summaryDeferred.promise),
-        })}
-      >
+      <TransportProvider adapter={transport}>
         <MemoryRouter initialEntries={['/people']}>
           <Routes>
             <Route path="/people" element={<PeopleOverview />} />
@@ -203,9 +202,20 @@ describe('person pages', () => {
     expect(await screen.findByRole('heading', { name: '人员' })).toBeTruthy();
     expect(screen.getByRole('status', { name: '人员加载中' })).toBeTruthy();
     expect(screen.queryByText('还没有人员')).toBeNull();
+    expect(transport.getPersonSummary).not.toHaveBeenCalled();
 
     await act(async () => {
       personsDeferred.resolve([basePerson]);
+      await personsDeferred.promise;
+    });
+
+    expect(await screen.findByText('Alice')).toBeTruthy();
+    expect(screen.queryByRole('status', { name: '人员加载中' })).toBeNull();
+    expect(screen.getByText('统计加载中...')).toBeTruthy();
+    expect(screen.queryByText(/4.0 GB/)).toBeNull();
+    expect(transport.getPersonSummary).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
       summaryDeferred.resolve([
         {
           personId: 'person-1',
@@ -220,16 +230,18 @@ describe('person pages', () => {
           taskRuntimeHours: 1.5,
         },
       ]);
-      await Promise.all([personsDeferred.promise, summaryDeferred.promise]);
+      await summaryDeferred.promise;
     });
 
-    expect(await screen.findByText('Alice')).toBeTruthy();
-    expect(screen.queryByRole('status', { name: '人员加载中' })).toBeNull();
+    expect(await screen.findByText(/4.0 GB/)).toBeTruthy();
+    expect(screen.queryByText('统计加载中...')).toBeNull();
   });
 
   it('renders an empty-state CTA that enters the creation flow', async () => {
+    const transport = createMockTransport({ getPersons: vi.fn(async () => []), getPersonSummary: vi.fn(async () => []) });
+
     render(
-      <TransportProvider adapter={createMockTransport({ getPersons: vi.fn(async () => []), getPersonSummary: vi.fn(async () => []) })}>
+      <TransportProvider adapter={transport}>
         <MemoryRouter initialEntries={['/people']}>
           <Routes>
             <Route path="/people" element={<PeopleOverview />} />
@@ -240,6 +252,7 @@ describe('person pages', () => {
 
     expect(await screen.findByText('还没有人员')).toBeTruthy();
     expect(screen.getByRole('link', { name: '开始添加' }).getAttribute('href')).toBe('/people/new');
+    expect(transport.getPersonSummary).not.toHaveBeenCalled();
   });
 
   it('redirects the legacy manage route to /people/new', async () => {

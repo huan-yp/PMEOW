@@ -54,32 +54,65 @@ function PeopleOverviewLoadingState() {
   );
 }
 
+function PersonSummaryLoadingState() {
+  return (
+    <div className="mt-4 space-y-2">
+      <p className="text-xs text-slate-500">统计加载中...</p>
+      <div className="h-4 w-32 animate-pulse rounded bg-dark-bg/70" />
+      <div className="h-4 w-36 animate-pulse rounded bg-dark-bg/70" />
+      <div className="h-3 w-24 animate-pulse rounded bg-dark-bg/60" />
+    </div>
+  );
+}
+
 export function PeopleOverview() {
   const transport = useTransport();
-  const [rows, setRows] = useState<PersonDirectoryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [persons, setPersons] = useState<PersonRecord[] | null>(null);
+  const [summary, setSummary] = useState<PersonSummaryItem[] | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setLoading(true);
+      setPersons(null);
+      setSummary(null);
+      setSummaryLoading(false);
 
       try {
-        const [personsResult, summaryResult] = await Promise.allSettled([transport.getPersons(), transport.getPersonSummary()]);
+        const nextPersons = await transport.getPersons();
 
         if (!cancelled) {
-          const persons = personsResult.status === 'fulfilled' ? personsResult.value : [];
-          const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : [];
-          setRows(mergePersonDirectory(persons, summary));
+          setPersons(nextPersons);
+        }
+
+        if (cancelled || nextPersons.length === 0) {
+          return;
+        }
+
+        // The aggregate summary query is heavier than the directory list. Fetch it after
+        // the base list so the page becomes usable as soon as possible.
+        setSummaryLoading(true);
+
+        try {
+          const nextSummary = await transport.getPersonSummary();
+          if (!cancelled) {
+            setSummary(nextSummary);
+          }
+        } catch {
+          if (!cancelled) {
+            setSummary([]);
+          }
+        } finally {
+          if (!cancelled) {
+            setSummaryLoading(false);
+          }
         }
       } catch {
         if (!cancelled) {
-          setRows([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
+          setPersons([]);
+          setSummary([]);
+          setSummaryLoading(false);
         }
       }
     };
@@ -90,6 +123,8 @@ export function PeopleOverview() {
       cancelled = true;
     };
   }, [transport]);
+
+  const rows = persons ? mergePersonDirectory(persons, summary ?? []) : [];
 
   return (
     <div className="p-6 space-y-6">
@@ -105,7 +140,7 @@ export function PeopleOverview() {
           添加人员
         </Link>
       </div>
-      {loading ? (
+      {persons === null ? (
         <PeopleOverviewLoadingState />
       ) : rows.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-dark-border bg-dark-card/50 p-8 text-center">
@@ -124,11 +159,15 @@ export function PeopleOverview() {
             <Link key={row.id} to={`/people/${row.id}`} className="block rounded-2xl border border-dark-border bg-dark-card p-5 transition-colors hover:border-accent-blue/30">
               <p className="text-lg text-slate-100">{row.displayName}</p>
               <p className="mt-2 text-sm text-slate-500">{[row.email, row.qq].filter(Boolean).join(' · ') || row.note || '未填写联系信息'}</p>
-              <div className="mt-4 space-y-1">
-                <p className="mt-2 text-sm text-slate-400">当前显存 {formatVramGB(row.currentVramMB)}</p>
-                <p className="mt-1 text-sm text-slate-400">运行 {row.runningTaskCount} · 排队 {row.queuedTaskCount}</p>
-                <p className="mt-1 text-xs text-slate-500">活跃节点 {row.activeServerCount}</p>
-              </div>
+              {summaryLoading ? (
+                <PersonSummaryLoadingState />
+              ) : (
+                <div className="mt-4 space-y-1">
+                  <p className="mt-2 text-sm text-slate-400">当前显存 {formatVramGB(row.currentVramMB)}</p>
+                  <p className="mt-1 text-sm text-slate-400">运行 {row.runningTaskCount} · 排队 {row.queuedTaskCount}</p>
+                  <p className="mt-1 text-xs text-slate-500">活跃节点 {row.activeServerCount}</p>
+                </div>
+              )}
             </Link>
           ))}
         </div>
