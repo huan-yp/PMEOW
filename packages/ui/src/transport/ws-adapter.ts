@@ -5,7 +5,7 @@ import type {
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
   AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
-  PersonRecord, PersonBindingRecord, PersonBindingSuggestion,
+  PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
   MirroredAgentTaskRecord,
 } from '@monitor/core';
@@ -337,6 +337,10 @@ export class WebSocketAdapter implements TransportAdapter {
 
   async updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord> {
     return this.fetch(`/api/person-bindings/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  }
+
+  async getPersonBindingCandidates(): Promise<PersonBindingCandidate[]> {
+    return this.fetch('/api/person-binding-candidates');
   }
 
   async getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]> {

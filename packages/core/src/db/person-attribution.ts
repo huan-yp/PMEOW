@@ -3,6 +3,7 @@ import { getGpuUsageByServerIdAndTimestamp } from './gpu-usage.js';
 import { getPersonById } from './persons.js';
 import { resolveTaskPerson, resolveRawUserPerson } from '../person/resolve.js';
 import type {
+  PersonBindingCandidate,
   PersonSummaryItem,
   PersonTimelinePoint,
   PersonBindingSuggestion,
@@ -273,5 +274,51 @@ export function listPersonBindingSuggestions(): PersonBindingSuggestion[] {
     serverName: serverNames.get(row.serverId) ?? row.serverId,
     systemUser: row.rawUser,
     lastSeenAt: row.lastSeenAt,
+  }));
+}
+
+export function listPersonBindingCandidates(): PersonBindingCandidate[] {
+  const db = getDatabase();
+
+  const rows = db.prepare(`
+    SELECT f.serverId, f.rawUser, MAX(f.timestamp) as lastSeenAt
+    FROM person_attribution_facts f
+    WHERE f.rawUser IS NOT NULL
+    GROUP BY f.serverId, f.rawUser
+    ORDER BY lastSeenAt DESC, f.serverId ASC, f.rawUser ASC
+  `).all() as Array<{ serverId: string; rawUser: string; lastSeenAt: number }>;
+
+  const serverNames = new Map(
+    (db.prepare('SELECT id, name FROM servers').all() as Array<{ id: string; name: string }>).map(r => [r.id, r.name])
+  );
+
+  const activeBindings = new Map(
+    (db.prepare(`
+      SELECT b.id, b.serverId, b.systemUser, b.personId, p.displayName as personDisplayName
+      FROM person_bindings b
+      JOIN persons p ON p.id = b.personId
+      WHERE b.enabled = 1 AND b.effectiveTo IS NULL
+    `).all() as Array<{
+      id: string;
+      serverId: string;
+      systemUser: string;
+      personId: string;
+      personDisplayName: string;
+    }>).map(row => [
+      `${row.serverId}:${row.systemUser}`,
+      {
+        bindingId: row.id,
+        personId: row.personId,
+        personDisplayName: row.personDisplayName,
+      },
+    ])
+  );
+
+  return rows.map(row => ({
+    serverId: row.serverId,
+    serverName: serverNames.get(row.serverId) ?? row.serverId,
+    systemUser: row.rawUser,
+    lastSeenAt: row.lastSeenAt,
+    activeBinding: activeBindings.get(`${row.serverId}:${row.rawUser}`) ?? null,
   }));
 }

@@ -222,6 +222,7 @@ function createMockTransport(): TransportAdapter {
     getPersonBindings: vi.fn(async () => []),
     createPersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual', enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
     updatePersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual', enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
+    getPersonBindingCandidates: vi.fn(async () => []),
     getPersonBindingSuggestions: vi.fn(async () => []),
     getPersonSummary: vi.fn(async () => []),
     getPersonTimeline: vi.fn(async () => []),

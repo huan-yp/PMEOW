@@ -5,9 +5,9 @@ import type {
   AlertEvent,
   AlertRecord,
   AppSettings,
-  GpuAllocationSummary,
   GpuOverviewResponse,
   GpuUsageSummaryItem,
+  GpuUsageTimelinePoint,
   HookLog,
   HookRule,
   HookRuleInput,
@@ -58,7 +58,7 @@ function createMockTransport(): TransportAdapter & {
     onServerStatus: vi.fn(() => () => undefined),
     onAlert: vi.fn((_cb: (alert: AlertEvent) => void) => () => undefined),
     onHookTriggered: vi.fn((_cb: (log: HookLog) => void) => () => undefined),
-    onNotify: vi.fn((_title: string, _body: string) => () => undefined),
+    onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
     onTaskUpdate: vi.fn((cb) => {
       onTaskUpdateCb = () => cb({ serverId: 'server-1', taskId: 'queued-1', status: 'running' });
       return () => {
@@ -145,13 +145,12 @@ function createMockTransport(): TransportAdapter & {
     }),
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 0, users: [], servers: [] })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
-    getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_user, _hours) => []),
+    getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageTimelinePoint[]>>(async (_user, _hours) => []),
     cancelTask: vi.fn<(serverId: string, taskId: string) => Promise<void>>(async (_serverId, _taskId) => undefined),
     setTaskPriority: vi.fn<(serverId: string, taskId: string, priority: number) => Promise<void>>(async (_serverId, _taskId, _priority) => undefined),
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
-    getGpuAllocation: vi.fn<(serverId: string) => Promise<GpuAllocationSummary | null>>(async (_serverId) => null),
-    getTask: vi.fn<(serverId: string, taskId: string) => Promise<unknown>>(async (_serverId, _taskId) => null),
+    getPersonBindingCandidates: vi.fn(async () => []),
     emitTaskUpdate: () => {
       onTaskUpdateCb?.();
     },

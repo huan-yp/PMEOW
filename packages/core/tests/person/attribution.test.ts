@@ -8,6 +8,7 @@ import {
   getPersonSummaries,
   getPersonTimeline,
   getServerPersonActivity,
+  listPersonBindingCandidates,
   listPersonBindingSuggestions,
   recordGpuAttributionFacts,
   recordTaskAttributionFact,
@@ -53,6 +54,52 @@ describe('person attribution', () => {
     expect(getServerPersonActivity(server.id).unassignedUsers).toContain('nobody');
     expect(listPersonBindingSuggestions()).toEqual([
       expect.objectContaining({ serverId: server.id, systemUser: 'nobody' }),
+    ]);
+  });
+
+  it('lists observed binding candidates with active binding metadata for bound and unbound users', () => {
+    const now = Date.now();
+    const server = createServer({ name: 'gpu-3', host: 'gpu-3', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-3' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const binding = createPersonBinding({
+      personId: alice.id,
+      serverId: server.id,
+      systemUser: 'alice',
+      source: 'manual',
+      effectiveFrom: now - 300_000,
+    });
+
+    saveGpuUsageRows(server.id, now - 120_000, [
+      { gpuIndex: 0, ownerType: 'user', ownerId: 'alice', userName: 'alice', pid: 3001, command: 'python bound.py', usedMemoryMB: 2048 },
+    ]);
+    saveGpuUsageRows(server.id, now - 60_000, [
+      { gpuIndex: 0, ownerType: 'user', ownerId: 'carol', userName: 'carol', pid: 3002, command: 'python unbound.py', usedMemoryMB: 1024 },
+    ]);
+
+    recordGpuAttributionFacts(server.id, now - 120_000);
+    recordGpuAttributionFacts(server.id, now - 60_000);
+
+    const candidates = listPersonBindingCandidates();
+
+    expect(candidates).toEqual([
+      {
+        serverId: server.id,
+        serverName: 'gpu-3',
+        systemUser: 'carol',
+        lastSeenAt: now - 60_000,
+        activeBinding: null,
+      },
+      {
+        serverId: server.id,
+        serverName: 'gpu-3',
+        systemUser: 'alice',
+        lastSeenAt: now - 120_000,
+        activeBinding: {
+          bindingId: binding.id,
+          personId: alice.id,
+          personDisplayName: 'Alice',
+        },
+      },
     ]);
   });
 });

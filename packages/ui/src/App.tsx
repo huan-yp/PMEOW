@@ -35,7 +35,6 @@ function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () 
     { to: '/', icon: DashboardIcon, label: '控制台' },
     { to: '/servers', icon: ServerIcon, label: '节点' },
     { to: '/people', icon: PeopleIcon, label: '人员' },
-    { to: '/people/manage', icon: PeopleIcon, label: '人员管理' },
     { to: '/hooks', icon: HookIcon, label: '钩子规则' },
     { to: '/alerts', icon: AlertIcon, label: '告警' },
     { to: '/tasks', icon: TaskIcon, label: '任务调度' },
@@ -106,7 +105,8 @@ function AppContent() {
           <Route path="/tasks" element={<TaskQueue />} />
           <Route path="/security" element={<Security />} />
           <Route path="/people" element={<PeopleOverview />} />
-          <Route path="/people/manage" element={<PeopleManage />} />
+          <Route path="/people/new" element={<PeopleManage />} />
+          <Route path="/people/manage" element={<Navigate to="/people/new" replace />} />
           <Route path="/people/:id" element={<PersonDetail />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/m/admin" element={<MobileAdminLayout />}>

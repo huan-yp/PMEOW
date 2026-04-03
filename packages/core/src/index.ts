@@ -98,6 +98,7 @@ export {
   getPersonTimeline,
   getPersonTasks,
   getServerPersonActivity,
+	listPersonBindingCandidates,
   listPersonBindingSuggestions,
 } from './db/person-attribution.js';
 export {
