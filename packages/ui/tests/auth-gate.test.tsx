@@ -21,6 +21,7 @@ import type {
 import { DEFAULT_SETTINGS } from '@monitor/core';
 import App from '../src/App.js';
 import type { SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
+import { AUTHOR_GITHUB_URL, PROJECT_REPO_URL } from '../src/utils/branding.js';
 import { useStore } from '../src/store/useStore.js';
 
 function createDeferred<T>() {
@@ -148,5 +149,19 @@ describe('AuthGate', () => {
     await waitFor(() => {
       expect(transport.checkAuth).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('shows repository and author links on the login screen', async () => {
+    const transport = createMockTransport();
+
+    renderApp(transport);
+
+    expect(await screen.findByPlaceholderText('请输入访问口令')).toBeTruthy();
+
+    const repoLink = screen.getByRole('link', { name: 'GitHub Repo · 本项目开源' });
+    const authorLink = screen.getByRole('link', { name: 'Powered By huan-yp' });
+
+    expect(repoLink.getAttribute('href')).toBe(PROJECT_REPO_URL);
+    expect(authorLink.getAttribute('href')).toBe(AUTHOR_GITHUB_URL);
   });
 });

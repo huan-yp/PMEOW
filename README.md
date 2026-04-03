@@ -1,10 +1,8 @@
-# PMEOW
+# PMEOW | PALM 编排负载管理引擎
 
 <img align="right" width="400" src="assets/logo.png" alt="PMEOW — 面向高校实验室的 GPU 集群调度系统">
 
-PMEOW 是面向实验室和小型 GPU 集群的监控与节点本地调度平台。当前 main 上已经落地的是一个两层系统：Web 服务端负责集群可见性、最小控制面和管理入口，Python Agent 运行在计算节点本地，负责指标采集、GPU 归属识别、本地任务队列和自主调度。
-
-服务端是观察者和干预点，不替 Agent 做二次排队调度。调度权仍然留在节点侧。
+PMEOW 是面向实验室和小型 GPU 集群的监控与节点本地调度平台。依托东南大学 [PALM 实验室](https://palm.seu.edu.cn/) 开发，旨在提供一个轻量级、易部署、功能实用的解决方案，帮助实验室管理员和研究人员更高效地管理和使用 GPU 资源。
 
 <br clear="both">
 
@@ -16,25 +14,7 @@ PMEOW 是面向实验室和小型 GPU 集群的监控与节点本地调度平台
 - People 与 access：人员目录、绑定向导、人员详情、移动端访问令牌生命周期。
 - 移动端入口：管理员移动视图和个人移动视图，Android 可通过 Capacitor 打包。
 
-## 最短启动路径
-
-### 从仓库本地试跑
-
-准备 Node.js 20+、pnpm 9+；如果还要接入 Agent 节点，再准备 Python 3.10+。
-
-```bash
-pnpm install
-
-# 终端 1
-pnpm dev:web
-
-# 终端 2
-pnpm dev:ui
-```
-
-打开 `http://localhost:5129`。第一次进入登录页时，输入的密码会被作为管理员密码初始化。
-
-### 接近生产的 Web 启动
+### 启动 Web 服务端
 
 ```bash
 pnpm build:web
@@ -45,14 +25,7 @@ pnpm start:web
 
 默认绑定 `0.0.0.0:17200`，本机访问可用 `http://localhost:17200`。
 
-### 发行包与 Docker
-
-```bash
-npm install -g pmeow-web
-pmeow-web
-
-docker compose up -d
-```
+生产环境使用请看 [Web 服务端部署文档](docs/user/web-server.md)。
 
 ## 第一次接入节点
 
@@ -73,3 +46,9 @@ docker compose up -d
 - [docs/developer/README.md](docs/developer/README.md) - 架构、开发、协议、测试
 
 `docs/superpowers/` 保留为设计与规划档案，不替代当前操作手册。
+## 开源协议
+
+
+
+
+

@@ -31,6 +31,7 @@ import { PersonNotifications } from './mobile/screens/person/Notifications.js';
 import { PersonSettings } from './mobile/screens/person/Settings.js';
 import { ConnectScreen } from './mobile/screens/ConnectScreen.js';
 import { getServerUrl } from './mobile/session/server-url.js';
+import { AUTHOR_GITHUB_URL, AUTHOR_NAME, COPYRIGHT_YEAR } from './utils/branding.js';
 
 function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const links = [
@@ -75,6 +76,20 @@ function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () 
           </NavLink>
         ))}
       </nav>
+
+      {!collapsed && (
+        <div className="border-t border-dark-border px-3 py-3">
+          <a
+            href={AUTHOR_GITHUB_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-slate-400 transition-colors hover:text-slate-200"
+          >
+            Powered By {AUTHOR_NAME}
+          </a>
+          <p className="mt-1 text-[11px] text-slate-600">Copyright © {COPYRIGHT_YEAR} {AUTHOR_NAME}</p>
+        </div>
+      )}
 
       <button
         onClick={onToggle}

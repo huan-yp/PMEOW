@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AUTHOR_GITHUB_URL, AUTHOR_NAME, COPYRIGHT_YEAR, PROJECT_REPO_URL } from '../utils/branding.js';
 import { useTransport } from '../transport/TransportProvider.js';
 
 interface LoginProps {
@@ -32,7 +33,7 @@ export function Login({ onSuccess }: LoginProps) {
   const capabilities = [
     {
       title: '节点接入视图',
-      body: '统一查看 SSH 节点与 agent 节点的在线状态和资源指标。',
+      body: '统一查看 GPU 节点的在线状态和资源指标。',
     },
     {
       title: '任务调度控制',
@@ -50,14 +51,14 @@ export function Login({ onSuccess }: LoginProps) {
         <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1.2fr)_420px]">
           <section className="brand-card-strong relative overflow-hidden rounded-3xl p-6 md:p-10">
             <div className="pointer-events-none absolute right-8 top-8 h-28 w-28 rounded-full bg-accent-cyan/10 blur-3xl" />
-            <p className="brand-kicker">PMEOW CONTROL PLANE</p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-50 md:text-5xl">PMEOW</h1>
+            <p className="brand-kicker">PMEOW control panel</p>
+            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-50 md:text-5xl">PALM 负载编排管理引擎</h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
-              面向实验室节点、任务队列与 GPU 归属的统一控制台。
+              面向高校实验室的轻量 GPU 集群统一调度管理平台。
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <span className="brand-chip">节点在线状态</span>
+              <span className="brand-chip">节点状态监控</span>
               <span className="brand-chip">任务队列控制</span>
               <span className="brand-chip">GPU 占用审计</span>
             </div>
@@ -74,7 +75,7 @@ export function Login({ onSuccess }: LoginProps) {
 
           <section className="brand-card rounded-3xl p-6 md:p-7">
             <div className="mb-6 flex flex-col items-center">
-              <div className="mb-4 h-24 w-24 overflow-hidden rounded-full border-2 border-accent-cyan/30 shadow-lg shadow-accent-cyan/10">
+              <div className="mb-4 h-72 w-72 overflow-hidden rounded-full border-2 border-accent-cyan/30 shadow-lg shadow-accent-cyan/10">
                 <img src="/icon.jpg" alt="PMEOW" className="h-full w-full object-cover" />
               </div>
               <p className="brand-kicker">ACCESS</p>
@@ -113,6 +114,29 @@ export function Login({ onSuccess }: LoginProps) {
                 登录后可直接进入 PMEOW 总览页，查看节点在线情况、任务队列镜像和 GPU 归属审计结果。
               </p>
             </form>
+
+            <div className="mt-6 border-t border-white/10 pt-4 text-center">
+              <a
+                href={PROJECT_REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-full border border-accent-cyan/20 bg-accent-cyan/5 px-4 py-2 text-sm font-medium text-accent-cyan transition-colors hover:border-accent-cyan/40 hover:text-slate-100"
+              >
+                GitHub Repo · 本项目开源
+              </a>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-500">
+                <a
+                  href={AUTHOR_GITHUB_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="transition-colors hover:text-slate-300"
+                >
+                  Powered By {AUTHOR_NAME}
+                </a>
+                <span className="hidden h-1 w-1 rounded-full bg-slate-700 sm:block" />
+                <span>Copyright © {COPYRIGHT_YEAR} {AUTHOR_NAME}</span>
+              </div>
+            </div>
           </section>
         </div>
       </div>
