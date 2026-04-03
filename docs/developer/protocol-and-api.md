@@ -112,6 +112,41 @@ Agent namespace 是 `/agent`。当前实现没有使用 JWT，而是依赖：
 | `GET` | `/api/security/events` | 读取安全事件 |
 | `POST` | `/api/security/events/:id/mark-safe` | 标记事件为安全 |
 
+### Person APIs
+
+Endpoints for person attribution management. All person data is optional — when no person records exist, the API returns empty arrays and existing monitoring continues unchanged.
+
+#### Person management
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `GET` | `/api/persons` | List all persons |
+| `POST` | `/api/persons` | Create a person |
+| `GET` | `/api/persons/:id` | Get a person by ID |
+| `PUT` | `/api/persons/:id` | Update a person |
+
+#### Person bindings
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `GET` | `/api/persons/:id/bindings` | List bindings for a person |
+| `POST` | `/api/person-bindings` | Create a binding |
+| `PUT` | `/api/person-bindings/:id` | Update a binding |
+| `GET` | `/api/person-binding-suggestions` | Auto-detected unbound users |
+
+#### Person statistics
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| `GET` | `/api/persons/summary?hours=168` | Person summary (VRAM, tasks) |
+| `GET` | `/api/persons/:id/timeline?hours=168` | VRAM timeline for a person |
+| `GET` | `/api/persons/:id/tasks?hours=168` | Tasks associated with a person |
+| `GET` | `/api/servers/:id/person-activity` | Person activity on a server |
+
+#### Compatibility note
+
+When no person data exists, existing monitoring and task APIs work unchanged. Person-aware webhook template variables (`{{personName}}`, `{{personEmail}}`, etc.) resolve to empty strings when no person is matched.
+
 ## UI 实时事件
 
 浏览器连接到 `/` namespace 后，会收到下面几类事件：

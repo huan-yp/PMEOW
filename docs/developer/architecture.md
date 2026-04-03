@@ -138,6 +138,10 @@ Agent 负责本地事实，服务端负责集群视图和最小控制面。
 - `agent_tasks`
 - `gpu_usage_stats`
 - `security_events`
+- `persons`
+- `person_server_bindings`
+
+Person attribution 是一个可选层：`persons` 表存储人员档案，`person_server_bindings` 表把人员与服务器上的操作系统用户名关联起来。钩子和统计查询通过 `resolvePersonForTask()` 在运行时把任务归属到人员，如果没有任何 person 记录，所有原有逻辑保持不变。
 
 这意味着当前系统更接近单实例、实验室规模的运维平台，而不是面向高并发多租户的控制平面。
 
