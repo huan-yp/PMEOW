@@ -1,4 +1,5 @@
 import { io, Socket } from 'socket.io-client';
+import { getServerUrl } from '../mobile/session/server-url.js';
 import type { TransportAdapter } from './types.js';
 import type {
   ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
@@ -7,7 +8,7 @@ import type {
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
-  MirroredAgentTaskRecord,
+  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse,
 } from '@monitor/core';
 import type { SecurityEventQuery } from './types.js';
 
@@ -22,7 +23,8 @@ export class WebSocketAdapter implements TransportAdapter {
 
   connect(): void {
     if (this.socket?.connected) return;
-    this.socket = io({
+    const serverUrl = getServerUrl();
+    this.socket = io(serverUrl ?? undefined, {
       auth: { token: this.token },
       reconnection: true,
       reconnectionDelay: 1000,
@@ -80,7 +82,8 @@ export class WebSocketAdapter implements TransportAdapter {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    const res = await window.fetch(url, { ...options, headers });
+    const base = getServerUrl() ?? '';
+    const res = await window.fetch(`${base}${url}`, { ...options, headers });
     if (res.status === 401) {
       localStorage.removeItem('auth_token');
       this.token = null;
@@ -357,5 +360,9 @@ export class WebSocketAdapter implements TransportAdapter {
 
   async getServerPersonActivity(serverId: string): Promise<ServerPersonActivity> {
     return this.fetch(`/api/servers/${serverId}/person-activity`);
+  }
+
+  async getResolvedGpuAllocation(serverId: string): Promise<ResolvedGpuAllocationResponse | null> {
+    return this.fetch(`/api/servers/${serverId}/gpu-allocation/resolved`);
   }
 }

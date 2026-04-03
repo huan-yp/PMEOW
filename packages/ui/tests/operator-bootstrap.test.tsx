@@ -152,6 +152,7 @@ function createMockTransport(): TransportAdapter & {
     resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     getGpuAllocation: vi.fn<(serverId: string) => Promise<GpuAllocationSummary | null>>(async (_serverId) => null),
     getTask: vi.fn<(serverId: string, taskId: string) => Promise<unknown>>(async (_serverId, _taskId) => null),
+    getResolvedGpuAllocation: vi.fn(async () => null),
     emitTaskUpdate: () => {
       onTaskUpdateCb?.();
     },

@@ -165,6 +165,7 @@ function createMockTransport() {
     getPersonTimeline: vi.fn(async () => []),
     getPersonTasks: vi.fn(async () => []),
     getServerPersonActivity: vi.fn(async () => ({ serverId: 's1', people: [], unassignedVramMB: 0, unassignedUsers: [] })),
+    getResolvedGpuAllocation: vi.fn(async () => null),
   };
 }
 

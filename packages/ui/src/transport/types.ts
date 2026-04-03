@@ -5,7 +5,7 @@ import type {
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
-  MirroredAgentTaskRecord,
+  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse,
 } from '@monitor/core';
 
 export interface SecurityEventQuery {
@@ -91,4 +91,5 @@ export interface TransportAdapter {
   getPersonTimeline(personId: string, hours?: number): Promise<PersonTimelinePoint[]>;
   getPersonTasks(personId: string, hours?: number): Promise<MirroredAgentTaskRecord[]>;
   getServerPersonActivity(serverId: string): Promise<ServerPersonActivity>;
+  getResolvedGpuAllocation(serverId: string): Promise<ResolvedGpuAllocationResponse | null>;
 }

@@ -103,6 +103,7 @@ function createMockTransport(): TransportAdapter {
     uploadKey: vi.fn(async (_file: File) => ({ path: '/tmp/key' })),
     getGpuAllocation: vi.fn(async (_serverId: string) => null as GpuAllocationSummary | null),
     getTask: vi.fn(async (_serverId: string, _taskId: string) => null),
+    getResolvedGpuAllocation: vi.fn(async () => null),
   };
 }
 

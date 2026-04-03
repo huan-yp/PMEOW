@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLayoutEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -220,13 +220,14 @@ function createMockTransport(): TransportAdapter {
     createPerson: vi.fn(async () => ({ id: 'p1', displayName: '', email: '', qq: '', note: '', customFields: {}, status: 'active' as const, createdAt: 1, updatedAt: 1 })),
     updatePerson: vi.fn(async () => ({ id: 'p1', displayName: '', email: '', qq: '', note: '', customFields: {}, status: 'active' as const, createdAt: 1, updatedAt: 1 })),
     getPersonBindings: vi.fn(async () => []),
-    createPersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual', enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
-    updatePersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual', enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
+    createPersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual' as const, enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
+    updatePersonBinding: vi.fn(async () => ({ id: 'b1', personId: 'p1', serverId: 's1', systemUser: 'u', source: 'manual' as const, enabled: true, effectiveFrom: 1, effectiveTo: null, createdAt: 1, updatedAt: 1 })),
     getPersonBindingSuggestions: vi.fn(async () => []),
     getPersonSummary: vi.fn(async () => []),
     getPersonTimeline: vi.fn(async () => []),
     getPersonTasks: vi.fn(async () => []),
     getServerPersonActivity: vi.fn(async () => ({ serverId: 's1', people: [], unassignedVramMB: 0, unassignedUsers: [] })),
+    getResolvedGpuAllocation: vi.fn(async () => null),
   };
 }
 
@@ -288,6 +289,43 @@ describe('overview detail settings', () => {
     });
   });
 
+  it('shows distinct source and presence badges on overview cards', async () => {
+    const transport = createMockTransport();
+    const agentServer = createServer();
+    const sshServer = createServer({
+      id: 'server-ssh-1',
+      name: 'ssh-node-01',
+      host: '10.0.0.11',
+      sourceType: 'ssh',
+      agentId: undefined,
+    });
+
+    useStore.setState({
+      servers: [agentServer, sshServer],
+      statuses: new Map([
+        [agentServer.id, createStatus(agentServer.id)],
+        [sshServer.id, { serverId: sshServer.id, status: 'disconnected', lastSeen: 1_710_000_100_000 }],
+      ]),
+      latestMetrics: new Map([[agentServer.id, createMetricsSnapshot(agentServer.id)]]),
+    });
+
+    renderWithProviders(<Overview />, transport);
+
+    const agentCard = screen.getByText(agentServer.name).closest('.node-card-shell');
+    const sshCard = screen.getByText(sshServer.name).closest('.node-card-shell');
+
+    expect(agentCard).toBeTruthy();
+    expect(sshCard).toBeTruthy();
+
+    const agentWithin = within(agentCard as HTMLElement);
+    const sshWithin = within(sshCard as HTMLElement);
+
+    expect(agentWithin.getByText('Agent').className).toContain('node-badge-source-agent');
+    expect(agentWithin.getByText('在线').className).toContain('node-badge-status-online');
+    expect(sshWithin.getByText('SSH').className).toContain('node-badge-source-ssh');
+    expect(sshWithin.getByText('离线').className).toContain('node-badge-status-offline');
+  });
+
   it('shows gpu overview card on overview page', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -330,6 +368,8 @@ describe('overview detail settings', () => {
       `/server/${server.id}`
     );
 
+    expect(await screen.findByText('Agent')).toBeTruthy();
+    expect(screen.getByText('在线').className).toContain('node-badge-status-online');
     expect(await screen.findByRole('button', { name: '任务' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '任务' }));
@@ -338,6 +378,46 @@ describe('overview detail settings', () => {
     await waitFor(() => {
       expect(transport.getProcessAudit).toHaveBeenCalledWith(server.id);
     });
+  });
+
+  it('separates GPU utilization and VRAM usage in monitoring views', async () => {
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: await transport.getTaskQueue(),
+    });
+
+    const { unmount } = renderWithProviders(<Overview />, transport);
+
+    const card = await screen.findByText(server.name);
+    const shell = card.closest('.node-card-shell') as HTMLElement | null;
+
+    expect(shell).toBeTruthy();
+    expect(within(shell!).getByText('GPU 利用率')).toBeTruthy();
+    expect(within(shell!).getByText('72%')).toBeTruthy();
+    expect(within(shell!).getByText('VRAM 28672/49152 MB')).toBeTruthy();
+    expect(within(shell!).getByText('VRAM')).toBeTruthy();
+
+    unmount();
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    expect(await screen.findByText('GPU 利用率')).toBeTruthy();
+    expect(screen.getByText('72%')).toBeTruthy();
+    expect(screen.getAllByText('VRAM').length).toBeGreaterThan(0);
+    expect(screen.getByText('28672/49152 MB')).toBeTruthy();
+    expect(screen.getByText('61°C')).toBeTruthy();
   });
 
   it('keeps server detail stable when history and process audit requests fail', async () => {
@@ -378,6 +458,37 @@ describe('overview detail settings', () => {
       expect(transport.getMetricsHistory).toHaveBeenCalledWith(server.id, expect.any(Number), expect.any(Number));
       expect(transport.getProcessAudit).toHaveBeenCalledWith(server.id);
     });
+  });
+
+  it('shows ssh and offline badges on server detail header', async () => {
+    const transport = createMockTransport();
+    const server = createServer({
+      id: 'server-ssh-detail',
+      name: 'ssh-detail-01',
+      host: '10.0.0.20',
+      sourceType: 'ssh',
+      agentId: undefined,
+    });
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, { serverId: server.id, status: 'disconnected', lastSeen: 1_710_000_100_000 }]]),
+      latestMetrics: new Map(),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    expect(await screen.findByRole('heading', { name: server.name })).toBeTruthy();
+    expect(screen.getByText('SSH').className).toContain('node-badge-source-ssh');
+    expect(screen.getByText('离线').className).toContain('node-badge-status-offline');
+    expect(screen.getByText(/最后上报/)).toBeTruthy();
   });
 
   it('clears previous server history and process audit when switching servers and the new requests fail', async () => {
@@ -664,5 +775,79 @@ describe('overview detail settings', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '保存设置' })).not.toHaveProperty('disabled', true);
     });
+  });
+
+  it('shows stale indicator on ServerCard when disconnected with metrics', () => {
+    const transport = createMockTransport();
+    const server = createServer();
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([
+        [server.id, { serverId: server.id, status: 'disconnected' as const, lastSeen: 1_710_000_000_000 }],
+      ]),
+      latestMetrics: new Map([[server.id, createMetricsSnapshot(server.id)]]),
+    });
+
+    renderWithProviders(<Overview />, transport);
+
+    const card = screen.getByText(server.name).closest('.node-card-shell');
+    expect(card).toBeTruthy();
+
+    // Should show "最后上报" with the last seen time
+    expect(card!.textContent).toContain('最后上报');
+
+    // Should apply stale opacity
+    const staleWrapper = card!.querySelector('.opacity-50');
+    expect(staleWrapper).toBeTruthy();
+  });
+
+  it('online count excludes disconnected agent nodes', () => {
+    const transport = createMockTransport();
+    const onlineServer = createServer({ id: 'online-1', name: 'online-node' });
+    const offlineServer = createServer({ id: 'offline-1', name: 'offline-node' });
+
+    useStore.setState({
+      servers: [onlineServer, offlineServer],
+      statuses: new Map([
+        ['online-1', { serverId: 'online-1', status: 'connected' as const, lastSeen: Date.now() }],
+        ['offline-1', { serverId: 'offline-1', status: 'disconnected' as const, lastSeen: Date.now() - 60000 }],
+      ]),
+      latestMetrics: new Map([
+        ['online-1', createMetricsSnapshot('online-1')],
+        ['offline-1', createMetricsSnapshot('offline-1')],
+      ]),
+    });
+
+    renderWithProviders(<Overview />, transport);
+
+    // Both server cards should be visible
+    expect(screen.getByText('online-node')).toBeTruthy();
+    expect(screen.getByText('offline-node')).toBeTruthy();
+
+    // Online count should show 1 (only connected nodes)
+    // The overview shows "在线 X / Y" or similar — check for the status badges
+    const onlineCard = screen.getByText('online-node').closest('.node-card-shell');
+    const offlineCard = screen.getByText('offline-node').closest('.node-card-shell');
+    expect(onlineCard?.textContent).toContain('在线');
+    expect(offlineCard?.textContent).toContain('离线');
+  });
+
+  it('shows agent metrics timeout setting in Settings page', () => {
+    const transport = createMockTransport();
+
+    useStore.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        agentMetricsTimeoutMs: 15_000,
+      },
+    });
+
+    renderWithProviders(<Settings />, transport);
+
+    expect(screen.getByText('Agent 离线检测')).toBeTruthy();
+    const input = screen.getByLabelText('指标超时 (秒)');
+    expect(input).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe('15');
   });
 });

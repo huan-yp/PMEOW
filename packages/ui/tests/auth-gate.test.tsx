@@ -89,6 +89,7 @@ function createMockTransport(overrides: Partial<TransportAdapter> = {}): Transpo
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
     uploadKey: vi.fn<(file: File) => Promise<{ path: string }>>(async (_file) => ({ path: '/tmp/key' })),
+    getResolvedGpuAllocation: vi.fn(async () => null),
     ...overrides,
   };
 }

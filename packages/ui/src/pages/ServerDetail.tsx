@@ -7,16 +7,79 @@ import { GaugeChart } from '../components/GaugeChart.js';
 import { ProcessTable } from '../components/ProcessTable.js';
 import { DockerList } from '../components/DockerList.js';
 import { GpuAllocationBars } from '../components/GpuAllocationBars.js';
-import type { MetricsSnapshot, ProcessAuditRow, ServerPersonActivity } from '@monitor/core';
+import { ProgressBar } from '../components/ProgressBar.js';
+import { buildAdaptiveRateChart, formatBytesPerSecond } from '../utils/rates';
+import type { MetricsSnapshot, ProcessAuditRow, ServerPersonActivity, ResolvedGpuAllocationResponse } from '@monitor/core';
 
 type Tab = 'overview' | 'processes' | 'docker' | 'tasks';
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B/s';
-  const k = 1024;
-  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+function getGpuUtilTextClass(utilizationPercent: number) {
+  if (utilizationPercent >= 90) {
+    return 'text-accent-red';
+  }
+
+  if (utilizationPercent >= 10) {
+    return 'text-accent-yellow';
+  }
+
+  return 'text-accent-green';
+}
+
+function formatLastSeen(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+function getStatusVisual(status: string) {
+  switch (status) {
+    case 'connected':
+      return {
+        label: '在线',
+        badgeClassName: 'node-badge-status-online',
+        dotClassName: 'bg-sky-300',
+        surfaceClassName: 'node-surface-shell-online',
+      };
+    case 'connecting':
+      return {
+        label: '连接中',
+        badgeClassName: 'node-badge-status-connecting',
+        dotClassName: 'bg-amber-300 animate-pulse-dot',
+        surfaceClassName: 'node-surface-shell-connecting',
+      };
+    case 'error':
+      return {
+        label: '异常',
+        badgeClassName: 'node-badge-status-error',
+        dotClassName: 'bg-rose-300',
+        surfaceClassName: 'node-surface-shell-error',
+      };
+    case 'disconnected':
+    default:
+      return {
+        label: '离线',
+        badgeClassName: 'node-badge-status-offline',
+        dotClassName: 'bg-rose-300',
+        surfaceClassName: 'node-surface-shell-offline',
+      };
+  }
+}
+
+function getSourceVisual(sourceType: string) {
+  if (sourceType === 'agent') {
+    return {
+      label: 'Agent',
+      badgeClassName: 'node-badge-source-agent',
+    };
+  }
+
+  return {
+    label: 'SSH',
+    badgeClassName: 'node-badge-source-ssh',
+  };
 }
 
 export function ServerDetail() {
@@ -28,6 +91,7 @@ export function ServerDetail() {
   const [history, setHistory] = useState<MetricsSnapshot[]>([]);
   const [processAudit, setProcessAudit] = useState<ProcessAuditRow[]>([]);
   const [personActivity, setPersonActivity] = useState<ServerPersonActivity | null>(null);
+  const [resolvedGpuAllocation, setResolvedGpuAllocation] = useState<ResolvedGpuAllocationResponse | null>(null);
   const requestScopeRef = useRef({ serverId: id, version: 0 });
   const historyRequestIdRef = useRef(0);
   const processAuditRequestIdRef = useRef(0);
@@ -118,6 +182,7 @@ export function ServerDetail() {
   useEffect(() => {
     if (!id) return;
     void transport.getServerPersonActivity(id).then(setPersonActivity).catch(() => setPersonActivity(null));
+    void transport.getResolvedGpuAllocation(id).then(setResolvedGpuAllocation).catch(() => setResolvedGpuAllocation(null));
   }, [id, transport]);
 
   // Append new metrics to history
@@ -149,6 +214,8 @@ export function ServerDetail() {
     { key: 'processes', label: '进程' },
     { key: 'docker', label: 'Docker' },
   ];
+  const statusVisual = getStatusVisual(status?.status ?? 'disconnected');
+  const sourceVisual = getSourceVisual(server.sourceType);
 
   const cpuData = history.map(h => ({ time: h.timestamp, value: h.cpu.usagePercent }));
   const memData = history.map(h => ({ time: h.timestamp, value: h.memory.usagePercent }));
@@ -156,153 +223,189 @@ export function ServerDetail() {
   const netTxData = history.map(h => ({ time: h.timestamp, value: h.network.txBytesPerSec / 1024 }));
   const diskReadData = history.map(h => ({ time: h.timestamp, value: h.disk.ioReadKBs }));
   const diskWriteData = history.map(h => ({ time: h.timestamp, value: h.disk.ioWriteKBs }));
+  const networkRateChart = buildAdaptiveRateChart([
+    { name: '接收', data: netRxData, color: '#10b981' },
+    { name: '发送', data: netTxData, color: '#3b82f6' },
+  ]);
+  const diskRateChart = buildAdaptiveRateChart([
+    { name: '读取', data: diskReadData, color: '#06b6d4' },
+    { name: '写入', data: diskWriteData, color: '#f59e0b' },
+  ]);
 
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => navigate('/')} className="text-slate-500 hover:text-slate-300 text-lg">←</button>
-        <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${
-            status?.status === 'connected' ? 'bg-accent-green' :
-            status?.status === 'error' ? 'bg-accent-red' : 'bg-slate-600'
-          }`} />
-          <h1 className="text-xl font-bold text-slate-100">{server.name}</h1>
-          <span className="text-sm text-slate-500">{server.host}:{server.port}</span>
+      <div className={`node-surface-shell ${statusVisual.surfaceClassName} mb-6 rounded-3xl p-5`}>
+        <div className="flex items-start gap-4">
+          <button onClick={() => navigate('/')} className="text-lg text-slate-500 transition-colors hover:text-slate-300">←</button>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-xl font-bold text-slate-100">{server.name}</h1>
+              <span className={`node-badge-base ${sourceVisual.badgeClassName}`}>{sourceVisual.label}</span>
+              <span className={`node-badge-base ${statusVisual.badgeClassName}`}>
+                <span className={`h-2 w-2 rounded-full ${statusVisual.dotClassName}`} />
+                {statusVisual.label}
+              </span>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-400">
+              <span>{server.host}:{server.port}</span>
+              {metrics?.system.hostname && <span>{metrics.system.hostname}</span>}
+              {metrics?.system.uptime && <span>运行 {metrics.system.uptime}</span>}
+              {status?.status && status.status !== 'connected' && status.lastSeen > 0 && (
+                <span className="text-slate-500">最后上报 {formatLastSeen(status.lastSeen)}</span>
+              )}
+            </div>
+            {status?.status === 'error' && status.error && (
+              <p className="mt-3 text-sm text-rose-200">{status.error}</p>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-dark-border">
-        {tabs.map(t => (
+      <div className="mb-6 flex gap-1 border-b border-dark-border">
+        {tabs.map((currentTab) => (
           <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
+            key={currentTab.key}
+            onClick={() => setTab(currentTab.key)}
             className={`px-4 py-2 text-sm transition-colors ${
-              tab === t.key
-                ? 'text-accent-blue border-b-2 border-accent-blue'
+              tab === currentTab.key
+                ? 'border-b-2 border-accent-blue text-accent-blue'
                 : 'text-slate-500 hover:text-slate-300'
             }`}
           >
-            {t.label}
+            {currentTab.label}
           </button>
         ))}
       </div>
 
       {tab === 'overview' && (
-        <div className="space-y-6">
-          {/* Gauges + System Info */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4 flex flex-col items-center">
+        <div className={`space-y-6${status?.status !== 'connected' && metrics ? ' opacity-50 grayscale' : ''}`}>
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="flex flex-col items-center rounded-lg border border-dark-border bg-dark-card p-4">
               <GaugeChart value={metrics?.cpu.usagePercent ?? 0} label="CPU" size={100} />
-              <p className="text-xs text-slate-500 mt-1">{metrics?.cpu.coreCount ?? 0} 核 · {metrics?.cpu.modelName?.split(' ').slice(-2).join(' ') ?? ''}</p>
+              <p className="mt-1 text-xs text-slate-500">{metrics?.cpu.coreCount ?? 0} 核 · {metrics?.cpu.modelName?.split(' ').slice(-2).join(' ') ?? ''}</p>
             </div>
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4 flex flex-col items-center">
+            <div className="flex flex-col items-center rounded-lg border border-dark-border bg-dark-card p-4">
               <GaugeChart value={metrics?.memory.usagePercent ?? 0} label="内存" size={100} />
-              <p className="text-xs text-slate-500 mt-1">{metrics?.memory.usedMB ?? 0} / {metrics?.memory.totalMB ?? 0} MB</p>
+              <p className="mt-1 text-xs text-slate-500">{metrics?.memory.usedMB ?? 0} / {metrics?.memory.totalMB ?? 0} MB</p>
             </div>
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4 text-center">
-              <p className="text-slate-500 text-xs mb-2">网络</p>
-              <p className="text-accent-green font-mono text-sm">↓ {formatBytes(metrics?.network.rxBytesPerSec ?? 0)}</p>
-              <p className="text-accent-blue font-mono text-sm">↑ {formatBytes(metrics?.network.txBytesPerSec ?? 0)}</p>
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4 text-center">
+              <p className="mb-2 text-xs text-slate-500">网络</p>
+              <p className="font-mono text-sm text-accent-green">↓ {formatBytesPerSecond(metrics?.network.rxBytesPerSec ?? 0)}</p>
+              <p className="font-mono text-sm text-accent-blue">↑ {formatBytesPerSecond(metrics?.network.txBytesPerSec ?? 0)}</p>
             </div>
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4 text-center">
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4 text-center">
               {metrics?.gpu.available ? (
                 <>
-                  <p className="text-slate-500 text-xs mb-2">GPU × {metrics.gpu.gpuCount}</p>
-                  <p className={`font-mono text-lg font-bold ${metrics.gpu.memoryUsagePercent < 10 ? 'text-accent-green' : 'text-accent-yellow'}`}>
-                    {metrics.gpu.memoryUsagePercent.toFixed(0)}%
-                  </p>
-                  <p className="text-xs text-slate-500">{metrics.gpu.usedMemoryMB}/{metrics.gpu.totalMemoryMB} MB · {metrics.gpu.temperatureC}°C</p>
+                  <p className="mb-2 text-xs text-slate-500">GPU × {metrics.gpu.gpuCount}</p>
+                  <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 text-left">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">GPU 利用率</p>
+                      <p className={`font-mono text-lg font-bold ${getGpuUtilTextClass(metrics.gpu.utilizationPercent)}`}>
+                        {metrics.gpu.utilizationPercent.toFixed(0)}%
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500/80">VRAM</p>
+                      <p className="font-mono text-sm font-semibold tracking-tight text-slate-300">
+                        {metrics.gpu.usedMemoryMB}/{metrics.gpu.totalMemoryMB} MB
+                      </p>
+                      <p className="text-[11px] text-slate-500">{metrics.gpu.temperatureC}°C</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-left">
+                    <ProgressBar label="VRAM" value={metrics.gpu.memoryUsagePercent} />
+                  </div>
                 </>
               ) : (
                 <>
-                  <p className="text-slate-500 text-xs mb-2">GPU</p>
-                  <p className="text-slate-600 text-sm">N/A</p>
+                  <p className="mb-2 text-xs text-slate-500">GPU</p>
+                  <p className="text-sm text-slate-600">N/A</p>
                 </>
               )}
             </div>
           </div>
 
-          <GpuAllocationBars allocation={metrics?.gpuAllocation} />
+          <GpuAllocationBars allocation={metrics?.gpuAllocation} resolved={resolvedGpuAllocation} />
 
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-              <h3 className="text-sm text-slate-400 mb-2">CPU / 内存</h3>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+              <h3 className="mb-2 text-sm text-slate-400">CPU / 内存</h3>
               <MetricChart
                 series={[
                   { name: 'CPU', data: cpuData, color: '#3b82f6', unit: '%' },
                   { name: '内存', data: memData, color: '#10b981', unit: '%' },
                 ]}
-                yAxisFormatter={(v) => `${v}%`}
+                yAxisFormatter={(value) => `${value}%`}
               />
             </div>
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-              <h3 className="text-sm text-slate-400 mb-2">网络吞吐</h3>
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm text-slate-400">网络吞吐</h3>
+                <span className="text-xs text-slate-500">
+                  {networkRateChart.usesDualAxes ? `双轴 ${networkRateChart.unitLabel}` : `单位 ${networkRateChart.unitLabel}`}
+                </span>
+              </div>
               <MetricChart
-                series={[
-                  { name: '接收', data: netRxData, color: '#10b981', unit: 'KB/s' },
-                  { name: '发送', data: netTxData, color: '#3b82f6', unit: 'KB/s' },
-                ]}
-                yAxisFormatter={(v) => `${v}KB/s`}
+                series={networkRateChart.series}
+                yAxes={networkRateChart.yAxes}
               />
             </div>
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-              <h3 className="text-sm text-slate-400 mb-2">磁盘 IO</h3>
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h3 className="text-sm text-slate-400">磁盘 IO</h3>
+                <span className="text-xs text-slate-500">
+                  {diskRateChart.usesDualAxes ? `双轴 ${diskRateChart.unitLabel}` : `单位 ${diskRateChart.unitLabel}`}
+                </span>
+              </div>
               <MetricChart
-                series={[
-                  { name: '读取', data: diskReadData, color: '#06b6d4', unit: 'KB/s' },
-                  { name: '写入', data: diskWriteData, color: '#f59e0b', unit: 'KB/s' },
-                ]}
-                yAxisFormatter={(v) => `${v}KB/s`}
+                series={diskRateChart.series}
+                yAxes={diskRateChart.yAxes}
               />
             </div>
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-              <h3 className="text-sm text-slate-400 mb-2">磁盘使用</h3>
-              <div className="space-y-2 mt-2">
-                {metrics?.disk.disks.map((d, i) => (
-                  <div key={i}>
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
-                      <span>{d.mountPoint}</span>
-                      <span>{d.usedGB}G / {d.totalGB}G ({d.usagePercent}%)</span>
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+              <h3 className="mb-2 text-sm text-slate-400">磁盘使用</h3>
+              <div className="mt-2 space-y-2">
+                {metrics?.disk.disks.map((disk, index) => (
+                  <div key={index}>
+                    <div className="mb-1 flex justify-between text-xs text-slate-400">
+                      <span>{disk.mountPoint}</span>
+                      <span>{disk.usedGB}G / {disk.totalGB}G ({disk.usagePercent}%)</span>
                     </div>
-                    <div className="h-1.5 bg-dark-border rounded-full overflow-hidden">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-dark-border">
                       <div
                         className={`h-full rounded-full ${
-                          d.usagePercent > 90 ? 'bg-accent-red' : d.usagePercent > 70 ? 'bg-accent-yellow' : 'bg-accent-blue'
+                          disk.usagePercent > 90 ? 'bg-accent-red' : disk.usagePercent > 70 ? 'bg-accent-yellow' : 'bg-accent-blue'
                         }`}
-                        style={{ width: `${d.usagePercent}%` }}
+                        style={{ width: `${disk.usagePercent}%` }}
                       />
                     </div>
                   </div>
                 ))}
                 {(!metrics?.disk.disks || metrics.disk.disks.length === 0) && (
-                  <p className="text-slate-600 text-sm text-center py-4">暂无数据</p>
+                  <p className="py-4 text-center text-sm text-slate-600">暂无数据</p>
                 )}
               </div>
             </div>
           </div>
 
-          {/* System info */}
-          <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-            <h3 className="text-sm text-slate-400 mb-2">系统信息</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-              <div><span className="text-slate-500">主机名</span><p className="text-slate-300 mt-0.5">{metrics?.system.hostname}</p></div>
-              <div><span className="text-slate-500">内核</span><p className="text-slate-300 mt-0.5">{metrics?.system.kernelVersion}</p></div>
-              <div><span className="text-slate-500">运行时间</span><p className="text-slate-300 mt-0.5">{metrics?.system.uptime}</p></div>
-              <div><span className="text-slate-500">负载</span><p className="text-slate-300 mt-0.5">{metrics?.system.loadAvg1} / {metrics?.system.loadAvg5} / {metrics?.system.loadAvg15}</p></div>
+          <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+            <h3 className="mb-2 text-sm text-slate-400">系统信息</h3>
+            <div className="grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
+              <div><span className="text-slate-500">主机名</span><p className="mt-0.5 text-slate-300">{metrics?.system.hostname}</p></div>
+              <div><span className="text-slate-500">内核</span><p className="mt-0.5 text-slate-300">{metrics?.system.kernelVersion}</p></div>
+              <div><span className="text-slate-500">运行时间</span><p className="mt-0.5 text-slate-300">{metrics?.system.uptime}</p></div>
+              <div><span className="text-slate-500">负载</span><p className="mt-0.5 text-slate-300">{metrics?.system.loadAvg1} / {metrics?.system.loadAvg5} / {metrics?.system.loadAvg15}</p></div>
             </div>
           </div>
 
           {personActivity && personActivity.people.length > 0 && (
-            <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-              <h3 className="text-sm text-slate-400 mb-2">人员活动</h3>
+            <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+              <h3 className="mb-2 text-sm text-slate-400">人员活动</h3>
               <div className="space-y-2">
-                {personActivity.people.map(p => (
-                  <div key={p.personId} className="flex justify-between text-sm text-slate-300">
-                    <span>{p.displayName}</span>
-                    <span className="text-slate-400">{p.currentVramMB} MB</span>
+                {personActivity.people.map((person) => (
+                  <div key={person.personId} className="flex justify-between text-sm text-slate-300">
+                    <span>{person.displayName}</span>
+                    <span className="text-slate-400">{person.currentVramMB} MB</span>
                   </div>
                 ))}
               </div>
@@ -315,28 +418,28 @@ export function ServerDetail() {
       )}
 
       {tab === 'tasks' && server.sourceType === 'agent' && (
-        <div className="bg-dark-card border border-dark-border rounded-lg p-4 space-y-4">
+        <div className="space-y-4 rounded-lg border border-dark-border bg-dark-card p-4">
           <div>
-            <h3 className="text-sm text-slate-300 mb-1">当前任务组</h3>
+            <h3 className="mb-1 text-sm text-slate-300">当前任务组</h3>
             <p className="text-sm text-slate-400">
               排队 {taskQueueGroup?.queued.length ?? 0} / 运行中 {taskQueueGroup?.running.length ?? 0}
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-1 gap-3 text-xs md:grid-cols-2">
             <div className="rounded-lg border border-dark-border/70 bg-dark-bg/40 p-3">
-              <p className="text-slate-500 mb-2">排队任务</p>
+              <p className="mb-2 text-slate-500">排队任务</p>
               <div className="space-y-2">
                 {(taskQueueGroup?.queued ?? []).map((task) => (
-                  <div key={task.taskId} className="text-slate-300 font-mono truncate">{task.taskId}</div>
+                  <div key={task.taskId} className="truncate font-mono text-slate-300">{task.taskId}</div>
                 ))}
                 {(taskQueueGroup?.queued.length ?? 0) === 0 && <p className="text-slate-600">暂无排队任务</p>}
               </div>
             </div>
             <div className="rounded-lg border border-dark-border/70 bg-dark-bg/40 p-3">
-              <p className="text-slate-500 mb-2">运行中任务</p>
+              <p className="mb-2 text-slate-500">运行中任务</p>
               <div className="space-y-2">
                 {(taskQueueGroup?.running ?? []).map((task) => (
-                  <div key={task.taskId} className="text-slate-300 font-mono truncate">{task.taskId}</div>
+                  <div key={task.taskId} className="truncate font-mono text-slate-300">{task.taskId}</div>
                 ))}
                 {(taskQueueGroup?.running.length ?? 0) === 0 && <p className="text-slate-600">暂无运行任务</p>}
               </div>
@@ -346,13 +449,13 @@ export function ServerDetail() {
       )}
 
       {tab === 'processes' && (
-        <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+        <div className="rounded-lg border border-dark-border bg-dark-card p-4">
           <ProcessTable processes={processAudit} />
         </div>
       )}
 
       {tab === 'docker' && (
-        <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+        <div className="rounded-lg border border-dark-border bg-dark-card p-4">
           <DockerList containers={metrics?.docker ?? []} />
         </div>
       )}
