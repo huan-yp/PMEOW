@@ -1,7 +1,7 @@
-import type { ProcessInfo } from '@monitor/core';
+import type { ProcessAuditRow } from '@monitor/core';
 
 interface Props {
-  processes: ProcessInfo[];
+  processes: ProcessAuditRow[];
 }
 
 export function ProcessTable({ processes }: Props) {
@@ -15,12 +15,14 @@ export function ProcessTable({ processes }: Props) {
             <th className="text-right py-2 px-3">CPU%</th>
             <th className="text-right py-2 px-3">MEM%</th>
             <th className="text-right py-2 px-3">RSS</th>
+            <th className="text-right py-2 px-3">GPU MB</th>
+            <th className="text-left py-2 px-3">风险</th>
             <th className="text-left py-2 px-3">命令</th>
           </tr>
         </thead>
         <tbody>
           {processes.map((p) => (
-            <tr key={p.pid} className="border-b border-dark-border/50 hover:bg-dark-hover">
+            <tr key={p.pid} className={`border-b border-dark-border/50 hover:bg-dark-hover ${p.suspiciousReasons.length > 0 ? 'bg-accent-red/5' : ''}`}>
               <td className="py-1.5 px-3 font-mono text-slate-400">{p.pid}</td>
               <td className="py-1.5 px-3 text-slate-300">{p.user}</td>
               <td className={`py-1.5 px-3 text-right font-mono ${p.cpuPercent > 50 ? 'text-accent-red' : p.cpuPercent > 20 ? 'text-accent-yellow' : 'text-slate-300'}`}>
@@ -31,6 +33,12 @@ export function ProcessTable({ processes }: Props) {
               </td>
               <td className="py-1.5 px-3 text-right font-mono text-slate-400">
                 {(p.rss / 1024).toFixed(0)}M
+              </td>
+              <td className={`py-1.5 px-3 text-right font-mono ${p.gpuMemoryMB > 0 ? 'text-accent-blue' : 'text-slate-500'}`}>
+                {p.gpuMemoryMB}
+              </td>
+              <td className={`py-1.5 px-3 ${p.suspiciousReasons.length > 0 ? 'text-accent-red' : 'text-slate-500'}`}>
+                {p.suspiciousReasons.length > 0 ? p.suspiciousReasons.join('；') : '正常'}
               </td>
               <td className="py-1.5 px-3 text-slate-400 truncate max-w-[300px]" title={p.command}>
                 {p.command}

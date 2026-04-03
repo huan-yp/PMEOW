@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ServerConfig, ServerStatus, MetricsSnapshot } from '@monitor/core';
 import { GaugeChart } from './GaugeChart.js';
 import { ProgressBar } from './ProgressBar.js';
+import { useStore } from '../store/useStore.js';
 
 interface Props {
   server: ServerConfig;
@@ -34,6 +35,9 @@ function formatBytes(bytes: number): string {
 export function ServerCard({ server, status, metrics }: Props) {
   const navigate = useNavigate();
   const connStatus = status?.status ?? 'disconnected';
+  const taskQueueGroup = useStore((state) => state.taskQueueGroups.find((group) => group.serverId === server.id));
+  const hasOpenSecurityEvent = useStore((state) => state.openSecurityEvents.some((event) => event.serverId === server.id && !event.resolved));
+  const sourceLabel = server.sourceType === 'agent' ? 'agent' : 'SSH';
 
   return (
     <div
@@ -43,12 +47,16 @@ export function ServerCard({ server, status, metrics }: Props) {
       }`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-1 gap-3">
+        <div className="flex items-center gap-2 min-w-0">
           <div className={`w-2.5 h-2.5 rounded-full ${statusColor[connStatus]}`} />
           <h3 className="text-base font-semibold text-slate-200 truncate">{server.name}</h3>
         </div>
-        <span className="text-xs text-slate-500">{statusLabel[connStatus]}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          {hasOpenSecurityEvent && <span className="text-xs text-accent-yellow">风险</span>}
+          <span className="rounded-full border border-dark-border px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-400">{sourceLabel}</span>
+          <span className="text-xs text-slate-500">{statusLabel[connStatus]}</span>
+        </div>
       </div>
 
       {/* Subtitle: hostname · uptime */}
@@ -61,6 +69,12 @@ export function ServerCard({ server, status, metrics }: Props) {
 
       {connStatus === 'error' && status?.error && (
         <p className="text-xs text-accent-red/80 mb-3 truncate">{status.error}</p>
+      )}
+
+      {server.sourceType === 'agent' && taskQueueGroup && (
+        <div className="mb-3 rounded-lg border border-dark-border/70 bg-dark-bg/50 px-3 py-2 text-xs text-slate-400">
+          排队 {taskQueueGroup.queued.length} / 运行中 {taskQueueGroup.running.length}
+        </div>
       )}
 
       {metrics ? (

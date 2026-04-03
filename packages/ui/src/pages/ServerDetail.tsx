@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore.js';
 import { useTransport } from '../transport/TransportProvider.js';
@@ -6,9 +6,10 @@ import { MetricChart } from '../components/MetricChart.js';
 import { GaugeChart } from '../components/GaugeChart.js';
 import { ProcessTable } from '../components/ProcessTable.js';
 import { DockerList } from '../components/DockerList.js';
-import type { MetricsSnapshot } from '@monitor/core';
+import { GpuAllocationBars } from '../components/GpuAllocationBars.js';
+import type { MetricsSnapshot, ProcessAuditRow } from '@monitor/core';
 
-type Tab = 'overview' | 'processes' | 'docker';
+type Tab = 'overview' | 'processes' | 'docker' | 'tasks';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B/s';
@@ -22,27 +23,96 @@ export function ServerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const transport = useTransport();
-  const { servers, latestMetrics, statuses } = useStore();
+  const { servers, latestMetrics, statuses, taskQueueGroups } = useStore();
   const [tab, setTab] = useState<Tab>('overview');
   const [history, setHistory] = useState<MetricsSnapshot[]>([]);
+  const [processAudit, setProcessAudit] = useState<ProcessAuditRow[]>([]);
+  const requestScopeRef = useRef({ serverId: id, version: 0 });
+  const historyRequestIdRef = useRef(0);
+  const processAuditRequestIdRef = useRef(0);
+
+  if (requestScopeRef.current.serverId !== id) {
+    requestScopeRef.current = {
+      serverId: id,
+      version: requestScopeRef.current.version + 1,
+    };
+  }
 
   const server = servers.find(s => s.id === id);
   const metrics = id ? latestMetrics.get(id) : undefined;
   const status = id ? statuses.get(id) : undefined;
+  const taskQueueGroup = taskQueueGroups.find((group) => group.serverId === id);
 
   const loadHistory = useCallback(async () => {
     if (!id) return;
+    const serverId = id;
+    const scopeVersion = requestScopeRef.current.version;
+    const requestId = ++historyRequestIdRef.current;
     const to = Date.now();
     const from = to - 30 * 60 * 1000; // Last 30 minutes
-    const data = await transport.getMetricsHistory(id, from, to);
-    setHistory(data);
+    try {
+      const data = await transport.getMetricsHistory(serverId, from, to);
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        historyRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+      setHistory(data);
+    } catch {
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        historyRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+      setHistory([]);
+    }
   }, [id, transport]);
 
+  const loadProcessAudit = useCallback(async () => {
+    if (!id) return;
+    const serverId = id;
+    const scopeVersion = requestScopeRef.current.version;
+    const requestId = ++processAuditRequestIdRef.current;
+    try {
+      const rows = await transport.getProcessAudit(serverId);
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        processAuditRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+      setProcessAudit(rows);
+    } catch {
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        processAuditRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+      setProcessAudit([]);
+    }
+  }, [id, transport]);
+
+  useLayoutEffect(() => {
+    setHistory([]);
+    setProcessAudit([]);
+  }, [id]);
+
   useEffect(() => {
-    loadHistory();
+    void loadHistory();
     const interval = setInterval(loadHistory, 30_000);
     return () => clearInterval(interval);
   }, [loadHistory]);
+
+  useEffect(() => {
+    void loadProcessAudit();
+  }, [loadProcessAudit]);
 
   // Append new metrics to history
   useEffect(() => {
@@ -69,6 +139,7 @@ export function ServerDetail() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: '概览' },
+    ...(server.sourceType === 'agent' ? [{ key: 'tasks' as const, label: 'Tasks' }] : []),
     { key: 'processes', label: '进程' },
     { key: 'docker', label: 'Docker' },
   ];
@@ -147,6 +218,8 @@ export function ServerDetail() {
             </div>
           </div>
 
+          <GpuAllocationBars allocation={metrics?.gpuAllocation} />
+
           {/* Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-dark-card border border-dark-border rounded-lg p-4">
@@ -218,9 +291,40 @@ export function ServerDetail() {
         </div>
       )}
 
+      {tab === 'tasks' && server.sourceType === 'agent' && (
+        <div className="bg-dark-card border border-dark-border rounded-lg p-4 space-y-4">
+          <div>
+            <h3 className="text-sm text-slate-300 mb-1">当前任务组</h3>
+            <p className="text-sm text-slate-400">
+              排队 {taskQueueGroup?.queued.length ?? 0} / 运行中 {taskQueueGroup?.running.length ?? 0}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="rounded-lg border border-dark-border/70 bg-dark-bg/40 p-3">
+              <p className="text-slate-500 mb-2">排队任务</p>
+              <div className="space-y-2">
+                {(taskQueueGroup?.queued ?? []).map((task) => (
+                  <div key={task.taskId} className="text-slate-300 font-mono truncate">{task.taskId}</div>
+                ))}
+                {(taskQueueGroup?.queued.length ?? 0) === 0 && <p className="text-slate-600">暂无排队任务</p>}
+              </div>
+            </div>
+            <div className="rounded-lg border border-dark-border/70 bg-dark-bg/40 p-3">
+              <p className="text-slate-500 mb-2">运行中任务</p>
+              <div className="space-y-2">
+                {(taskQueueGroup?.running ?? []).map((task) => (
+                  <div key={task.taskId} className="text-slate-300 font-mono truncate">{task.taskId}</div>
+                ))}
+                {(taskQueueGroup?.running.length ?? 0) === 0 && <p className="text-slate-600">暂无运行任务</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {tab === 'processes' && (
         <div className="bg-dark-card border border-dark-border rounded-lg p-4">
-          <ProcessTable processes={metrics?.processes ?? []} />
+          <ProcessTable processes={processAudit} />
         </div>
       )}
 

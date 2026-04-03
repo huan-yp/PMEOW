@@ -1,9 +1,18 @@
 import type {
   ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
+  AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
+  GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
 } from '@monitor/core';
 
+export interface SecurityEventQuery {
+  serverId?: string;
+  resolved?: boolean;
+  hours?: number;
+}
+
 export interface TransportAdapter {
+  readonly isElectron?: boolean;
 
   // Connection
   connect(): void;
@@ -15,6 +24,8 @@ export interface TransportAdapter {
   onAlert(cb: (alert: AlertEvent) => void): () => void;
   onHookTriggered(cb: (log: HookLog) => void): () => void;
   onNotify(cb: (title: string, body: string) => void): () => void;
+  onTaskUpdate(cb: (update: AgentTaskUpdatePayload) => void): () => void;
+  onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void;
 
   // Servers
   getServers(): Promise<ServerConfig[]>;
@@ -48,6 +59,19 @@ export interface TransportAdapter {
   // Alerts
   getAlerts(limit?: number, offset?: number): Promise<AlertRecord[]>;
   suppressAlert(id: string, days?: number): Promise<void>;
+
+  // Operator data
+  getTaskQueue(): Promise<AgentTaskQueueGroup[]>;
+  getProcessAudit(serverId: string): Promise<ProcessAuditRow[]>;
+  getSecurityEvents(query?: SecurityEventQuery): Promise<SecurityEventRecord[]>;
+  markSecurityEventSafe(id: number, reason?: string): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>;
+  getGpuOverview(): Promise<GpuOverviewResponse>;
+  getGpuUsageSummary(hours?: number): Promise<GpuUsageSummaryItem[]>;
+  getGpuUsageByUser(user: string, hours?: number): Promise<GpuUsageTimelinePoint[]>;
+  cancelTask(serverId: string, taskId: string): Promise<void>;
+  setTaskPriority(serverId: string, taskId: string, priority: number): Promise<void>;
+  pauseQueue(serverId: string): Promise<void>;
+  resumeQueue(serverId: string): Promise<void>;
 
   // Key upload
   uploadKey(file: File): Promise<{ path: string }>;

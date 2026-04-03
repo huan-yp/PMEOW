@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { TransportProvider, useTransport } from './transport/TransportProvider.js';
+import type { TransportAdapter } from './transport/types.js';
 import { useStore } from './store/useStore.js';
 import { useMetricsSubscription, useLoadInitialData } from './hooks/useMetrics.js';
+import { useOperatorBootstrap } from './hooks/useOperatorData.js';
 import { ToastContainer } from './components/common/Toast.js';
 import { Overview } from './pages/Overview.js';
 import { ServerDetail } from './pages/ServerDetail.js';
@@ -10,6 +12,8 @@ import { ServersManage } from './pages/ServersManage.js';
 import { HooksManage } from './pages/HooksManage.js';
 import { Settings } from './pages/Settings.js';
 import { Alerts } from './pages/Alerts.js';
+import { TaskQueue } from './pages/TaskQueue.js';
+import { Security } from './pages/Security.js';
 import { Login } from './pages/Login.js';
 
 function SidebarNav() {
@@ -20,6 +24,8 @@ function SidebarNav() {
     { to: '/servers', icon: ServerIcon, label: '服务器' },
     { to: '/hooks', icon: HookIcon, label: '钩子规则' },
     { to: '/alerts', icon: AlertIcon, label: '告警' },
+    { to: '/tasks', icon: TaskIcon, label: 'Tasks' },
+    { to: '/security', icon: ShieldIcon, label: 'Security' },
     { to: '/settings', icon: SettingsIcon, label: '设置' },
   ];
 
@@ -65,6 +71,7 @@ function SidebarNav() {
 function AppContent() {
   useMetricsSubscription();
   useLoadInitialData();
+  useOperatorBootstrap();
 
   return (
     <div className="min-h-screen bg-dark-bg text-slate-200">
@@ -76,6 +83,8 @@ function AppContent() {
           <Route path="/servers" element={<ServersManage />} />
           <Route path="/hooks" element={<HooksManage />} />
           <Route path="/alerts" element={<Alerts />} />
+          <Route path="/tasks" element={<TaskQueue />} />
+          <Route path="/security" element={<Security />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -102,9 +111,9 @@ function AuthGate() {
   return <AppContent />;
 }
 
-export default function App() {
+export default function App({ adapter }: { adapter?: TransportAdapter }) {
   return (
-    <TransportProvider>
+    <TransportProvider adapter={adapter}>
       <BrowserRouter>
         <AuthGate />
       </BrowserRouter>
@@ -155,6 +164,24 @@ function AlertIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
         d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+    </svg>
+  );
+}
+
+function TaskIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+    </svg>
+  );
+}
+
+function ShieldIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M12 3l7 4v5c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V7l7-4zm-2.5 8.5l1.5 1.5 3.5-3.5" />
     </svg>
   );
 }

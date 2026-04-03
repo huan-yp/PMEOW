@@ -9,6 +9,7 @@ export function Settings() {
   const [local, setLocal] = useState<AppSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (settings) setLocal({ ...settings });
@@ -18,11 +19,19 @@ export function Settings() {
 
   const handleSave = async () => {
     setSaving(true);
-    await transport.saveSettings(local);
-    setSettings(local);
-    setSaved(true);
-    setSaving(false);
-    setTimeout(() => setSaved(false), 2000);
+    setSaveError(null);
+    setSaved(false);
+
+    try {
+      await transport.saveSettings(local);
+      setSettings(local);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setSaveError('保存失败，请重试');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const update = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
@@ -38,9 +47,9 @@ export function Settings() {
         <div className="bg-dark-card border border-dark-border rounded-lg p-4">
           <h3 className="text-sm font-medium text-slate-300 mb-3">数据采集</h3>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">刷新间隔 (毫秒)</label>
+            <label htmlFor="refreshIntervalMs" className="text-xs text-slate-500 block mb-1">刷新间隔 (毫秒)</label>
             <div className="flex items-center gap-3">
-              <input type="range" min={1000} max={30000} step={1000}
+              <input id="refreshIntervalMs" type="range" min={1000} max={30000} step={1000}
                 value={local.refreshIntervalMs}
                 onChange={e => update('refreshIntervalMs', Number(e.target.value))}
                 className="flex-1 accent-accent-blue" />
@@ -50,8 +59,8 @@ export function Settings() {
             </div>
           </div>
           <div className="mt-3">
-            <label className="text-xs text-slate-500 block mb-1">历史数据保留天数</label>
-            <input type="number" value={local.historyRetentionDays} min={1} max={90}
+            <label htmlFor="historyRetentionDays" className="text-xs text-slate-500 block mb-1">历史数据保留天数</label>
+            <input id="historyRetentionDays" type="number" value={local.historyRetentionDays} min={1} max={90}
               onChange={e => update('historyRetentionDays', Number(e.target.value))}
               className="bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 w-24 focus:border-accent-blue focus:outline-none" />
           </div>
@@ -62,38 +71,97 @@ export function Settings() {
           <h3 className="text-sm font-medium text-slate-300 mb-3">告警阈值</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">CPU (%)</label>
-              <input type="number" value={local.alertCpuThreshold} min={0} max={100}
+              <label htmlFor="alertCpuThreshold" className="text-xs text-slate-500 block mb-1">CPU (%)</label>
+              <input id="alertCpuThreshold" type="number" value={local.alertCpuThreshold} min={0} max={100}
                 onChange={e => update('alertCpuThreshold', Number(e.target.value))}
                 className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">内存 (%)</label>
-              <input type="number" value={local.alertMemoryThreshold} min={0} max={100}
+              <label htmlFor="alertMemoryThreshold" className="text-xs text-slate-500 block mb-1">内存 (%)</label>
+              <input id="alertMemoryThreshold" type="number" value={local.alertMemoryThreshold} min={0} max={100}
                 onChange={e => update('alertMemoryThreshold', Number(e.target.value))}
                 className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">磁盘 (%)</label>
-              <input type="number" value={local.alertDiskThreshold} min={0} max={100}
+              <label htmlFor="alertDiskThreshold" className="text-xs text-slate-500 block mb-1">磁盘 (%)</label>
+              <input id="alertDiskThreshold" type="number" value={local.alertDiskThreshold} min={0} max={100}
                 onChange={e => update('alertDiskThreshold', Number(e.target.value))}
                 className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
             </div>
           </div>
           <div className="mt-3">
-            <label className="text-xs text-slate-500 block mb-1">监控磁盘挂载点</label>
+            <label htmlFor="alertDiskMountPoints" className="text-xs text-slate-500 block mb-1">监控磁盘挂载点</label>
             <input
+              id="alertDiskMountPoints"
               value={(local.alertDiskMountPoints ?? ['/']).join(',')}
               onChange={e => update('alertDiskMountPoints', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
               placeholder="逗号分隔，如: /,/home,/data"
               className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 font-mono focus:border-accent-blue focus:outline-none" />
           </div>
           <div className="mt-3">
-            <label className="text-xs text-slate-500 block mb-1">告警忽略默认天数</label>
-            <input type="number" value={local.alertSuppressDefaultDays ?? 7} min={1} max={365}
+            <label htmlFor="alertSuppressDefaultDays" className="text-xs text-slate-500 block mb-1">告警忽略默认天数</label>
+            <input id="alertSuppressDefaultDays" type="number" value={local.alertSuppressDefaultDays ?? 7} min={1} max={365}
               onChange={e => update('alertSuppressDefaultDays', Number(e.target.value))}
               className="bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 w-24 focus:border-accent-blue focus:outline-none" />
           </div>
+        </div>
+
+        <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+          <h3 className="text-sm font-medium text-slate-300 mb-3">安全审计</h3>
+          <div className="space-y-3">
+            <div>
+              <label htmlFor="securityMiningKeywords" className="text-xs text-slate-500 block mb-1">挖矿关键词</label>
+              <input
+                id="securityMiningKeywords"
+                value={(local.securityMiningKeywords ?? []).join(', ')}
+                onChange={e => update('securityMiningKeywords', e.target.value.split(',').map((item) => item.trim()).filter(Boolean))}
+                className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 font-mono focus:border-accent-blue focus:outline-none"
+              />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label htmlFor="securityUnownedGpuMinutes" className="text-xs text-slate-500 block mb-1">无归属 GPU 持续分钟</label>
+                <input
+                  id="securityUnownedGpuMinutes"
+                  type="number"
+                  value={local.securityUnownedGpuMinutes}
+                  min={1}
+                  onChange={e => update('securityUnownedGpuMinutes', Number(e.target.value))}
+                  className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="securityHighGpuUtilizationPercent" className="text-xs text-slate-500 block mb-1">高 GPU 利用率阈值 (%)</label>
+                <input
+                  id="securityHighGpuUtilizationPercent"
+                  type="number"
+                  value={local.securityHighGpuUtilizationPercent}
+                  min={1}
+                  max={100}
+                  onChange={e => update('securityHighGpuUtilizationPercent', Number(e.target.value))}
+                  className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none"
+                />
+              </div>
+              <div>
+                <label htmlFor="securityHighGpuDurationMinutes" className="text-xs text-slate-500 block mb-1">高 GPU 利用率持续分钟</label>
+                <input
+                  id="securityHighGpuDurationMinutes"
+                  type="number"
+                  value={local.securityHighGpuDurationMinutes}
+                  min={1}
+                  onChange={e => update('securityHighGpuDurationMinutes', Number(e.target.value))}
+                  className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-dark-card border border-dark-border rounded-lg p-4">
+          <h3 className="text-sm font-medium text-slate-300 mb-2">Agent 部署说明</h3>
+          <p className="text-sm text-slate-400 leading-6">
+            在目标机器安装 pmeow-agent 后，使用 systemd 注册服务并保持 agentId 稳定，平台会自动把任务队列、GPU 归属和安全审计接入该节点。
+          </p>
         </div>
 
         {/* API */}
@@ -109,14 +177,14 @@ export function Settings() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-slate-500 block mb-1">端口</label>
-              <input type="number" value={local.apiPort}
+              <label htmlFor="apiPort" className="text-xs text-slate-500 block mb-1">端口</label>
+              <input id="apiPort" type="number" value={local.apiPort}
                 onChange={e => update('apiPort', Number(e.target.value))}
                 className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
             </div>
             <div>
-              <label className="text-xs text-slate-500 block mb-1">Token (留空不验证)</label>
-              <input value={local.apiToken}
+              <label htmlFor="apiToken" className="text-xs text-slate-500 block mb-1">Token (留空不验证)</label>
+              <input id="apiToken" value={local.apiToken}
                 onChange={e => update('apiToken', e.target.value)}
                 placeholder="可选"
                 className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 font-mono focus:border-accent-blue focus:outline-none" />
@@ -145,6 +213,7 @@ export function Settings() {
           {saving ? '保存中...' : '保存设置'}
         </button>
         {saved && <span className="text-sm text-accent-green">已保存 ✓</span>}
+        {saveError && <span className="text-sm text-accent-red">{saveError}</span>}
       </div>
     </div>
   );

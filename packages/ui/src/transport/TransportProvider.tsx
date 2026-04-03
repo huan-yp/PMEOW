@@ -4,8 +4,14 @@ import { WebSocketAdapter } from './ws-adapter.js';
 
 const TransportContext = createContext<TransportAdapter | null>(null);
 
-export function TransportProvider({ children }: { children: React.ReactNode }) {
-  const [transport] = useState<TransportAdapter>(() => new WebSocketAdapter());
+export function TransportProvider({
+  children,
+  adapter,
+}: {
+  children: React.ReactNode;
+  adapter?: TransportAdapter;
+}) {
+  const [transport] = useState<TransportAdapter>(() => adapter ?? new WebSocketAdapter());
 
   useEffect(() => {
     transport.connect();

@@ -1,4 +1,5 @@
 import { useStore } from '../store/useStore.js';
+import { GpuOverviewCard } from '../components/GpuOverviewCard.js';
 import { ServerCard } from '../components/ServerCard.js';
 
 export function Overview() {
@@ -19,6 +20,8 @@ export function Overview() {
           {new Date().toLocaleString('zh-CN')}
         </div>
       </div>
+
+      <GpuOverviewCard />
 
       {servers.length === 0 ? (
         <div className="flex items-center justify-center h-64 border border-dashed border-dark-border rounded-xl">

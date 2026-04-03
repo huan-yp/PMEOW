@@ -3,9 +3,13 @@ import type { TransportAdapter } from './types.js';
 import type {
   ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
+  AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
+  GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
 } from '@monitor/core';
+import type { SecurityEventQuery } from './types.js';
 
 export class WebSocketAdapter implements TransportAdapter {
+  readonly isElectron = false;
   private socket: Socket | null = null;
   private token: string | null = null;
 
@@ -52,6 +56,16 @@ export class WebSocketAdapter implements TransportAdapter {
   onNotify(cb: (title: string, body: string) => void): () => void {
     this.socket?.on('notify', (data: { title: string; body: string }) => cb(data.title, data.body));
     return () => { this.socket?.off('notify'); };
+  }
+
+  onTaskUpdate(cb: (update: AgentTaskUpdatePayload) => void): () => void {
+    this.socket?.on('taskUpdate', cb);
+    return () => { this.socket?.off('taskUpdate', cb); };
+  }
+
+  onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void {
+    this.socket?.on('securityEvent', cb);
+    return () => { this.socket?.off('securityEvent', cb); };
   }
 
   // REST helpers
@@ -215,6 +229,65 @@ export class WebSocketAdapter implements TransportAdapter {
       method: 'POST',
       body: JSON.stringify({ days }),
     });
+  }
+
+  async getTaskQueue(): Promise<AgentTaskQueueGroup[]> {
+    return this.fetch('/api/task-queue');
+  }
+
+  async getProcessAudit(serverId: string): Promise<ProcessAuditRow[]> {
+    return this.fetch(`/api/servers/${serverId}/process-audit`);
+  }
+
+  async getSecurityEvents(query: SecurityEventQuery = {}): Promise<SecurityEventRecord[]> {
+    const params = new URLSearchParams();
+    if (query.serverId) params.set('serverId', query.serverId);
+    if (query.resolved !== undefined) params.set('resolved', String(query.resolved));
+    if (query.hours !== undefined) params.set('hours', String(query.hours));
+    const suffix = params.size > 0 ? `?${params.toString()}` : '';
+    return this.fetch(`/api/security/events${suffix}`);
+  }
+
+  async markSecurityEventSafe(
+    id: number,
+    reason?: string,
+  ): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }> {
+    return this.fetch(`/api/security/events/${id}/mark-safe`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async getGpuOverview(): Promise<GpuOverviewResponse> {
+    return this.fetch('/api/gpu-overview');
+  }
+
+  async getGpuUsageSummary(hours = 168): Promise<GpuUsageSummaryItem[]> {
+    return this.fetch(`/api/gpu-usage/summary?hours=${hours}`);
+  }
+
+  async getGpuUsageByUser(user: string, hours = 168): Promise<GpuUsageTimelinePoint[]> {
+    const params = new URLSearchParams({ user, hours: String(hours) });
+    return this.fetch(`/api/gpu-usage/by-user?${params.toString()}`);
+  }
+
+  async cancelTask(serverId: string, taskId: string): Promise<void> {
+    await this.fetch(`/api/servers/${serverId}/tasks/${taskId}/cancel`, { method: 'POST' });
+  }
+
+  async setTaskPriority(serverId: string, taskId: string, priority: number): Promise<void> {
+    await this.fetch(`/api/servers/${serverId}/tasks/${taskId}/priority`, {
+      method: 'POST',
+      body: JSON.stringify({ priority }),
+    });
+  }
+
+  async pauseQueue(serverId: string): Promise<void> {
+    await this.fetch(`/api/servers/${serverId}/queue/pause`, { method: 'POST' });
+  }
+
+  async resumeQueue(serverId: string): Promise<void> {
+    await this.fetch(`/api/servers/${serverId}/queue/resume`, { method: 'POST' });
   }
 
   // Key upload

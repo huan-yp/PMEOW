@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import type { MetricsSnapshot, ServerConfig, ServerStatus, HookRule, AppSettings, AlertEvent } from '@monitor/core';
+import type {
+  MetricsSnapshot, ServerConfig, ServerStatus, HookRule, AppSettings, AlertEvent,
+  AgentTaskQueueGroup, SecurityEventRecord,
+} from '@monitor/core';
 
 interface Toast {
   id: string;
@@ -35,6 +38,12 @@ interface AppState {
   // Settings
   settings: AppSettings | null;
   setSettings: (settings: AppSettings) => void;
+
+  // Operator data
+  taskQueueGroups: AgentTaskQueueGroup[];
+  setTaskQueueGroups: (groups: AgentTaskQueueGroup[]) => void;
+  openSecurityEvents: SecurityEventRecord[];
+  setOpenSecurityEvents: (events: SecurityEventRecord[]) => void;
 
   // Toasts
   toasts: Toast[];
@@ -86,6 +95,12 @@ export const useStore = create<AppState>((set) => ({
   // Settings
   settings: null,
   setSettings: (settings) => set({ settings }),
+
+  // Operator data
+  taskQueueGroups: [],
+  setTaskQueueGroups: (taskQueueGroups) => set({ taskQueueGroups }),
+  openSecurityEvents: [],
+  setOpenSecurityEvents: (openSecurityEvents) => set({ openSecurityEvents }),
 
   // Toasts
   toasts: [],
