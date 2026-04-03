@@ -7,16 +7,16 @@
   ],
   "description": "PMEOW - GPU cluster monitoring and scheduling platform for labs",
   "scripts": {
-    "dev:ui": "npm run dev --workspace=@monitor/ui",
-    "dev:web": "npm run dev --workspace=@monitor/web",
+    "dev:ui": "npm run build:core && npm run dev --workspace=@monitor/ui",
+    "dev:web": "npm run build:core && npm run dev --workspace=@monitor/web",
     "build:core": "npm run build --workspace=@monitor/core",
-    "build:ui": "npm run build --workspace=@monitor/ui",
-    "build:web": "npm run build:core && npm run build:ui && npm run build --workspace=@monitor/web",
+    "build:ui": "npm run build:core && npm run build --workspace=@monitor/ui",
+    "build:web": "npm run build:ui && npm run build --workspace=@monitor/web",
     "start:web": "npm run start --workspace=@monitor/web",
     "test:core": "npm run test --workspace=@monitor/core",
-    "test:web": "npm run test --workspace=@monitor/web",
+    "test:web": "npm run build:core && npm run test --workspace=@monitor/web",
     "typecheck:core": "npm run typecheck --workspace=@monitor/core",
-    "typecheck:web": "npm run typecheck --workspace=@monitor/web"
+    "typecheck:web": "npm run build:core && npm run typecheck --workspace=@monitor/web"
   },
   "engines": {
     "node": ">=20.0.0"
