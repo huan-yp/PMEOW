@@ -11,6 +11,10 @@ import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
 import { Server as SocketServer } from 'socket.io';
 import { setupOperatorRoutes } from './operator-routes.js';
 import { setupPersonRoutes } from './person-routes.js';
+import { personMobileAuthMiddleware } from './mobile-auth.js';
+import { setupMobileAdminRoutes } from './mobile-admin-routes.js';
+import { setupMobilePersonRoutes } from './mobile-person-routes.js';
+import { handleTaskUpdateForNotifications, handleServerStatusForNotifications } from './mobile-notification-runtime.js';
 import {
   createAgentNamespace,
   type CreateAgentNamespaceOptions,
@@ -62,6 +66,7 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
     onTaskUpdate: (taskUpdate) => {
       options.agentNamespace?.onTaskUpdate?.(taskUpdate);
       uiNamespace.emit('taskUpdate', taskUpdate);
+      handleTaskUpdateForNotifications(taskUpdate);
     },
   });
 
@@ -73,6 +78,10 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   app.use(express.json());
 
   app.post('/api/login', loginHandler);
+
+  // Person mobile routes use their own token auth (before admin JWT)
+  setupMobilePersonRoutes(app, personMobileAuthMiddleware, { scheduler, agentRegistry: agentNamespace.registry });
+
   app.use('/api', authMiddleware);
 
   setupRestRoutes(app, scheduler);
@@ -87,8 +96,14 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
 
   setupPersonRoutes(app);
 
+  // Admin mobile routes are behind admin JWT
+  setupMobileAdminRoutes(app, { scheduler });
+
   uiNamespace.use(socketAuthMiddleware);
   setupSocketHandlers(uiNamespace, scheduler);
+
+  // Hook mobile notifications into scheduler events
+  scheduler.on('serverStatus', handleServerStatusForNotifications);
 
   uiNamespace.on('connection', (socket) => {
     console.log(`[ws] client connected: ${socket.id}`);

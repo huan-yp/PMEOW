@@ -11,6 +11,10 @@ import {
   listPersonBindings,
   updatePerson,
   updatePersonBinding,
+  createPersonMobileToken,
+  rotatePersonMobileToken,
+  revokePersonMobileToken,
+  getPersonMobileTokenStatus,
 } from '@monitor/core';
 import type { Express } from 'express';
 
@@ -42,4 +46,32 @@ export function setupPersonRoutes(app: Express): void {
   app.put('/api/person-bindings/:id', (req, res) => res.json(updatePersonBinding(req.params.id, req.body)));
 
   app.get('/api/servers/:id/person-activity', (req, res) => res.json(getServerPersonActivity(req.params.id)));
+
+  // Person mobile token lifecycle (admin-only)
+  app.post('/api/persons/:id/mobile-token', (req, res) => {
+    const person = getPersonById(req.params.id);
+    if (!person) return res.status(404).json({ error: 'Person not found' });
+    const result = createPersonMobileToken(person.id, req.body?.label ?? '');
+    res.json({ id: result.record.id, plainToken: result.plainToken, createdAt: result.record.createdAt });
+  });
+
+  app.post('/api/persons/:id/mobile-token/rotate', (req, res) => {
+    const person = getPersonById(req.params.id);
+    if (!person) return res.status(404).json({ error: 'Person not found' });
+    const result = rotatePersonMobileToken(person.id);
+    if (!result) return res.status(500).json({ error: 'Failed to rotate token' });
+    res.json({ id: result.record.id, plainToken: result.plainToken, createdAt: result.record.createdAt });
+  });
+
+  app.delete('/api/persons/:id/mobile-token', (req, res) => {
+    const person = getPersonById(req.params.id);
+    if (!person) return res.status(404).json({ error: 'Person not found' });
+    revokePersonMobileToken(person.id);
+    res.json({ success: true });
+  });
+
+  app.get('/api/persons/:id/mobile-token/status', (req, res) => {
+    const status = getPersonMobileTokenStatus(req.params.id);
+    res.json(status ? { hasToken: true, createdAt: status.createdAt, lastUsedAt: status.lastUsedAt } : { hasToken: false });
+  });
 }
