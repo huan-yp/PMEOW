@@ -7,6 +7,10 @@ name = "pmeow-agent"
 version = "0.1.0"
 description = "PMEOW GPU cluster monitoring agent"
 authors = [{name = "huan-yp"}]
+license = { text = "AGPL-3.0-only" }
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+]
 requires-python = ">=3.10"
 dependencies = [
     "psutil",
