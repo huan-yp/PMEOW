@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { TransportProvider, useTransport } from './transport/TransportProvider.js';
 import type { TransportAdapter } from './transport/types.js';
 import { useStore } from './store/useStore.js';
@@ -18,6 +18,17 @@ import { Login } from './pages/Login.js';
 import { PeopleOverview } from './pages/PeopleOverview.js';
 import { PeopleManage } from './pages/PeopleManage.js';
 import { PersonDetail } from './pages/PersonDetail.js';
+import { MobileAdminLayout } from './mobile/layouts/MobileAdminLayout.js';
+import { AdminHome } from './mobile/screens/admin/Home.js';
+import { AdminTasks } from './mobile/screens/admin/Tasks.js';
+import { AdminNodes } from './mobile/screens/admin/Nodes.js';
+import { AdminNotifications } from './mobile/screens/admin/Notifications.js';
+import { MobilePersonLayout } from './mobile/layouts/MobilePersonLayout.js';
+import { PersonHome } from './mobile/screens/person/Home.js';
+import { PersonTasks } from './mobile/screens/person/Tasks.js';
+import { PersonNodes } from './mobile/screens/person/Nodes.js';
+import { PersonNotifications } from './mobile/screens/person/Notifications.js';
+import { PersonSettings } from './mobile/screens/person/Settings.js';
 
 function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const links = [
@@ -98,6 +109,12 @@ function AppContent() {
           <Route path="/people/manage" element={<PeopleManage />} />
           <Route path="/people/:id" element={<PersonDetail />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/m/admin" element={<MobileAdminLayout />}>
+            <Route index element={<AdminHome />} />
+            <Route path="tasks" element={<AdminTasks />} />
+            <Route path="nodes" element={<AdminNodes />} />
+            <Route path="notifications" element={<AdminNotifications />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -171,10 +188,31 @@ export default function App({ adapter }: { adapter?: TransportAdapter }) {
   return (
     <TransportProvider adapter={adapter}>
       <BrowserRouter>
-        <AuthGate />
+        <AppRouter />
       </BrowserRouter>
     </TransportProvider>
   );
+}
+
+function AppRouter() {
+  const location = useLocation();
+
+  // Person mobile routes bypass admin auth
+  if (location.pathname.startsWith('/m/me')) {
+    return (
+      <Routes>
+        <Route path="/m/me" element={<MobilePersonLayout />}>
+          <Route index element={<PersonHome />} />
+          <Route path="tasks" element={<PersonTasks />} />
+          <Route path="nodes" element={<PersonNodes />} />
+          <Route path="notifications" element={<PersonNotifications />} />
+          <Route path="settings" element={<PersonSettings />} />
+        </Route>
+      </Routes>
+    );
+  }
+
+  return <AuthGate />;
 }
 
 /* ----- Icon components ----- */
