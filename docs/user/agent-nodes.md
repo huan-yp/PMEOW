@@ -1,0 +1,148 @@
+# Agent 节点接入指南
+
+这份文档面向计算节点管理员和节点使用者，解释如何安装 `pmeow-agent`、如何把节点绑定到 Web 服务、以及如何使用本地 CLI 进行任务管理。
+
+## Agent 负责什么
+
+Agent 运行在计算节点本地，负责：
+
+- 采集 CPU、内存、磁盘、网络和 GPU 指标
+- 建立 GPU 归属视图
+- 维护本地任务队列
+- 在满足资源条件时自主调度任务
+- 把指标、任务状态和心跳推送给 Web 服务端
+
+服务端不会代替 Agent 做排队调度。服务端能做的是查看、取消、暂停、恢复和调整优先级。
+
+## 安装前置条件
+
+- Python 3.10+
+- Linux 计算节点
+- 如果需要 GPU 指标，主机上要有 `nvidia-smi`
+- 目标节点能访问 PMEOW Web 服务端
+
+## 从源码安装
+
+在计算节点上执行：
+
+```bash
+cd agent
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+如果你只打算运行 Agent 而不是开发它，也可以根据自己的部署方式把源码放到固定目录，再用虚拟环境安装。
+
+## 关键环境变量
+
+Agent 通过环境变量配置，未设置时会使用默认值。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `PMEOW_SERVER_URL` | 空 | Web 服务基础地址，例如 `http://server:17200` |
+| `PMEOW_AGENT_ID` | 当前 hostname | Agent 唯一标识 |
+| `PMEOW_COLLECTION_INTERVAL` | `5` | 指标采集周期，单位秒 |
+| `PMEOW_HEARTBEAT_INTERVAL` | `30` | 心跳间隔，单位秒 |
+| `PMEOW_HISTORY_WINDOW` | `120` | 调度时参考的历史窗口，单位秒 |
+| `PMEOW_VRAM_REDUNDANCY` | `0.1` | 非 PMEOW 进程显存冗余系数 |
+| `PMEOW_STATE_DIR` | `~/.pmeow/` | 本地状态目录 |
+| `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | CLI 与 daemon 通信的 Unix socket |
+| `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | 任务日志目录 |
+
+关于 `PMEOW_SERVER_URL` 有两个重要约束：
+
+- 传入的是服务端基础 URL，不要自己拼 `/agent`。
+- 传入 `http://` 或 `https://` 地址即可，不需要手写原始 WebSocket 地址。
+
+## 启动 daemon
+
+最小启动流程：
+
+```bash
+export PMEOW_SERVER_URL=http://your-server:17200
+pmeow-agent daemon
+```
+
+daemon 会以前台方式运行，完成采集、调度、Socket.IO 通信和本地 socket 服务。
+
+如果你准备长期运行，建议使用 systemd。仓库里提供了示例文件：
+
+- `agent/examples/pmeow-agent.service`
+
+## 本地 CLI 工作流
+
+Agent CLI 通过 Unix socket 与本地 daemon 通信，常用命令如下：
+
+```bash
+# 查看队列摘要
+pmeow-agent status
+
+# 提交任务
+pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
+
+# 查看日志
+pmeow-agent logs <task_id>
+pmeow-agent logs <task_id> --tail 50
+
+# 取消任务
+pmeow-agent cancel <task_id>
+
+# 暂停 / 恢复队列
+pmeow-agent pause
+pmeow-agent resume
+```
+
+当前 CLI 的 `submit` 命令会把命令行剩余部分拼成一条 shell 命令字符串，并记录当前工作目录和当前系统用户名。
+
+## 节点绑定是怎么发生的
+
+Agent 启动后会向服务端 `/agent` namespace 发送注册事件，包含：
+
+- `agentId`
+- `hostname`
+- `version`
+
+服务端会用 hostname 去匹配 `servers.host`：
+
+- 如果能找到唯一精确匹配的服务器记录，就会自动绑定到该 `serverId`。
+- 绑定成功后，该服务器的数据源会切换为 Agent 模式。
+- 如果同一个 hostname 对应多条服务器记录，自动绑定会失败，需要先清理重复配置。
+
+因此，在正式接入前，最稳妥的做法是先在 Web 端创建服务器记录，并把 `host` 配置成节点真实 hostname。
+
+## 节点本地会生成哪些文件
+
+默认状态目录是 `~/.pmeow/`：
+
+```text
+~/.pmeow/
+├── pmeow.db
+├── pmeow.sock
+└── logs/
+```
+
+这些文件的用途分别是：
+
+- `pmeow.db`：本地 SQLite，保存任务和运行时状态
+- `pmeow.sock`：CLI 和 daemon 的控制通道
+- `logs/`：任务 stdout/stderr 日志
+
+## 推荐的首次接入流程
+
+1. 在 Web 控制台先创建服务器记录。
+2. 确认服务器记录的 `host` 与节点 hostname 一致。
+3. 在节点上安装 Agent 并导出 `PMEOW_SERVER_URL`。
+4. 以前台方式启动 `pmeow-agent daemon`，先确认没有报错。
+5. 回到 Web 控制台查看“概览”“Tasks”“服务器详情”是否出现队列与 GPU allocation 数据。
+6. 确认无误后，再切换到 systemd 持久运行。
+
+## 节点使用边界
+
+需要特别注意三点：
+
+- Agent 自主调度，服务端只提供最小控制面。
+- 任务日志保存在节点本地，服务端不持久化日志内容。
+- 队列是否能启动任务，不只取决于当前瞬时显存，还取决于历史窗口内资源是否持续满足。
+
+如果你已经接入了节点但 Web 上看不到状态，继续阅读 [troubleshooting.md](troubleshooting.md)。

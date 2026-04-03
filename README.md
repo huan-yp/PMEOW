@@ -98,9 +98,19 @@ pnpm start:web
 docker compose up -d
 ```
 
+## 文档导航
+
+README 只保留项目概览、能力摘要和最短启动路径，详细文档集中放在 `docs/` 下：
+
+- [docs/README.md](docs/README.md) - 文档总索引
+- [docs/user/README.md](docs/user/README.md) - 面向管理员与节点使用者的用户文档
+- [docs/developer/README.md](docs/developer/README.md) - 面向贡献者的开发文档
+
+其中 `docs/superpowers/` 保留为设计与规划档案，用于记录 V2 设计背景和实施计划，不作为当前操作手册。
+
 ## Agent 节点接入
 
-Agent 项目位于 `agent/`，详细说明见 [agent/README.md](agent/README.md)。
+Agent 项目位于 `agent/`。节点侧安装、环境变量、systemd 部署与 CLI 工作流可同时参考 [agent/README.md](agent/README.md) 和 [docs/user/agent-nodes.md](docs/user/agent-nodes.md)。
 
 最小启动流程：
 
