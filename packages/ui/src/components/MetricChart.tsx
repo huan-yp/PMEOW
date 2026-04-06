@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
+import { resolveMetricChartResponsivePolicy } from '../utils/metricChart.js';
 
 export interface MetricChartSeries {
   name: string;
@@ -27,6 +28,7 @@ interface Props {
 export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -34,9 +36,25 @@ export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Pro
       renderer: 'canvas',
     });
 
-    const handleResize = () => chartInstance.current?.resize();
+    const handleResize = () => {
+      const nextWidth = chartRef.current?.clientWidth ?? 0;
+      setContainerWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth));
+      chartInstance.current?.resize();
+    };
+
+    handleResize();
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(handleResize)
+      : null;
+
+    if (resizeObserver && chartRef.current) {
+      resizeObserver.observe(chartRef.current);
+    }
+
     window.addEventListener('resize', handleResize);
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
       chartInstance.current?.dispose();
     };
@@ -49,9 +67,10 @@ export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Pro
     const axisConfigs = yAxes && yAxes.length > 0
       ? yAxes
       : [{ formatter: yAxisFormatter } satisfies MetricChartAxis];
-    const hasRightAxis = axisConfigs.length > 1;
-    const gridLeft = hasRightAxis ? 52 : 48;
-    const gridRight = hasRightAxis ? 52 : 18;
+    const responsivePolicy = resolveMetricChartResponsivePolicy({
+      containerWidth: containerWidth || chartRef.current?.clientWidth || 0,
+      axes: axisConfigs,
+    });
 
     chartInstance.current.setOption({
       tooltip: {
@@ -85,9 +104,9 @@ export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Pro
       },
       grid: {
         top: 10,
-        right: gridRight,
+        right: responsivePolicy.gridRight,
         bottom: series.length > 1 ? 30 : 10,
-        left: gridLeft,
+        left: responsivePolicy.gridLeft,
         containLabel: true,
       },
       xAxis: {
@@ -95,27 +114,36 @@ export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Pro
         axisLine: { lineStyle: { color: '#1e293b' } },
         axisLabel: {
           color: '#64748b',
-          fontSize: 10,
+          fontSize: responsivePolicy.compact ? 9 : 10,
+          hideOverlap: true,
           formatter: (v: number) => new Date(v).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         },
         splitLine: { show: false },
       },
-      yAxis: axisConfigs.map((axisConfig, index) => ({
-        type: 'value',
-        min: 0,
-        position: axisConfig.position ?? (index === 0 ? 'left' : 'right'),
-        axisLine: { show: false },
-        axisLabel: {
-          color: axisConfig.color || '#64748b',
-          fontSize: 10,
-          margin: 8,
-          formatter: axisConfig.formatter || ((v: number) => `${v}`),
-        },
-        splitLine: {
-          show: axisConfig.splitLine ?? index === 0,
-          lineStyle: { color: '#1e293b', type: 'dashed' },
-        },
-      })),
+      yAxis: axisConfigs.map((axisConfig, index) => {
+        const axisPosition = axisConfig.position ?? (index === 0 ? 'left' : 'right');
+        const showAxisLabels = axisPosition === 'left'
+          ? responsivePolicy.showLeftAxisLabels
+          : responsivePolicy.showRightAxisLabels;
+
+        return {
+          type: 'value',
+          min: 0,
+          position: axisPosition,
+          axisLine: { show: false },
+          axisLabel: {
+            show: showAxisLabels,
+            color: axisConfig.color || '#64748b',
+            fontSize: responsivePolicy.compact ? 9 : 10,
+            margin: responsivePolicy.compact ? 6 : 8,
+            formatter: axisConfig.formatter || ((v: number) => `${v}`),
+          },
+          splitLine: {
+            show: axisConfig.splitLine ?? index === 0,
+            lineStyle: { color: '#1e293b', type: 'dashed' },
+          },
+        };
+      }),
       series: series.map((s, i) => ({
         name: s.name,
         type: 'line',
@@ -133,7 +161,7 @@ export function MetricChart({ series, height = 200, yAxisFormatter, yAxes }: Pro
       })),
       animation: false,
     }, true);
-  }, [series, yAxes, yAxisFormatter]);
+  }, [containerWidth, series, yAxes, yAxisFormatter]);
 
   return (
     <div ref={chartRef} style={{ width: '100%', height }} />
