@@ -6,6 +6,7 @@ import { resolveTaskPerson, resolveRawUserPerson } from '../person/resolve.js';
 import { getAgentTask } from './agent-tasks.js';
 import { getLatestMetrics } from './metrics.js';
 import type {
+  PersonAttributionFact,
   PersonBindingCandidate,
   PersonSummaryItem,
   PersonTimelinePoint,
@@ -45,6 +46,21 @@ export function insertPersonAttributionFact(fact: {
     fact.rawUser, fact.taskId, fact.gpuIndex, fact.vramMB,
     fact.taskStatus, fact.resolutionSource, fact.metadataJson,
   );
+}
+
+export function insertPersonAttributionFacts(facts: PersonAttributionFact[]): void {
+  if (facts.length === 0) return;
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    INSERT INTO person_attribution_facts (timestamp, sourceType, serverId, personId, rawUser, taskId, gpuIndex, vramMB, taskStatus, resolutionSource, metadataJson)
+    VALUES (?, 'gpu_snapshot', ?, ?, ?, ?, ?, ?, NULL, ?, '{}')
+  `);
+  const insertMany = db.transaction((rows: PersonAttributionFact[]) => {
+    for (const f of rows) {
+      stmt.run(f.timestamp, f.serverId, f.personId, f.rawUser, f.taskId, f.gpuIndex, f.vramMB, f.resolutionSource);
+    }
+  });
+  insertMany(facts);
 }
 
 export function recordGpuAttributionFacts(serverId: string, timestamp: number): void {
