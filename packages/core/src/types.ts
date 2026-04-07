@@ -128,7 +128,7 @@ export interface GpuAllocationSummary {
   byUser: UserGpuUsageSummary[];
 }
 
-export type SecurityEventType = 'suspicious_process' | 'unowned_gpu' | 'marked_safe';
+export type SecurityEventType = 'suspicious_process' | 'unowned_gpu' | 'high_gpu_utilization' | 'marked_safe';
 
 export interface SecurityEventDetails {
   reason: string;
@@ -141,6 +141,7 @@ export interface SecurityEventDetails {
   targetEventId?: number;
   durationMinutes?: number;
   usedMemoryMB?: number;
+  gpuUtilizationPercent?: number;
 }
 
 export interface SecurityEventRecord {

@@ -121,6 +121,7 @@ describe('buildProcessAuditRows', () => {
         securityMiningKeywords: [],
         unownedGpuMinutes: 0,
         hasRunningPmeowTasks: false,
+        highGpuUtilizationActive: false,
       },
     );
 
@@ -168,6 +169,7 @@ describe('buildProcessAuditRows', () => {
         securityMiningKeywords: ['xmrig', 'nbminer'],
         unownedGpuMinutes: 45,
         hasRunningPmeowTasks: false,
+        highGpuUtilizationActive: false,
       },
     );
 
@@ -218,6 +220,7 @@ describe('buildProcessAuditRows', () => {
         securityMiningKeywords: ['xmrig'],
         unownedGpuMinutes: 45,
         hasRunningPmeowTasks: false,
+        highGpuUtilizationActive: false,
       },
     );
 
