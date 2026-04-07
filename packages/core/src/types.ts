@@ -166,6 +166,8 @@ export interface ProcessAuditRow {
   ownerType: 'task' | 'user' | 'unknown' | 'none';
   taskId?: string | null;
   suspiciousReasons: string[];
+  resolvedPersonId?: string;
+  resolvedPersonName?: string;
 }
 
 export interface AgentTaskQueueGroup {

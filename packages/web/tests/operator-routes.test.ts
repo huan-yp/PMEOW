@@ -1,6 +1,8 @@
 import {
   createSecurityEvent,
   createServer,
+  createPerson,
+  createPersonBinding,
   getSettings,
   getGpuOverview,
   getAgentTaskQueueGroups,
@@ -199,5 +201,88 @@ describe('operator routes', () => {
 
     expect(response.status).toBe(400);
     expect(response.body).toEqual({ error: '缺少 user 参数' });
+  });
+
+  it('enriches process-audit rows with resolved person name', async () => {
+    const server = createServer({
+      name: 'gpu-person',
+      host: 'gpu-person',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-person',
+    });
+    const person = createPerson({ displayName: '张三', customFields: {} });
+    createPersonBinding({
+      personId: person.id,
+      serverId: server.id,
+      systemUser: 'alice',
+      source: 'manual',
+      effectiveFrom: 0,
+    });
+
+    const snapshot = createSnapshot(server.id, server.host, 1_000);
+    saveMetrics(snapshot);
+    saveGpuUsageRows(server.id, snapshot.timestamp, [
+      {
+        gpuIndex: 0,
+        ownerType: 'user',
+        ownerId: 'alice',
+        userName: 'alice',
+        pid: 2201,
+        command: 'python train.py',
+        usedMemoryMB: 1024,
+      },
+    ]);
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .get(`/api/servers/${server.id}/process-audit`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      expect.objectContaining({
+        pid: 2201,
+        user: 'alice',
+        resolvedPersonId: person.id,
+        resolvedPersonName: '张三',
+      }),
+    ]);
+  });
+
+  it('returns process-audit rows without person fields for unbound users', async () => {
+    const server = createServer({
+      name: 'gpu-unbound',
+      host: 'gpu-unbound',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-unbound',
+    });
+
+    const snapshot = createSnapshot(server.id, server.host, 2_000);
+    saveMetrics(snapshot);
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .get(`/api/servers/${server.id}/process-audit`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      expect.objectContaining({
+        pid: 2201,
+        user: 'alice',
+      }),
+    ]);
+    expect(response.body[0].resolvedPersonId).toBeUndefined();
+    expect(response.body[0].resolvedPersonName).toBeUndefined();
   });
 });

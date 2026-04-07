@@ -1057,4 +1057,86 @@ describe('overview detail settings', () => {
     expect(input).toBeTruthy();
     expect((input as HTMLInputElement).value).toBe('15');
   });
+
+  it('renders person column with resolved name and fallback', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    transport.getProcessAudit = vi.fn(async () => [
+      {
+        pid: 4888,
+        user: 'alice',
+        command: 'python train.py',
+        cpuPercent: 10,
+        memPercent: 5,
+        rss: 102400,
+        gpuMemoryMB: 1024,
+        ownerType: 'user' as const,
+        taskId: null,
+        suspiciousReasons: [],
+        resolvedPersonId: 'person-1',
+        resolvedPersonName: '张三',
+      },
+      {
+        pid: 4889,
+        user: 'bob',
+        command: 'python eval.py',
+        cpuPercent: 5,
+        memPercent: 3,
+        rss: 51200,
+        gpuMemoryMB: 0,
+        ownerType: 'user' as const,
+        taskId: null,
+        suspiciousReasons: [],
+      },
+      {
+        pid: 4890,
+        user: '',
+        command: 'unknown-proc',
+        cpuPercent: 1,
+        memPercent: 1,
+        rss: 1024,
+        gpuMemoryMB: 0,
+        ownerType: 'unknown' as const,
+        taskId: null,
+        suspiciousReasons: [],
+      },
+    ]);
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    expect(await screen.findByRole('heading', { name: server.name })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '进程' }));
+
+    expect(await screen.findByRole('columnheader', { name: '人员' })).toBeTruthy();
+
+    const rows = screen.getAllByRole('row');
+    // row 0 is header, rows 1-3 are data
+    const row1 = within(rows[1]);
+    expect(row1.getByText('张三')).toBeTruthy();
+
+    const row2 = within(rows[2]);
+    // no resolvedPersonName, should fallback to user 'bob' — appears in both user and person columns
+    expect(row2.getAllByText('bob')).toHaveLength(2);
+
+    const row3 = within(rows[3]);
+    // no resolvedPersonName and empty user, should show '未知'
+    expect(row3.getByText('未知')).toBeTruthy();
+  });
 });
