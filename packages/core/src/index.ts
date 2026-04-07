@@ -99,6 +99,8 @@ export {
   insertPersonAttributionFacts,
   recordGpuAttributionFacts,
   recordTaskAttributionFact,
+  estimateSnapshotIntervalMs,
+  queryPersonCumulativeStats,
   getPersonSummaries,
   getPersonTimeline,
   getPersonTasks,

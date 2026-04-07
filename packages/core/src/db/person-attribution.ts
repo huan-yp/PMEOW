@@ -106,6 +106,42 @@ export function recordTaskAttributionFact(update: AgentTaskUpdatePayload): void 
   });
 }
 
+export function estimateSnapshotIntervalMs(from: number): number {
+  const db = getDatabase();
+  const row = db.prepare(`
+    SELECT MIN(timestamp) as minTs, MAX(timestamp) as maxTs, COUNT(DISTINCT timestamp) as cnt
+    FROM person_attribution_facts
+    WHERE sourceType LIKE 'gpu_%' AND timestamp >= ?
+  `).get(from) as { minTs: number | null; maxTs: number | null; cnt: number } | undefined;
+
+  if (!row || !row.minTs || !row.maxTs || row.cnt < 2) return 60_000;
+  const estimated = (row.maxTs - row.minTs) / (row.cnt - 1);
+  return Math.max(estimated, 60_000);
+}
+
+export function queryPersonCumulativeStats(from: number): Map<string, { occupancyHours: number; gbHours: number }> {
+  const db = getDatabase();
+  const intervalMs = estimateSnapshotIntervalMs(from);
+
+  const rows = db.prepare(`
+    SELECT personId, COUNT(DISTINCT timestamp) as snapshots, SUM(vramMB) as totalVramMB
+    FROM person_attribution_facts
+    WHERE personId IS NOT NULL AND sourceType LIKE 'gpu_%' AND vramMB > 0 AND timestamp >= ?
+    GROUP BY personId
+  `).all(from) as Array<{ personId: string; snapshots: number; totalVramMB: number }>;
+
+  const result = new Map<string, { occupancyHours: number; gbHours: number }>();
+
+  for (const row of rows) {
+    result.set(row.personId, {
+      occupancyHours: (row.snapshots * intervalMs) / 3_600_000,
+      gbHours: (row.totalVramMB * intervalMs) / (1024 * 3_600_000),
+    });
+  }
+
+  return result;
+}
+
 export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
   const db = getDatabase();
   const now = Date.now();
@@ -165,6 +201,15 @@ export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
     const entry = personMap.get(row.personId)!;
     if (row.taskStatus === 'running') entry.runningTaskCount = row.cnt;
     if (row.taskStatus === 'queued') entry.queuedTaskCount = row.cnt;
+  }
+
+  const cumulative = queryPersonCumulativeStats(from);
+  for (const [personId, stats] of cumulative) {
+    const entry = personMap.get(personId);
+    if (entry) {
+      entry.vramOccupancyHours = stats.occupancyHours;
+      entry.vramGigabyteHours = stats.gbHours;
+    }
   }
 
   return Array.from(personMap.values())
