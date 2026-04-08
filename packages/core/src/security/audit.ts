@@ -5,10 +5,11 @@ export interface BuildProcessAuditRowsOptions {
   securityMiningKeywords: string[];
   unownedGpuMinutes: number;
   hasRunningPmeowTasks: boolean;
+  highGpuUtilizationActive: boolean;
 }
 
 export interface ProcessAuditFinding {
-  kind: 'keyword' | 'unowned_gpu';
+  kind: 'keyword' | 'unowned_gpu' | 'high_utilization';
   reason: string;
   keyword?: string;
 }
@@ -156,6 +157,17 @@ function buildProcessAuditFindings(
     findings.push({
       kind: 'unowned_gpu',
       reason: `无主 GPU 占用 ${options.unownedGpuMinutes} 分钟`,
+    });
+  }
+
+  if (
+    options.highGpuUtilizationActive
+    && row.ownerType !== 'task'
+    && row.gpuMemoryMB > 0
+  ) {
+    findings.push({
+      kind: 'high_utilization',
+      reason: '高 GPU 利用率期间存在非任务 GPU 进程',
     });
   }
 

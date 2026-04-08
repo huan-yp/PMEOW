@@ -8,6 +8,23 @@ export interface AnalyzeSecuritySnapshotInput {
   auditRows: ProcessAuditRow[];
 }
 
+export interface CheckHighGpuUtilizationInput {
+  serverId: string;
+  snapshot: MetricsSnapshot;
+  hasRunningPmeowTasks: boolean;
+  thresholdPercent: number;
+  durationMinutes: number;
+  collectionIntervalMs: number;
+}
+
+interface HighGpuCounter {
+  count: number;
+  lastSeen: number;
+}
+
+const highGpuUtilizationCounts = new Map<string, HighGpuCounter>();
+const STALE_THRESHOLD_MS = 30 * 60_000;
+
 export function buildSecurityFingerprint(
   serverId: string,
   eventType: SecurityEventType,
@@ -24,6 +41,10 @@ export function analyzeSecuritySnapshot({ snapshot, auditRows }: AnalyzeSecurity
     const findings = getStructuredOrLegacyFindings(row);
 
     for (const finding of findings) {
+      if (finding.kind === 'high_utilization') {
+        continue;
+      }
+
       const details = buildEventDetails(row, finding);
       const eventType = finding.kind === 'keyword'
         ? 'suspicious_process'
@@ -95,4 +116,97 @@ function sortValue(value: unknown): unknown {
   }
 
   return value;
+}
+
+function cleanStaleHighGpuCounters(now: number): void {
+  for (const [key, entry] of highGpuUtilizationCounts) {
+    if (now - entry.lastSeen > STALE_THRESHOLD_MS) {
+      highGpuUtilizationCounts.delete(key);
+    }
+  }
+}
+
+export function checkHighGpuUtilization(input: CheckHighGpuUtilizationInput): SecurityEventInput[] {
+  const {
+    serverId,
+    snapshot,
+    hasRunningPmeowTasks,
+    thresholdPercent,
+    durationMinutes,
+    collectionIntervalMs,
+  } = input;
+
+  const now = snapshot.timestamp;
+
+  cleanStaleHighGpuCounters(now);
+
+  if (durationMinutes <= 0 || !snapshot.gpu.available) {
+    return [];
+  }
+
+  const requiredCount = Math.ceil(durationMinutes * 60_000 / collectionIntervalMs);
+  const events: SecurityEventInput[] = [];
+  const allocation = snapshot.gpuAllocation;
+
+  if (allocation) {
+    for (const perGpu of allocation.perGpu) {
+      const key = `${serverId}:${perGpu.gpuIndex}`;
+      const hasTasksOnGpu = perGpu.pmeowTasks.length > 0;
+
+      if (snapshot.gpu.utilizationPercent > thresholdPercent && !hasTasksOnGpu) {
+        const existing = highGpuUtilizationCounts.get(key);
+        const count = (existing?.count ?? 0) + 1;
+        highGpuUtilizationCounts.set(key, { count, lastSeen: now });
+
+        if (count >= requiredCount) {
+          const details: SecurityEventDetails = {
+            reason: `GPU ${perGpu.gpuIndex} 利用率超过 ${thresholdPercent}% 持续 ${durationMinutes} 分钟`,
+            gpuIndex: perGpu.gpuIndex,
+            durationMinutes,
+            gpuUtilizationPercent: snapshot.gpu.utilizationPercent,
+          };
+          events.push({
+            serverId,
+            eventType: 'high_gpu_utilization',
+            fingerprint: buildSecurityFingerprint(serverId, 'high_gpu_utilization', details),
+            details,
+          });
+          highGpuUtilizationCounts.set(key, { count: 0, lastSeen: now });
+        }
+      } else {
+        highGpuUtilizationCounts.delete(key);
+      }
+    }
+  } else {
+    const key = `${serverId}:all`;
+
+    if (snapshot.gpu.utilizationPercent > thresholdPercent && !hasRunningPmeowTasks) {
+      const existing = highGpuUtilizationCounts.get(key);
+      const count = (existing?.count ?? 0) + 1;
+      highGpuUtilizationCounts.set(key, { count, lastSeen: now });
+
+      if (count >= requiredCount) {
+        const details: SecurityEventDetails = {
+          reason: `GPU 利用率超过 ${thresholdPercent}% 持续 ${durationMinutes} 分钟`,
+          durationMinutes,
+          gpuUtilizationPercent: snapshot.gpu.utilizationPercent,
+        };
+        events.push({
+          serverId,
+          eventType: 'high_gpu_utilization',
+          fingerprint: buildSecurityFingerprint(serverId, 'high_gpu_utilization', details),
+          details,
+        });
+        highGpuUtilizationCounts.set(key, { count: 0, lastSeen: now });
+      }
+    } else {
+      highGpuUtilizationCounts.delete(key);
+    }
+  }
+
+  return events;
+}
+
+export function resetHighGpuUtilizationCounters(): void {
+  highGpuUtilizationCounts.clear();
 }

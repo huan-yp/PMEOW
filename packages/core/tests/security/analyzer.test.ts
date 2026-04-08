@@ -182,6 +182,7 @@ describe('analyzeSecuritySnapshot', () => {
         securityMiningKeywords: ['xmrig'],
         unownedGpuMinutes: 45,
         hasRunningPmeowTasks: true,
+        highGpuUtilizationActive: false,
       },
     );
 
@@ -226,6 +227,7 @@ describe('analyzeSecuritySnapshot', () => {
         securityMiningKeywords: ['xmrig'],
         unownedGpuMinutes: 45,
         hasRunningPmeowTasks: false,
+        highGpuUtilizationActive: false,
       },
     );
 
