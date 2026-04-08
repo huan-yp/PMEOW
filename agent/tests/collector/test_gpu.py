@@ -137,6 +137,35 @@ class TestPerProcessParsing:
         assert procs[1].gpu_index == 1
         assert procs[1].used_memory_mb == 4096.0
 
+    def test_na_memory_falls_back_to_zero(self):
+        """WSL2 / vGPU environments report [N/A] for per-process memory."""
+        na_csv = "1234, GPU-aaa-111, [N/A]\n5678, GPU-bbb-222, 4096\n"
+        side = _mock_run_factory({
+            "query-gpu=uuid": self.UUID_CSV,
+            "query-compute-apps": na_csv,
+        })
+        with patch("pmeow.collector.gpu.subprocess.run", side_effect=side):
+            procs = collect_gpu_processes()
+        assert len(procs) == 2
+        # N/A process still collected with 0 memory
+        assert procs[0].pid == 1234
+        assert procs[0].used_memory_mb == 0.0
+        # Normal process unaffected
+        assert procs[1].pid == 5678
+        assert procs[1].used_memory_mb == 4096.0
+
+    def test_all_na_memory(self):
+        """All processes report [N/A] – all should still be collected."""
+        all_na = "1234, GPU-aaa-111, [N/A]\n5678, GPU-bbb-222, [N/A]\n"
+        side = _mock_run_factory({
+            "query-gpu=uuid": self.UUID_CSV,
+            "query-compute-apps": all_na,
+        })
+        with patch("pmeow.collector.gpu.subprocess.run", side_effect=side):
+            procs = collect_gpu_processes()
+        assert len(procs) == 2
+        assert all(p.used_memory_mb == 0.0 for p in procs)
+
 
 # ---------------------------------------------------------------------------
 # Test: attribution – PMEOW task

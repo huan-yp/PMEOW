@@ -114,10 +114,15 @@ export function setupOperatorRoutes(app: Express, options: OperatorRouteOptions)
     const hasRunningPmeowTasks = (taskGroup?.running.length ?? 0) > 0;
     const unownedGpuMinutes = getLatestUnownedGpuDurationMinutes(serverId);
 
+    const highGpuUtilizationActive =
+      snapshot.gpu.utilizationPercent > settings.securityHighGpuUtilizationPercent
+      && !hasRunningPmeowTasks;
+
     const rows = buildProcessAuditRows(snapshot, gpuRows, {
       securityMiningKeywords: settings.securityMiningKeywords,
       unownedGpuMinutes,
       hasRunningPmeowTasks,
+      highGpuUtilizationActive,
     });
 
     const now = Date.now();

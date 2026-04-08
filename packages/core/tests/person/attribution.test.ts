@@ -14,8 +14,8 @@ import {
   listPersonBindingSuggestions,
   recordGpuAttributionFacts,
   recordTaskAttributionFact,
-  getResolvedGpuAllocation,
 } from '../../src/db/person-attribution.js';
+import { getResolvedGpuAllocation } from '../../src/agent/gpu-allocation-resolver.js';
 
 describe('person attribution', () => {
   it('prefers explicit task overrides over binding fallback', () => {

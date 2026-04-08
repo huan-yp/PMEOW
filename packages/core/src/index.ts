@@ -77,7 +77,13 @@ export { SSHDataSource } from './datasource/ssh-datasource.js';
 export { AgentDataSource } from './datasource/agent-datasource.js';
 export { createDataSource } from './datasource/factory.js';
 export { buildProcessAuditRows } from './security/audit.js';
-export { buildSecurityFingerprint, analyzeSecuritySnapshot } from './security/analyzer.js';
+export {
+  buildSecurityFingerprint,
+  analyzeSecuritySnapshot,
+  checkHighGpuUtilization,
+  resetHighGpuUtilizationCounters,
+} from './security/analyzer.js';
+export type { CheckHighGpuUtilizationInput } from './security/analyzer.js';
 export { processSecuritySnapshot } from './security/pipeline.js';
 export {
   createPerson,
@@ -94,17 +100,21 @@ export {
   getActiveTaskOwnerOverride,
 } from './db/persons.js';
 export { resolveTaskPerson, resolveRawUserPerson } from './person/resolve.js';
+export { writeAttributionFacts } from './person/attribution.js';
 export {
+  insertPersonAttributionFacts,
   recordGpuAttributionFacts,
   recordTaskAttributionFact,
+  estimateSnapshotIntervalMs,
+  queryPersonCumulativeStats,
   getPersonSummaries,
   getPersonTimeline,
   getPersonTasks,
   getServerPersonActivity,
 	listPersonBindingCandidates,
   listPersonBindingSuggestions,
-  getResolvedGpuAllocation,
 } from './db/person-attribution.js';
+export { getResolvedGpuAllocation } from './agent/gpu-allocation-resolver.js';
 export {
   createPersonMobileToken,
   rotatePersonMobileToken,

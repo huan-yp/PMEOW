@@ -13,6 +13,7 @@ import { SSHDataSource } from './datasource/ssh-datasource.js';
 import { AgentDataSource } from './datasource/agent-datasource.js';
 import type { NodeDataSource } from './datasource/types.js';
 import { insertServerStatusEvent } from './db/server-status-events.js';
+import { writeAttributionFacts } from './person/attribution.js';
 import type { MetricsSnapshot, ServerStatus, ConnectionStatus } from './types.js';
 
 export class Scheduler extends EventEmitter {
@@ -292,5 +293,12 @@ export class Scheduler extends EventEmitter {
 
     // Evaluate hooks
     evaluateHooks(snapshot).catch(() => {});
+
+    // Record person attribution facts
+    try {
+      writeAttributionFacts(snapshot, []);
+    } catch {
+      // Attribution recording failure should not break the metrics pipeline
+    }
   }
 }
