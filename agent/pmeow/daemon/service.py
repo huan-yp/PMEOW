@@ -10,6 +10,7 @@ import time
 from typing import Iterable
 
 from pmeow import __version__
+from pmeow.collector.internet import InternetProbe, load_probe_from_env
 from pmeow.collector.local_users import collect_local_users
 from pmeow.collector.snapshot import collect_snapshot
 from pmeow.config import AgentConfig
@@ -51,7 +52,11 @@ log = logging.getLogger(__name__)
 class DaemonService:
     """Central service that coordinates collection, scheduling, and task execution."""
 
-    def __init__(self, config: AgentConfig) -> None:
+    def __init__(
+        self,
+        config: AgentConfig,
+        internet_probe: InternetProbe | None = None,
+    ) -> None:
         self.config = config
         self._lock = threading.Lock()
         self._shutdown = threading.Event()
@@ -60,6 +65,10 @@ class DaemonService:
         self.runner = TaskRunner()
         self.history = GpuHistoryTracker(window_seconds=config.history_window_seconds)
         self.scheduler = QueueScheduler(self.history)
+        # The probe carries its own cache state across collection cycles, so
+        # it must live on the service (not be recreated per cycle). Tests can
+        # inject a fake probe to avoid touching the network.
+        self.internet_probe = internet_probe if internet_probe is not None else load_probe_from_env()
 
         self.transport: AgentTransportClient | None = None
         if config.server_url:
@@ -169,6 +178,7 @@ class DaemonService:
             server_id=self.config.agent_id or "local",
             task_store=self.db,
             redundancy_coefficient=self.config.vram_redundancy_coefficient,
+            internet_probe=self.internet_probe,
         )
 
         per_gpu = (
