@@ -163,11 +163,17 @@ export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
     GROUP BY f.personId
   `).all(from) as Array<{ personId: string; totalVram: number; serverCount: number; lastActivity: number }>;
 
+  // Use the live status from agent_tasks (not the historical taskStatus recorded
+  // in attribution facts) so that finished tasks no longer count as "running".
   const taskRows = db.prepare(`
-    SELECT personId, taskStatus, COUNT(*) as cnt
-    FROM person_attribution_facts
-    WHERE personId IS NOT NULL AND sourceType = 'task_update' AND timestamp >= ?
-    GROUP BY personId, taskStatus
+    SELECT paf.personId, at.status as taskStatus, COUNT(DISTINCT paf.taskId) as cnt
+    FROM (
+      SELECT DISTINCT personId, taskId
+      FROM person_attribution_facts
+      WHERE personId IS NOT NULL AND sourceType = 'task_update' AND timestamp >= ?
+    ) paf
+    JOIN agent_tasks at ON paf.taskId = at.taskId
+    GROUP BY paf.personId, at.status
   `).all(from) as Array<{ personId: string; taskStatus: string; cnt: number }>;
 
   const personMap = new Map<string, PersonSummaryItem>();

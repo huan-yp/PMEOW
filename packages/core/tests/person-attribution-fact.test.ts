@@ -4,7 +4,7 @@ import { createServer } from '../src/db/servers.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../src/db/persons.js';
 import { upsertAgentTask } from '../src/db/agent-tasks.js';
 import { writeAttributionFacts } from '../src/person/attribution.js';
-import { insertPersonAttributionFacts, getPersonTimeline, getPersonSummaries } from '../src/db/person-attribution.js';
+import { insertPersonAttributionFact, insertPersonAttributionFacts, getPersonTimeline, getPersonSummaries } from '../src/db/person-attribution.js';
 import { ingestAgentMetrics } from '../src/agent/ingest.js';
 import type { MetricsSnapshot, PersonAttributionFact } from '../src/types.js';
 
@@ -269,6 +269,47 @@ describe('person attribution fact persistence', () => {
     const timeline = getPersonTimeline(alice.id, 24);
     // With 5-min buckets for 24h, the two snapshots (10 min apart) should be in different buckets.
     expect(timeline.length, 'two snapshots 10 min apart should produce 2 points for 24h period').toBe(2);
+  });
+
+  it('runningTaskCount reflects live task status, not historical transitions', () => {
+    const server = createServer({ name: 'task-count', host: 'task-count', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-task-count' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // Task went queued → running → finished.
+    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'queued', user: 'alice', createdAt: now - 300_000 });
+    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'running', user: 'alice', startedAt: now - 200_000 });
+    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'finished', user: 'alice', startedAt: now - 200_000, finishedAt: now - 100_000 });
+
+    // Record task_update attribution facts for each status transition (via singular insert).
+    const transitions: Array<{ status: string; ts: number }> = [
+      { status: 'queued', ts: now - 300_000 },
+      { status: 'running', ts: now - 200_000 },
+      { status: 'finished', ts: now - 100_000 },
+    ];
+    for (const t of transitions) {
+      insertPersonAttributionFact({
+        timestamp: t.ts, sourceType: 'task_update', serverId: server.id,
+        personId: alice.id, rawUser: 'alice', taskId: 'task-done',
+        gpuIndex: null, vramMB: null, taskStatus: t.status,
+        resolutionSource: 'binding', metadataJson: '{}',
+      });
+    }
+
+    // Also give Alice some GPU usage so she appears in summaries.
+    insertPersonAttributionFacts([{
+      personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 1024, timestamp: now,
+      sourceType: 'gpu_user', resolutionSource: 'binding',
+    }]);
+
+    const summaries = getPersonSummaries(24);
+    const alice_summary = summaries.find(s => s.personId === alice.id);
+    expect(alice_summary).toBeDefined();
+    // Task is finished — runningTaskCount should be 0, not 1.
+    expect(alice_summary!.runningTaskCount).toBe(0);
+    expect(alice_summary!.queuedTaskCount).toBe(0);
   });
 
   it('currentVramMB in person summaries reflects latest snapshot, not historical sum', () => {
