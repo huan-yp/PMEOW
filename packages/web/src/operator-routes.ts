@@ -11,6 +11,7 @@ import {
   getServerById,
   listSecurityEvents,
   markSecurityEventSafe,
+  resolveRawUserPerson,
   type Scheduler,
 } from '@monitor/core';
 import type { Express, Request, Response } from 'express';
@@ -117,12 +118,23 @@ export function setupOperatorRoutes(app: Express, options: OperatorRouteOptions)
       snapshot.gpu.utilizationPercent > settings.securityHighGpuUtilizationPercent
       && !hasRunningPmeowTasks;
 
-    res.json(buildProcessAuditRows(snapshot, gpuRows, {
+    const rows = buildProcessAuditRows(snapshot, gpuRows, {
       securityMiningKeywords: settings.securityMiningKeywords,
       unownedGpuMinutes,
       hasRunningPmeowTasks,
       highGpuUtilizationActive,
-    }));
+    });
+
+    const now = Date.now();
+    for (const row of rows) {
+      const { person } = resolveRawUserPerson(serverId, row.user, now);
+      if (person) {
+        row.resolvedPersonId = person.id;
+        row.resolvedPersonName = person.displayName;
+      }
+    }
+
+    res.json(rows);
   });
 
   app.get('/api/security/events', (req: Request, res: Response) => {
