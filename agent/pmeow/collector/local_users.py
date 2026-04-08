@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import pwd
-
 from pmeow.models import LocalUserRecord
+
+try:
+    import pwd  # Unix only
+except ImportError:
+    pwd = None  # type: ignore[assignment]
 
 
 _DEFAULT_UID_MIN = 1000
@@ -34,7 +37,7 @@ def _read_uid_min() -> int:
     return _DEFAULT_UID_MIN
 
 
-def _is_bindable_user(entry: pwd.struct_passwd, uid_min: int) -> bool:
+def _is_bindable_user(entry: pwd.struct_passwd, uid_min: int) -> bool:  # type: ignore[name-defined]
     username = entry.pw_name.strip()
     if not username or username in _EXCLUDED_USERNAMES:
         return False
@@ -46,7 +49,13 @@ def _is_bindable_user(entry: pwd.struct_passwd, uid_min: int) -> bool:
 
 
 def collect_local_users(uid_min: int | None = None) -> list[LocalUserRecord]:
-    """Collect bindable local user accounts using passwd/NSS semantics."""
+    """Collect bindable local user accounts using passwd/NSS semantics.
+
+    Returns an empty list on platforms without the ``pwd`` module (e.g. Windows).
+    """
+    if pwd is None:
+        return []
+
     minimum_uid = _read_uid_min() if uid_min is None else max(1, uid_min)
     users: list[LocalUserRecord] = []
 

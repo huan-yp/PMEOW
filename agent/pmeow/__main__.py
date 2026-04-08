@@ -65,7 +65,7 @@ def _cmd_submit(args: argparse.Namespace) -> None:
     resp = send_request(_socket_path(args), "submit_task", {
         "command": command,
         "cwd": os.getcwd(),
-        "user": os.environ.get("USER", "unknown"),
+        "user": os.environ.get("USER") or os.environ.get("USERNAME", "unknown"),
         "require_vram_mb": args.pvram,
         "require_gpu_count": args.gpu,
         "priority": args.priority,

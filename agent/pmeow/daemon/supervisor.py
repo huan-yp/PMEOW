@@ -3,6 +3,8 @@ from __future__ import annotations
 import errno
 import os
 import signal
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -29,7 +31,7 @@ def is_process_running(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except OSError as exc:
-        return exc.errno == errno.EPERM
+        return exc.errno in (errno.EPERM, errno.EACCES)
     return True
 
 
@@ -61,7 +63,18 @@ def stop_background_process(pid_file: str, timeout: float = 5.0) -> bool:
     if pid is None:
         return False
 
-    os.kill(pid, signal.SIGTERM)
+    if sys.platform == "win32":
+        # On Windows, os.kill(pid, signal.SIGTERM) calls TerminateProcess
+        # which is a hard kill.  We still attempt a graceful wait first by
+        # simply waiting for the process to finish on its own (it may have
+        # received a Ctrl+C via other means); then terminate if it hasn't.
+        if not wait_for_exit(pid, min(timeout, 1.0)):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+    else:
+        os.kill(pid, signal.SIGTERM)
     exited = wait_for_exit(pid, timeout)
     if exited:
         Path(pid_file).unlink(missing_ok=True)
@@ -71,6 +84,9 @@ def stop_background_process(pid_file: str, timeout: float = 5.0) -> bool:
 def start_background_daemon(config: AgentConfig, agent_log_file: str) -> int:
     prepare_pid_file(config.pid_file)
     Path(agent_log_file).parent.mkdir(parents=True, exist_ok=True)
+
+    if sys.platform == "win32":
+        return _start_background_win32(config, agent_log_file)
 
     pid = os.fork()
     if pid > 0:
@@ -94,3 +110,20 @@ def start_background_daemon(config: AgentConfig, agent_log_file: str) -> int:
         Path(config.pid_file).unlink(missing_ok=True)
 
     os._exit(0)
+
+
+def _start_background_win32(config: AgentConfig, agent_log_file: str) -> int:
+    """Spawn a detached background agent process on Windows."""
+    CREATE_NO_WINDOW = 0x08000000
+    log_fh = open(agent_log_file, "a")
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "pmeow", "run"],
+        stdin=subprocess.DEVNULL,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
+        creationflags=subprocess.DETACHED_PROCESS | CREATE_NO_WINDOW,
+        env=os.environ.copy(),
+    )
+    log_fh.close()
+    write_pid_file(config.pid_file, proc.pid)
+    return proc.pid
