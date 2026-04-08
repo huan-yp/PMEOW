@@ -226,7 +226,17 @@ class TestAttributionUnknownProcess:
     def test_proc_not_readable(self):
         proc = GpuProcessInfo(pid=7777, gpu_index=1, used_memory_mb=512.0, process_name="")
 
-        with patch("builtins.open", side_effect=OSError("Permission denied")):
+        # Simulate both /proc read and the psutil fallback failing to identify
+        # the owning user. Patch the helpers at the function level (returning
+        # None, the value the real helpers yield when they catch their own
+        # OSError) rather than patching builtins.open, which would also break
+        # psutil's unrelated internal /proc reads and raise before the
+        # attribution code gets a chance to bucket the process as unknown.
+        with patch(
+            "pmeow.collector.gpu_attribution._read_proc_uid", return_value=None,
+        ), patch(
+            "pmeow.collector.gpu_attribution._get_process_username", return_value=None,
+        ):
             summary = attribute_gpu_processes(
                 gpu_processes=[proc],
                 running_tasks=[],
