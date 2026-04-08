@@ -67,6 +67,12 @@ export interface NetworkMetrics {
     rxBytes: number;
     txBytes: number;
   }[];
+  // Internet reachability probe result (optional; populated by sources that support it).
+  // Unset on snapshots where the probe is unavailable or has not yet produced a sample.
+  internetReachable?: boolean;            // overall reachability decision
+  internetLatencyMs?: number | null;      // latency in ms to the first successful target; null when unreachable
+  internetProbeTarget?: string;           // target that was probed, e.g. "1.1.1.1:443"
+  internetProbeCheckedAt?: number;        // ms epoch when the probe result was produced
 }
 
 export interface GpuMetrics {

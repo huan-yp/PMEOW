@@ -196,6 +196,41 @@ class TestMetricsSnapshot:
         iface = net["interfaces"][0]
         assert set(iface.keys()) == {"name", "rxBytes", "txBytes"}
 
+    def test_to_dict_network_omits_internet_fields_when_not_set(self):
+        """When the probe has not run, the optional internet fields must be
+        absent from the serialized dict — not present-but-null — so the TS
+        consumer treats them as ``undefined``."""
+        d = _make_snapshot().to_dict()
+        net = d["network"]
+        assert "internetReachable" not in net
+        assert "internetLatencyMs" not in net
+        assert "internetProbeTarget" not in net
+        assert "internetProbeCheckedAt" not in net
+
+    def test_to_dict_network_includes_internet_fields_when_set(self):
+        snap = _make_snapshot()
+        snap.network.internet_reachable = True
+        snap.network.internet_latency_ms = 25.0
+        snap.network.internet_probe_target = "1.1.1.1:443"
+        snap.network.internet_probe_checked_at = 1712000000.0
+        d = snap.to_dict()
+        net = d["network"]
+        assert net["internetReachable"] is True
+        assert net["internetLatencyMs"] == 25.0
+        assert net["internetProbeTarget"] == "1.1.1.1:443"
+        assert net["internetProbeCheckedAt"] == 1712000000.0
+
+    def test_to_dict_network_internet_unreachable_keeps_null_latency(self):
+        snap = _make_snapshot()
+        snap.network.internet_reachable = False
+        snap.network.internet_latency_ms = None
+        snap.network.internet_probe_target = "1.1.1.1:443"
+        snap.network.internet_probe_checked_at = 1712000000.0
+        d = snap.to_dict()
+        net = d["network"]
+        assert net["internetReachable"] is False
+        assert net["internetLatencyMs"] is None
+
     def test_to_dict_gpu_keys(self):
         d = _make_snapshot().to_dict()
         gpu = d["gpu"]

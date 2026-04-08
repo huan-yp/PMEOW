@@ -292,6 +292,89 @@ describe('overview detail settings', () => {
     });
   });
 
+  it('shows internet reachability card with placeholder when no data', async () => {
+    const transport = createMockTransport();
+    const server = createServer();
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, createMetricsSnapshot(server.id)]]),
+    });
+
+    renderWithProviders(<Overview />, transport);
+
+    // Card label should be visible
+    expect(screen.getByText('外网连通')).toBeTruthy();
+    // No internet data → value should be '--'
+    expect(screen.getByText('等待节点上报外网探测数据')).toBeTruthy();
+  });
+
+  it('shows internet reachability card with all-reachable state', async () => {
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+    metrics.network.internetReachable = true;
+    metrics.network.internetLatencyMs = 25;
+    metrics.network.internetProbeTarget = '1.1.1.1:443';
+    metrics.network.internetProbeCheckedAt = Date.now();
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+    });
+
+    renderWithProviders(<Overview />, transport);
+
+    const internetLabel = screen.getByText('外网连通');
+    expect(internetLabel).toBeTruthy();
+    // Find the specific card container for internet reachability
+    const internetCard = internetLabel.closest('.rounded-2xl') as HTMLElement;
+    expect(internetCard).toBeTruthy();
+    expect(within(internetCard).getByText('所有上报节点外网畅通')).toBeTruthy();
+    // Badges render as "可达 1" and "不可达 0" (label + value in one span).
+    // Both contain "可达" as a substring, so we use getAllByText for the
+    // positive match and getByText with a start-anchor for the negative.
+    const reachBadges = within(internetCard).getAllByText(/可达/);
+    expect(reachBadges.length).toBe(2); // "可达 1" + "不可达 0"
+    expect(within(internetCard).getByText(/^不可达/)).toBeTruthy();
+  });
+
+  it('shows internet reachability card with unreachable node', async () => {
+    const transport = createMockTransport();
+    const serverA = createServer({ id: 'srv-a', name: 'node-a' });
+    const serverB = createServer({ id: 'srv-b', name: 'node-b' });
+    const metricsA = createMetricsSnapshot('srv-a');
+    metricsA.network.internetReachable = true;
+    metricsA.network.internetLatencyMs = 10;
+    metricsA.network.internetProbeTarget = '1.1.1.1:443';
+    metricsA.network.internetProbeCheckedAt = Date.now();
+    const metricsB = createMetricsSnapshot('srv-b');
+    metricsB.network.internetReachable = false;
+    metricsB.network.internetLatencyMs = null;
+    metricsB.network.internetProbeTarget = '1.1.1.1:443';
+    metricsB.network.internetProbeCheckedAt = Date.now();
+
+    useStore.setState({
+      servers: [serverA, serverB],
+      statuses: new Map([
+        ['srv-a', createStatus('srv-a')],
+        ['srv-b', createStatus('srv-b')],
+      ]),
+      latestMetrics: new Map([
+        ['srv-a', metricsA],
+        ['srv-b', metricsB],
+      ]),
+    });
+
+    renderWithProviders(<Overview />, transport);
+
+    expect(screen.getByText('外网连通')).toBeTruthy();
+    expect(screen.getByText('1/2')).toBeTruthy();
+    expect(screen.getByText('1 个节点外网不可达')).toBeTruthy();
+  });
+
   it('shows distinct source and presence badges on overview cards', async () => {
     const transport = createMockTransport();
     const agentServer = createServer();

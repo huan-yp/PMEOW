@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pmeow.collector.cpu import collect_cpu
 from pmeow.collector.disk import collect_disk
@@ -171,7 +171,11 @@ def test_local_user_collector_filters_system_accounts_by_default():
     ]
 
     with patch("pmeow.collector.local_users._read_uid_min", return_value=1000):
-        with patch("pmeow.collector.local_users.pwd.getpwall", return_value=entries):
+        target = "pmeow.collector.local_users.pwd"
+        mock_pwd = MagicMock()
+        mock_pwd.getpwall.return_value = entries
+        mock_pwd.struct_passwd = type(entries[0])
+        with patch(target, mock_pwd):
             users = collect_local_users()
 
     assert [user.username for user in users] == ["alice"]

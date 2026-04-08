@@ -30,7 +30,11 @@ def collect_system() -> SystemSnapshot:
     """Collect a system snapshot."""
     boot = psutil.boot_time()
     uptime_sec = time.time() - boot
-    load1, load5, load15 = os.getloadavg()
+    try:
+        load1, load5, load15 = os.getloadavg()
+    except (OSError, AttributeError):
+        # os.getloadavg() is not available on Windows
+        load1 = load5 = load15 = 0.0
 
     return SystemSnapshot(
         hostname=socket.gethostname(),

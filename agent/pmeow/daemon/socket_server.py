@@ -1,4 +1,9 @@
-"""Unix socket JSON-line protocol server for local daemon control."""
+"""Local JSON-line protocol server for daemon control.
+
+Uses AF_UNIX where available (Linux, macOS, Windows 10 17063+) and
+falls back to a TCP loopback socket otherwise, writing the chosen port
+into the *socket_path* file so clients can discover it.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _BUF_SIZE = 65536
+_HAS_AF_UNIX = hasattr(socket, "AF_UNIX")
 
 
 class SocketServer:
@@ -41,8 +47,18 @@ class SocketServer:
         self._cleanup_stale()
         Path(self.socket_path).parent.mkdir(parents=True, exist_ok=True)
 
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._sock.bind(self.socket_path)
+        if _HAS_AF_UNIX:
+            self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._sock.bind(self.socket_path)
+        else:
+            # Fallback: TCP on loopback; write the port to socket_path file
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._sock.bind(("127.0.0.1", 0))
+            port = self._sock.getsockname()[1]
+            Path(self.socket_path).write_text(str(port))
+            log.info("AF_UNIX unavailable, using TCP 127.0.0.1:%d", port)
+
         self._sock.listen(5)
         self._sock.settimeout(1.0)
         log.info("socket server listening on %s", self.socket_path)
@@ -242,10 +258,21 @@ _METHODS: dict[str, Any] = {
 # ------------------------------------------------------------------
 
 def send_request(socket_path: str, method: str, params: dict | None = None) -> dict:
-    """Connect to the daemon socket, send a JSON request, return the response."""
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    """Connect to the daemon socket, send a JSON request, return the response.
+
+    Detects whether the daemon is listening on AF_UNIX or TCP loopback by
+    checking if *socket_path* contains a port number (TCP fallback mode).
+    """
+    if _HAS_AF_UNIX:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        target: str | tuple[str, int] = socket_path
+    else:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        port = int(Path(socket_path).read_text().strip())
+        target = ("127.0.0.1", port)
+
     try:
-        sock.connect(socket_path)
+        sock.connect(target)  # type: ignore[arg-type]
         payload = json.dumps({"method": method, "params": params or {}})
         sock.sendall(payload.encode())
         sock.shutdown(socket.SHUT_WR)
