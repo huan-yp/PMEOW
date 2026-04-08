@@ -6,7 +6,38 @@ import time
 from unittest.mock import MagicMock, patch
 
 from pmeow.models import LocalUserRecord, LocalUsersInventory, TaskStatus, TaskUpdate
-from pmeow.transport.client import AgentTransportClient
+from pmeow.transport.client import AgentTransportClient, _normalize_server_url
+
+
+# ------------------------------------------------------------------
+# URL normalization
+# ------------------------------------------------------------------
+
+
+class TestNormalizeServerUrl:
+    def test_bare_host_port_gets_http_scheme(self):
+        assert _normalize_server_url("localhost:17200") == "http://localhost:17200"
+
+    def test_bare_host_port_with_path(self):
+        assert _normalize_server_url("myhost:3000/api") == "http://myhost:3000/api"
+
+    def test_http_url_unchanged(self):
+        assert _normalize_server_url("http://localhost:17200") == "http://localhost:17200"
+
+    def test_https_url_unchanged(self):
+        assert _normalize_server_url("https://example.com:443/path") == "https://example.com:443/path"
+
+    def test_ws_converted_to_http(self):
+        assert _normalize_server_url("ws://localhost:3000") == "http://localhost:3000"
+
+    def test_wss_converted_to_https(self):
+        assert _normalize_server_url("wss://host:443/base/") == "https://host:443/base"
+
+    def test_trailing_slash_stripped(self):
+        assert _normalize_server_url("http://host:3000/") == "http://host:3000"
+
+    def test_ip_address_without_scheme(self):
+        assert _normalize_server_url("192.168.1.1:17200") == "http://192.168.1.1:17200"
 
 
 def _emit_payload(mock_client: MagicMock, call_index: int = 0) -> tuple[str, dict]:

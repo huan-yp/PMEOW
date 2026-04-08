@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -101,4 +102,19 @@ def load_config() -> AgentConfig:
         log_dir=log_dir,
         pid_file=pid_file,
         agent_log_file=agent_log_file,
+    )
+
+
+def warn_missing_server_url(config: AgentConfig) -> None:
+    """Print a bilingual warning if PMEOW_SERVER_URL is not configured."""
+    if config.server_url:
+        return
+    print(
+        "\n"
+        "⚠ PMEOW_SERVER_URL is not set. The agent will run in local-only mode (no server connection).\n"
+        "⚠ PMEOW_SERVER_URL 未设置。Agent 将以本地模式运行（不连接服务器）。\n"
+        "\n"
+        "To configure / 配置方法:\n"
+        "  export PMEOW_SERVER_URL=http://your-server:17200\n",
+        file=sys.stderr,
     )

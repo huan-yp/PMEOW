@@ -20,13 +20,21 @@ _MAX_BUFFER = 100
 _MAX_BACKOFF = 60
 
 
+_VALID_SCHEMES = {"http", "https", "ws", "wss"}
+
+
 def _normalize_server_url(server_url: str) -> str:
     parsed = urlsplit(server_url)
+    if parsed.scheme not in _VALID_SCHEMES:
+        # e.g. "localhost:17200" → urlsplit puts "localhost" in scheme, "17200" in path
+        server_url = "http://" + server_url
+        parsed = urlsplit(server_url)
+        log.info("no URL scheme provided, assuming http:// → %s", server_url)
     if parsed.scheme == "ws":
         return urlunsplit(("http", parsed.netloc, parsed.path.rstrip("/"), parsed.query, parsed.fragment))
     if parsed.scheme == "wss":
         return urlunsplit(("https", parsed.netloc, parsed.path.rstrip("/"), parsed.query, parsed.fragment))
-    return server_url.rstrip("/")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), parsed.query, parsed.fragment))
 
 
 class AgentTransportClient:

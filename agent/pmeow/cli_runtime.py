@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from dataclasses import replace
 
-from pmeow.config import load_config, validate_path
+from pmeow.config import load_config, validate_path, warn_missing_server_url
 from pmeow.daemon.service import DaemonService
 from pmeow.daemon.supervisor import (
     is_background_running,
@@ -15,6 +15,7 @@ from pmeow.runtime_logging import configure_runtime_logging
 
 def _runtime_config(args, *, require_agent_log_file: bool = False):
     config = load_config()
+    warn_missing_server_url(config)
     override = getattr(args, "agent_log_file", None)
     if override:
         config = replace(config, agent_log_file=validate_path(override))
@@ -29,6 +30,7 @@ def _runtime_config(args, *, require_agent_log_file: bool = False):
 
 def run_foreground(args) -> None:
     config = load_config()
+    warn_missing_server_url(config)
     configure_runtime_logging(log_to_console=True)
     DaemonService(config).start()
 
