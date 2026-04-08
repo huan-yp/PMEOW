@@ -49,11 +49,11 @@ export function insertPersonAttributionFacts(facts: PersonAttributionFact[]): vo
   const db = getDatabase();
   const stmt = db.prepare(`
     INSERT INTO person_attribution_facts (timestamp, sourceType, serverId, personId, rawUser, taskId, gpuIndex, vramMB, taskStatus, resolutionSource, metadataJson)
-    VALUES (?, 'gpu_snapshot', ?, ?, ?, ?, ?, ?, NULL, ?, '{}')
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, '{}')
   `);
   const insertMany = db.transaction((rows: PersonAttributionFact[]) => {
     for (const f of rows) {
-      stmt.run(f.timestamp, f.serverId, f.personId, f.rawUser, f.taskId, f.gpuIndex, f.vramMB, f.resolutionSource);
+      stmt.run(f.timestamp, f.sourceType, f.serverId, f.personId, f.rawUser, f.taskId, f.gpuIndex, f.vramMB, f.resolutionSource);
     }
   });
   insertMany(facts);

@@ -4,7 +4,8 @@ import { createServer } from '../src/db/servers.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../src/db/persons.js';
 import { upsertAgentTask } from '../src/db/agent-tasks.js';
 import { writeAttributionFacts } from '../src/person/attribution.js';
-import { insertPersonAttributionFacts } from '../src/db/person-attribution.js';
+import { insertPersonAttributionFacts, getPersonTimeline } from '../src/db/person-attribution.js';
+import { ingestAgentMetrics } from '../src/agent/ingest.js';
 import type { MetricsSnapshot, PersonAttributionFact } from '../src/types.js';
 
 function makeSnapshot(serverId: string, overrides?: Partial<MetricsSnapshot>): MetricsSnapshot {
@@ -181,13 +182,58 @@ describe('person attribution fact persistence', () => {
     expect(facts[0].resolutionSource).toBe('override');
   });
 
+  it('produces a non-empty person timeline when the only GPU usage is a pmeow task (agent pipeline)', () => {
+    const server = createServer({ name: 'task-only', host: 'task-only', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-task-only' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 10 * 60 * 1000 });
+    upsertAgentTask({ serverId: server.id, taskId: 'task-only-1', status: 'running', user: 'alice', startedAt: now - 60_000 });
+
+    const snapshot: MetricsSnapshot = {
+      serverId: server.id,
+      timestamp: now,
+      cpu: { usagePercent: 0, coreCount: 1, modelName: 'CPU', frequencyMhz: 0, perCoreUsage: [0] },
+      memory: { totalMB: 1, usedMB: 0, availableMB: 1, usagePercent: 0, swapTotalMB: 0, swapUsedMB: 0, swapPercent: 0 },
+      disk: { disks: [], ioReadKBs: 0, ioWriteKBs: 0 },
+      network: { rxBytesPerSec: 0, txBytesPerSec: 0, interfaces: [] },
+      gpu: { available: true, totalMemoryMB: 24576, usedMemoryMB: 6144, memoryUsagePercent: 25, utilizationPercent: 0, temperatureC: 0, gpuCount: 1 },
+      processes: [],
+      docker: [],
+      system: { hostname: 'task-only', uptime: '1 day', loadAvg1: 0, loadAvg5: 0, loadAvg15: 0, kernelVersion: '6.8.0' },
+      gpuAllocation: {
+        perGpu: [{
+          gpuIndex: 0,
+          totalMemoryMB: 24576,
+          usedMemoryMB: 6144,
+          pmeowTasks: [{ taskId: 'task-only-1', gpuIndex: 0, declaredVramMB: 8192, actualVramMB: 6144 }],
+          userProcesses: [],
+          unknownProcesses: [],
+          effectiveFreeMB: 18432,
+        }],
+        byUser: [],
+      },
+    };
+
+    // Replicate scheduler.handleMetrics for agent data: both attribution paths run.
+    ingestAgentMetrics(snapshot);
+    writeAttributionFacts(snapshot, []);
+
+    // getPersonTimeline should surface rows for Alice and include task VRAM in taskVramMB.
+    const timeline = getPersonTimeline(alice.id, 24);
+    expect(timeline.length, 'timeline must not be empty for a person whose only GPU usage is a pmeow task').toBeGreaterThan(0);
+    const total = timeline.reduce((sum, p) => sum + p.totalVramMB, 0);
+    const taskOnly = timeline.reduce((sum, p) => sum + p.taskVramMB, 0);
+    expect(total, 'total VRAM should count the task allocation').toBeGreaterThan(0);
+    expect(taskOnly, 'task VRAM should be attributed to taskVramMB (not nonTaskVramMB)').toBeGreaterThan(0);
+  });
+
   it('batch inserts via insertPersonAttributionFacts correctly', () => {
     const server = createServer({ name: 'fact-batch', host: 'fact-batch', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-batch' });
     const now = Date.now();
 
     const batch: PersonAttributionFact[] = [
-      { personId: null, rawUser: 'user-a', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 1024, timestamp: now, resolutionSource: 'unassigned' },
-      { personId: null, rawUser: 'user-b', taskId: null, serverId: server.id, gpuIndex: 1, vramMB: 2048, timestamp: now, resolutionSource: 'unassigned' },
+      { personId: null, rawUser: 'user-a', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 1024, timestamp: now, sourceType: 'gpu_user', resolutionSource: 'unassigned' },
+      { personId: null, rawUser: 'user-b', taskId: null, serverId: server.id, gpuIndex: 1, vramMB: 2048, timestamp: now, sourceType: 'gpu_user', resolutionSource: 'unassigned' },
     ];
 
     insertPersonAttributionFacts(batch);
