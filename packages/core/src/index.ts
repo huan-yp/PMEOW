@@ -103,8 +103,8 @@ export {
   getServerPersonActivity,
 	listPersonBindingCandidates,
   listPersonBindingSuggestions,
-  getResolvedGpuAllocation,
 } from './db/person-attribution.js';
+export { getResolvedGpuAllocation } from './agent/gpu-allocation-resolver.js';
 export {
   createPersonMobileToken,
   rotatePersonMobileToken,

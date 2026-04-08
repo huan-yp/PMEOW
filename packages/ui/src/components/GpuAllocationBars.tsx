@@ -1,5 +1,6 @@
 import type { GpuAllocationSummary, ResolvedGpuAllocationResponse } from '@monitor/core';
 import { formatVramGB } from '../utils/vram.js';
+import { getOwnerColor, FREE_COLOR, UNATTRIBUTED_COLOR } from '../utils/ownerColor.js';
 
 interface Props {
   allocation?: GpuAllocationSummary;
@@ -12,28 +13,6 @@ interface Segment {
   value: number;
   className?: string;
   style?: React.CSSProperties;
-}
-
-const OWNER_PALETTE = [
-  '#3b82f6', '#10b981', '#8b5cf6', '#f97316', '#06b6d4',
-  '#ec4899', '#14b8a6', '#a855f7', '#f59e0b', '#6366f1',
-];
-const FREE_COLOR = 'rgb(51, 65, 85)'; // slate-700
-const UNKNOWN_COLOR = '#f59e0b'; // amber-500
-const UNATTRIBUTED_COLOR = '#94a3b8'; // slate-400
-
-function hashOwnerKey(ownerKey: string): number {
-  let hash = 0;
-  for (let i = 0; i < ownerKey.length; i++) {
-    hash = ((hash << 5) - hash + ownerKey.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-function getOwnerColor(ownerKey: string, ownerKind: string): string {
-  if (ownerKey === 'unattributed') return UNATTRIBUTED_COLOR;
-  if (ownerKind === 'unknown') return UNKNOWN_COLOR;
-  return OWNER_PALETTE[hashOwnerKey(ownerKey) % OWNER_PALETTE.length];
 }
 
 function buildSegments(
