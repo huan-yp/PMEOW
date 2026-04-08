@@ -227,6 +227,50 @@ describe('person attribution fact persistence', () => {
     expect(taskOnly, 'task VRAM should be attributed to taskVramMB (not nonTaskVramMB)').toBeGreaterThan(0);
   });
 
+  it('averages multiple snapshots within a bucket instead of summing them', () => {
+    const server = createServer({ name: 'avg-test', host: 'avg-test', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-avg' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // Three snapshots 1 minute apart, each showing 4096 MB VRAM for Alice's task.
+    for (let i = 0; i < 3; i++) {
+      const ts = now - (2 - i) * 60_000;
+      insertPersonAttributionFacts([{
+        personId: alice.id, rawUser: 'alice', taskId: 'task-avg', serverId: server.id,
+        gpuIndex: 0, vramMB: 4096, timestamp: ts, sourceType: 'gpu_task',
+        resolutionSource: 'binding',
+      }]);
+    }
+
+    // All 3 snapshots land in the same bucket. The chart should show ~4096 MB (average),
+    // NOT 12288 (sum).
+    const timeline = getPersonTimeline(alice.id, 24);
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0].totalVramMB).toBe(4096);
+    expect(timeline[0].taskVramMB).toBe(4096);
+  });
+
+  it('uses finer bucket granularity for shorter periods', () => {
+    const server = createServer({ name: 'granularity', host: 'granularity', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-gran' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 3_600_000 });
+
+    // Two snapshots 10 minutes apart — these should land in different buckets for 24h
+    // (5-min buckets) but would collapse into the same 60-min bucket with the old code.
+    const ts1 = now - 15 * 60_000;
+    const ts2 = now - 5 * 60_000;
+    insertPersonAttributionFacts([
+      { personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 2048, timestamp: ts1, sourceType: 'gpu_user', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 8192, timestamp: ts2, sourceType: 'gpu_user', resolutionSource: 'binding' },
+    ]);
+
+    const timeline = getPersonTimeline(alice.id, 24);
+    // With 5-min buckets for 24h, the two snapshots (10 min apart) should be in different buckets.
+    expect(timeline.length, 'two snapshots 10 min apart should produce 2 points for 24h period').toBe(2);
+  });
+
   it('batch inserts via insertPersonAttributionFacts correctly', () => {
     const server = createServer({ name: 'fact-batch', host: 'fact-batch', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-batch' });
     const now = Date.now();

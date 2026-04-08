@@ -212,11 +212,19 @@ export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
     .sort((a, b) => b.currentVramMB - a.currentVramMB || a.displayName.localeCompare(b.displayName));
 }
 
-export function getPersonTimeline(personId: string, hours = 168, bucketMinutes = 60): PersonTimelinePoint[] {
+export function getPersonTimeline(personId: string, hours = 168, bucketMinutes?: number): PersonTimelinePoint[] {
   const db = getDatabase();
   const now = Date.now();
   const from = now - hours * 60 * 60 * 1000;
-  const bucketSizeMs = bucketMinutes * 60 * 1000;
+
+  // Auto-pick bucket size so the chart has ~300 data points.
+  const effectiveBucketMinutes = bucketMinutes ?? (
+    hours <= 24 ? 5 :
+    hours <= 168 ? 30 :
+    hours <= 720 ? 120 :
+    240
+  );
+  const bucketSizeMs = effectiveBucketMinutes * 60 * 1000;
 
   const rows = db.prepare(`
     SELECT timestamp, vramMB, sourceType
@@ -225,27 +233,42 @@ export function getPersonTimeline(personId: string, hours = 168, bucketMinutes =
     ORDER BY timestamp ASC
   `).all(personId, from) as Array<{ timestamp: number; vramMB: number; sourceType: string }>;
 
-  const points = new Map<number, PersonTimelinePoint>();
-
+  // Step 1: aggregate per timestamp (one snapshot may produce multiple fact rows,
+  // e.g. one per GPU or one per process).
+  const perSnapshot = new Map<number, { total: number; task: number; nonTask: number }>();
   for (const row of rows) {
-    const bucketStart = Math.floor(row.timestamp / bucketSizeMs) * bucketSizeMs;
-    const existing = points.get(bucketStart) ?? {
-      bucketStart,
-      personId,
-      totalVramMB: 0,
-      taskVramMB: 0,
-      nonTaskVramMB: 0,
-    };
-    existing.totalVramMB += row.vramMB ?? 0;
+    const entry = perSnapshot.get(row.timestamp) ?? { total: 0, task: 0, nonTask: 0 };
+    const vram = row.vramMB ?? 0;
+    entry.total += vram;
     if (row.sourceType === 'gpu_task') {
-      existing.taskVramMB += row.vramMB ?? 0;
+      entry.task += vram;
     } else {
-      existing.nonTaskVramMB += row.vramMB ?? 0;
+      entry.nonTask += vram;
     }
-    points.set(bucketStart, existing);
+    perSnapshot.set(row.timestamp, entry);
   }
 
-  return Array.from(points.values()).sort((a, b) => a.bucketStart - b.bucketStart);
+  // Step 2: bucket by time and average across snapshots within each bucket.
+  const buckets = new Map<number, { total: number; task: number; nonTask: number; count: number }>();
+  for (const [ts, snap] of perSnapshot) {
+    const bucketStart = Math.floor(ts / bucketSizeMs) * bucketSizeMs;
+    const acc = buckets.get(bucketStart) ?? { total: 0, task: 0, nonTask: 0, count: 0 };
+    acc.total += snap.total;
+    acc.task += snap.task;
+    acc.nonTask += snap.nonTask;
+    acc.count += 1;
+    buckets.set(bucketStart, acc);
+  }
+
+  return Array.from(buckets.entries())
+    .map(([bucketStart, acc]) => ({
+      bucketStart,
+      personId,
+      totalVramMB: Math.round(acc.total / acc.count),
+      taskVramMB: Math.round(acc.task / acc.count),
+      nonTaskVramMB: Math.round(acc.nonTask / acc.count),
+    }))
+    .sort((a, b) => a.bucketStart - b.bucketStart);
 }
 
 export function getPersonTasks(personId: string, hours = 168): MirroredAgentTaskRecord[] {
