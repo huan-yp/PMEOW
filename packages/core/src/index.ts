@@ -94,9 +94,13 @@ export {
   getActiveTaskOwnerOverride,
 } from './db/persons.js';
 export { resolveTaskPerson, resolveRawUserPerson } from './person/resolve.js';
+export { writeAttributionFacts } from './person/attribution.js';
 export {
+  insertPersonAttributionFacts,
   recordGpuAttributionFacts,
   recordTaskAttributionFact,
+  estimateSnapshotIntervalMs,
+  queryPersonCumulativeStats,
   getPersonSummaries,
   getPersonTimeline,
   getPersonTasks,

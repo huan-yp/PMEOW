@@ -670,3 +670,18 @@ export interface ResolvedGpuAllocationResponse {
   snapshotTimestamp: number;
   perGpu: ResolvedPerGpuAllocation[];
 }
+
+// ========================
+// Person Attribution Fact
+// ========================
+
+export interface PersonAttributionFact {
+  personId: string | null;
+  rawUser: string | null;
+  taskId: string | null;
+  serverId: string;
+  gpuIndex: number;
+  vramMB: number;
+  timestamp: number;
+  resolutionSource: 'binding' | 'override' | 'unassigned';
+}

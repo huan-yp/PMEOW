@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from typing import Optional
 
 from pmeow.models import GpuProcessInfo, GpuSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 def _run_smi(args: list[str]) -> Optional[str]:
@@ -121,10 +124,22 @@ def collect_gpu_processes() -> list[GpuProcessInfo]:
             continue
         try:
             pid = int(parts[0])
-            gpu_uuid = parts[1]
-            used_mb = float(parts[2])
         except ValueError:
             continue
+        gpu_uuid = parts[1]
+        try:
+            used_mb = float(parts[2])
+        except ValueError:
+            # WSL2 and some virtualized GPU environments report [N/A] for
+            # per-process memory.  Fall back to 0 so the process still
+            # appears in attribution; log a warning so operators on real
+            # servers notice the anomaly.
+            logger.warning(
+                "nvidia-smi reported [N/A] memory for PID %d; "
+                "falling back to 0 MB (common in WSL2 / vGPU environments)",
+                pid,
+            )
+            used_mb = 0.0
         gpu_index = uuid_map.get(gpu_uuid, 0)
         processes.append(GpuProcessInfo(
             pid=pid,
