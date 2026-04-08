@@ -143,11 +143,24 @@ export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
   const now = Date.now();
   const from = now - hours * 60 * 60 * 1000;
 
+  // currentVramMB must reflect the LATEST snapshot per server, not the sum across
+  // all historical snapshots.  Find the latest timestamp per (person, server) first,
+  // then sum vramMB only at those timestamps.
   const gpuRows = db.prepare(`
-    SELECT personId, SUM(vramMB) as totalVram, COUNT(DISTINCT serverId) as serverCount, MAX(timestamp) as lastActivity
-    FROM person_attribution_facts
-    WHERE personId IS NOT NULL AND sourceType LIKE 'gpu_%' AND timestamp >= ?
-    GROUP BY personId
+    WITH latest AS (
+      SELECT personId, serverId, MAX(timestamp) as latestTs
+      FROM person_attribution_facts
+      WHERE personId IS NOT NULL AND sourceType LIKE 'gpu_%' AND timestamp >= ?
+      GROUP BY personId, serverId
+    )
+    SELECT f.personId,
+           SUM(f.vramMB) as totalVram,
+           COUNT(DISTINCT f.serverId) as serverCount,
+           MAX(f.timestamp) as lastActivity
+    FROM person_attribution_facts f
+    JOIN latest l ON f.personId = l.personId AND f.serverId = l.serverId AND f.timestamp = l.latestTs
+    WHERE f.sourceType LIKE 'gpu_%'
+    GROUP BY f.personId
   `).all(from) as Array<{ personId: string; totalVram: number; serverCount: number; lastActivity: number }>;
 
   const taskRows = db.prepare(`

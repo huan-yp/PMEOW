@@ -4,7 +4,7 @@ import { createServer } from '../src/db/servers.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../src/db/persons.js';
 import { upsertAgentTask } from '../src/db/agent-tasks.js';
 import { writeAttributionFacts } from '../src/person/attribution.js';
-import { insertPersonAttributionFacts, getPersonTimeline } from '../src/db/person-attribution.js';
+import { insertPersonAttributionFacts, getPersonTimeline, getPersonSummaries } from '../src/db/person-attribution.js';
 import { ingestAgentMetrics } from '../src/agent/ingest.js';
 import type { MetricsSnapshot, PersonAttributionFact } from '../src/types.js';
 
@@ -269,6 +269,28 @@ describe('person attribution fact persistence', () => {
     const timeline = getPersonTimeline(alice.id, 24);
     // With 5-min buckets for 24h, the two snapshots (10 min apart) should be in different buckets.
     expect(timeline.length, 'two snapshots 10 min apart should produce 2 points for 24h period').toBe(2);
+  });
+
+  it('currentVramMB in person summaries reflects latest snapshot, not historical sum', () => {
+    const server = createServer({ name: 'summary-vram', host: 'summary-vram', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-summary' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // 5 snapshots 1 minute apart, each showing 4096 MB.
+    for (let i = 0; i < 5; i++) {
+      insertPersonAttributionFacts([{
+        personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+        gpuIndex: 0, vramMB: 4096, timestamp: now - (4 - i) * 60_000,
+        sourceType: 'gpu_user', resolutionSource: 'binding',
+      }]);
+    }
+
+    const summaries = getPersonSummaries(24);
+    const alice_summary = summaries.find(s => s.personId === alice.id);
+    expect(alice_summary).toBeDefined();
+    // Should be 4096 (latest snapshot), NOT 20480 (sum of 5 snapshots).
+    expect(alice_summary!.currentVramMB).toBe(4096);
   });
 
   it('batch inserts via insertPersonAttributionFacts correctly', () => {
