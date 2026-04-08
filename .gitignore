@@ -10,3 +10,5 @@ data/
 packages/ui/android/app/build/
 packages/ui/android/.gradle/
 packages/ui/android/app/src/main/assets/public/
+
+CLAUDE.md
