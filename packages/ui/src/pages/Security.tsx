@@ -43,6 +43,8 @@ function formatEventType(eventType: SecurityEventRecord['eventType']) {
       return '可疑进程';
     case 'unowned_gpu':
       return '未知 GPU 占用';
+    case 'high_gpu_utilization':
+      return 'GPU 高利用率';
     case 'marked_safe':
       return '已标记安全';
     default:
@@ -87,7 +89,7 @@ export function Security() {
       try {
         const nextEvents = await transport.getSecurityEvents(appliedQuery);
         if (!cancelled) {
-          setEvents(nextEvents);
+          setEvents(nextEvents.filter((e) => e.eventType !== 'marked_safe'));
         }
       } catch {
         if (!cancelled) {
