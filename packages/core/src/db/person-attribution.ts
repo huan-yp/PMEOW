@@ -117,22 +117,39 @@ export function estimateSnapshotIntervalMs(from: number): number {
 
 export function queryPersonCumulativeStats(from: number): Map<string, { occupancyHours: number; gbHours: number }> {
   const db = getDatabase();
-  const intervalMs = estimateSnapshotIntervalMs(from);
 
+  // Estimate snapshot interval per server so multi-server deployments
+  // don't skew results (interleaved timestamps from different cadences
+  // would halve the global interval estimate).
+  const serverRows = db.prepare(`
+    SELECT serverId, MIN(timestamp) as minTs, MAX(timestamp) as maxTs, COUNT(DISTINCT timestamp) as cnt
+    FROM person_attribution_facts
+    WHERE sourceType LIKE 'gpu_%' AND timestamp >= ?
+    GROUP BY serverId
+  `).all(from) as Array<{ serverId: string; minTs: number; maxTs: number; cnt: number }>;
+
+  const intervalByServer = new Map<string, number>();
+  for (const sr of serverRows) {
+    const interval = sr.cnt < 2 ? 60_000 : Math.max((sr.maxTs - sr.minTs) / (sr.cnt - 1), 60_000);
+    intervalByServer.set(sr.serverId, interval);
+  }
+
+  // Group by (personId, serverId) so each server's rows use the correct interval.
   const rows = db.prepare(`
-    SELECT personId, COUNT(DISTINCT timestamp) as snapshots, SUM(vramMB) as totalVramMB
+    SELECT personId, serverId, COUNT(DISTINCT timestamp) as snapshots, SUM(vramMB) as totalVramMB
     FROM person_attribution_facts
     WHERE personId IS NOT NULL AND sourceType LIKE 'gpu_%' AND vramMB > 0 AND timestamp >= ?
-    GROUP BY personId
-  `).all(from) as Array<{ personId: string; snapshots: number; totalVramMB: number }>;
+    GROUP BY personId, serverId
+  `).all(from) as Array<{ personId: string; serverId: string; snapshots: number; totalVramMB: number }>;
 
   const result = new Map<string, { occupancyHours: number; gbHours: number }>();
 
   for (const row of rows) {
-    result.set(row.personId, {
-      occupancyHours: (row.snapshots * intervalMs) / 3_600_000,
-      gbHours: (row.totalVramMB * intervalMs) / (1024 * 3_600_000),
-    });
+    const interval = intervalByServer.get(row.serverId) ?? 60_000;
+    const existing = result.get(row.personId) ?? { occupancyHours: 0, gbHours: 0 };
+    existing.occupancyHours += (row.snapshots * interval) / 3_600_000;
+    existing.gbHours += (row.totalVramMB * interval) / (1024 * 3_600_000);
+    result.set(row.personId, existing);
   }
 
   return result;

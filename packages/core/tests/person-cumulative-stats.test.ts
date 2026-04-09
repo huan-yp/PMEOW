@@ -111,6 +111,38 @@ describe('person cumulative stats', () => {
     expect(carolSummary!.vramGigabyteHours).toBeGreaterThan(0);
   });
 
+  it('computes per-server intervals correctly in multi-server deployments', () => {
+    // Server A pushes every 60s, Server B pushes every 60s but offset by 5s.
+    // With a single global interval the interleaving halves the estimate (~30s).
+    const serverA = createServer({ name: 'cum-multi-a', host: 'cum-multi-a', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-multi-a' });
+    const serverB = createServer({ name: 'cum-multi-b', host: 'cum-multi-b', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-multi-b' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    createPersonBinding({ personId: alice.id, serverId: serverA.id, systemUser: 'alice', source: 'manual', effectiveFrom: 0 });
+    createPersonBinding({ personId: alice.id, serverId: serverB.id, systemUser: 'alice', source: 'manual', effectiveFrom: 0 });
+
+    const now = Date.now();
+    // Server A: 3 snapshots at 60s intervals
+    for (let i = 0; i < 3; i++) {
+      insertGpuFact(serverA.id, alice.id, 'alice', 0, 1024, now - (2 - i) * 60_000);
+    }
+    // Server B: 3 snapshots at 60s intervals, offset by 5s
+    for (let i = 0; i < 3; i++) {
+      insertGpuFact(serverB.id, alice.id, 'alice', 0, 2048, now - (2 - i) * 60_000 + 5_000);
+    }
+
+    const from = now - 300_000;
+    const stats = queryPersonCumulativeStats(from);
+    const aliceStats = stats.get(alice.id)!;
+
+    // occupancyHours: 3 snapshots × 60s on each server = 2 × 0.05h = 0.1h
+    expect(aliceStats.occupancyHours).toBeCloseTo(6 * 60_000 / 3_600_000, 4);
+
+    // gbHours: Server A contributes 3 × 1024 MB × 60s, Server B contributes 3 × 2048 MB × 60s
+    // = (3072 × 60000 + 6144 × 60000) / (1024 × 3600000)
+    const expectedGbH = (3 * 1024 * 60_000 + 3 * 2048 * 60_000) / (1024 * 3_600_000);
+    expect(aliceStats.gbHours).toBeCloseTo(expectedGbH, 4);
+  });
+
   it('returns fallback interval of 60s when fewer than 2 distinct timestamps exist', () => {
     const server = createServer({ name: 'cum-6', host: 'cum-6', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-cum-6' });
     const dan = createPerson({ displayName: 'Dan', customFields: {} });
