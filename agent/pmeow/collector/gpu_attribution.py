@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import os
-import pwd
+import sys
 from collections import defaultdict
 from typing import Optional
+
+import psutil
+
+try:
+    import pwd  # Unix only
+except ImportError:
+    pwd = None  # type: ignore[assignment]
 
 from pmeow.models import (
     GpuAllocationSummary,
@@ -20,34 +27,59 @@ from pmeow.models import (
 
 
 def _read_proc_uid(pid: int) -> Optional[int]:
-    """Read the real UID from /proc/<pid>/status, or None."""
-    try:
-        with open(f"/proc/{pid}/status") as f:
-            for line in f:
-                if line.startswith("Uid:"):
-                    return int(line.split()[1])
-    except (OSError, ValueError, IndexError):
+    """Read the real UID from /proc/<pid>/status, or None.
+
+    Falls back to psutil on platforms without /proc (e.g. Windows).
+    """
+    if sys.platform != "win32":
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                for line in f:
+                    if line.startswith("Uid:"):
+                        return int(line.split()[1])
+        except (OSError, ValueError, IndexError):
+            return None
         return None
+    # Windows: UID is not meaningful; return None so callers bucket
+    # the process by username instead.
     return None
 
 
 def _read_proc_cmdline(pid: int) -> Optional[str]:
-    """Read the command line from /proc/<pid>/cmdline, or None."""
-    try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            raw = f.read(4096)
-        if not raw:
+    """Read the command line from /proc/<pid>/cmdline, or None.
+
+    Falls back to psutil on platforms without /proc (e.g. Windows).
+    """
+    if sys.platform != "win32":
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                raw = f.read(4096)
+            if not raw:
+                return None
+            return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+        except OSError:
             return None
-        return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
-    except OSError:
+    try:
+        return " ".join(psutil.Process(pid).cmdline())
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return None
+
+
+def _get_process_username(pid: int) -> Optional[str]:
+    """Return the username owning *pid*, or None."""
+    try:
+        return psutil.Process(pid).username()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
         return None
 
 
 def _uid_to_username(uid: int) -> str:
-    try:
-        return pwd.getpwuid(uid).pw_name
-    except KeyError:
-        return str(uid)
+    if pwd is not None:
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except KeyError:
+            pass
+    return str(uid)
 
 
 def calculate_effective_free(
@@ -111,10 +143,14 @@ def attribute_gpu_processes(
             ))
             continue
 
-        # Try to identify user via /proc
+        # Try to identify user via /proc or psutil
         uid = _read_proc_uid(proc.pid)
         if uid is not None:
-            username = _uid_to_username(uid)
+            username: Optional[str] = _uid_to_username(uid)
+        else:
+            username = _get_process_username(proc.pid)
+
+        if username is not None:
             cmdline = _read_proc_cmdline(proc.pid) or ""
             user_procs[gpu_idx].append(GpuUserProcess(
                 pid=proc.pid,
@@ -130,7 +166,7 @@ def attribute_gpu_processes(
             user_usage[username]["gpus"].add(gpu_idx)  # type: ignore[union-attr]
             continue
 
-        # Unreadable /proc → unknown
+        # Unidentifiable process → unknown
         unknown_procs[gpu_idx].append(GpuUnknownProcess(
             pid=proc.pid,
             gpu_index=gpu_idx,

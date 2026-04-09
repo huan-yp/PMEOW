@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pmeow.collector.cpu import collect_cpu
 from pmeow.collector.disk import collect_disk
@@ -61,6 +61,70 @@ def test_disk_collector_includes_mount_points():
     assert all(isinstance(d.mount_point, str) and d.mount_point for d in disk.disks)
 
 
+def test_disk_collector_filters_etc_bind_mounts():
+    """Docker-injected /etc files should be filtered out."""
+    fake_parts = [
+        SimpleNamespace(device="/dev/sda1", mountpoint="/", fstype="ext4", opts="rw"),
+        SimpleNamespace(device="/dev/sda2", mountpoint="/etc/resolv.conf", fstype="ext4", opts="rw"),
+        SimpleNamespace(device="/dev/sda2", mountpoint="/etc/hostname", fstype="ext4", opts="rw"),
+        SimpleNamespace(device="/dev/sda2", mountpoint="/etc/hosts", fstype="ext4", opts="rw"),
+    ]
+    fake_usage = SimpleNamespace(total=500 * 1024**3, used=200 * 1024**3, free=300 * 1024**3, percent=40.0)
+    fake_io = SimpleNamespace(read_bytes=0, write_bytes=0)
+
+    with patch("pmeow.collector.disk.psutil.disk_partitions", return_value=fake_parts), \
+         patch("pmeow.collector.disk.psutil.disk_usage", return_value=fake_usage), \
+         patch("pmeow.collector.disk.psutil.disk_io_counters", return_value=fake_io), \
+         patch("pmeow.collector.disk.os.path.isfile", return_value=False):
+        disk = collect_disk()
+    mount_points = [d.mount_point for d in disk.disks]
+    assert "/" in mount_points
+    assert "/etc/resolv.conf" not in mount_points
+    assert "/etc/hostname" not in mount_points
+    assert "/etc/hosts" not in mount_points
+
+
+def test_disk_collector_filters_file_bind_mounts():
+    """File-level bind mounts (e.g. nvidia-smi) should be filtered via os.path.isfile."""
+    fake_parts = [
+        SimpleNamespace(device="/dev/sda1", mountpoint="/", fstype="ext4", opts="rw"),
+        SimpleNamespace(device="/dev/sda1", mountpoint="/usr/bin/nvidia-smi", fstype="ext4", opts="rw"),
+        SimpleNamespace(device="/dev/sda1", mountpoint="/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.570.124.06", fstype="ext4", opts="rw"),
+    ]
+    fake_usage = SimpleNamespace(total=500 * 1024**3, used=200 * 1024**3, free=300 * 1024**3, percent=40.0)
+    fake_io = SimpleNamespace(read_bytes=0, write_bytes=0)
+
+    def fake_isfile(path):
+        return path != "/"
+
+    with patch("pmeow.collector.disk.psutil.disk_partitions", return_value=fake_parts), \
+         patch("pmeow.collector.disk.psutil.disk_usage", return_value=fake_usage), \
+         patch("pmeow.collector.disk.psutil.disk_io_counters", return_value=fake_io), \
+         patch("pmeow.collector.disk.os.path.isfile", side_effect=fake_isfile):
+        disk = collect_disk()
+    mount_points = [d.mount_point for d in disk.disks]
+    assert mount_points == ["/"]
+
+
+def test_disk_collector_deduplicates_same_device():
+    """Multiple mounts of the same device+size should be deduplicated to the shortest path."""
+    fake_parts = [
+        SimpleNamespace(device="/dev/vdb", mountpoint="/mnt", fstype="ext4", opts="rw"),
+        SimpleNamespace(device="/dev/vdb", mountpoint="/pfs", fstype="ext4", opts="rw"),
+    ]
+    fake_usage = SimpleNamespace(total=400 * 1024**3, used=270 * 1024**3, free=130 * 1024**3, percent=67.5)
+    fake_io = SimpleNamespace(read_bytes=0, write_bytes=0)
+
+    with patch("pmeow.collector.disk.psutil.disk_partitions", return_value=fake_parts), \
+         patch("pmeow.collector.disk.psutil.disk_usage", return_value=fake_usage), \
+         patch("pmeow.collector.disk.psutil.disk_io_counters", return_value=fake_io), \
+         patch("pmeow.collector.disk.os.path.isfile", return_value=False):
+        disk = collect_disk()
+    mount_points = [d.mount_point for d in disk.disks]
+    assert len(mount_points) == 1
+    assert "/mnt" in mount_points
+
+
 def test_cpu_per_core_usage_length():
     cpu = collect_cpu()
     assert len(cpu.per_core_usage) == cpu.core_count
@@ -107,7 +171,11 @@ def test_local_user_collector_filters_system_accounts_by_default():
     ]
 
     with patch("pmeow.collector.local_users._read_uid_min", return_value=1000):
-        with patch("pmeow.collector.local_users.pwd.getpwall", return_value=entries):
+        target = "pmeow.collector.local_users.pwd"
+        mock_pwd = MagicMock()
+        mock_pwd.getpwall.return_value = entries
+        mock_pwd.struct_passwd = type(entries[0])
+        with patch(target, mock_pwd):
             users = collect_local_users()
 
     assert [user.username for user in users] == ["alice"]

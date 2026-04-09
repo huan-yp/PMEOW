@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 import psutil
@@ -22,6 +23,13 @@ _SKIP_MOUNT_PREFIXES = frozenset({
     "/mnt/wslg",
     "/var/lib/docker",
 })
+
+# Exact mount points injected by Docker / container runtimes.
+_SKIP_MOUNT_EXACT = frozenset({
+    "/etc/resolv.conf",
+    "/etc/hostname",
+    "/etc/hosts",
+})
 _PREVIOUS_IO_SAMPLE: tuple[int, int, float] | None = None
 
 
@@ -29,6 +37,15 @@ def _is_noisy_mount_point(mount_point: str) -> bool:
     normalized = mount_point.rstrip("/") or "/"
     if normalized == "/":
         return False
+
+    # Exact matches (Docker-injected config files).
+    if normalized in _SKIP_MOUNT_EXACT:
+        return True
+
+    # File-level bind mounts (e.g. /usr/bin/nvidia-smi, /usr/lib/.../lib*.so.*).
+    # These are individual files mounted from the host, not real partitions.
+    if os.path.isfile(mount_point):
+        return True
 
     return any(
         normalized == prefix or normalized.startswith(prefix + "/")
@@ -82,6 +99,17 @@ def collect_disk() -> DiskSnapshot:
             available_gb=round(usage.free / _GB, 2),
             usage_percent=round(usage.percent, 1),
         ))
+
+    # Deduplicate: when multiple mount points map to the same physical device
+    # and capacity (e.g. /mnt and /pfs both backed by the same volume), keep
+    # only the one with the shortest mount path.
+    seen: dict[tuple[str, float], DiskInfo] = {}
+    for d in disks:
+        key = (d.filesystem, d.total_gb)
+        existing = seen.get(key)
+        if existing is None or len(d.mount_point) < len(existing.mount_point):
+            seen[key] = d
+    disks = list(seen.values())
 
     io_read_kbs, io_write_kbs = _compute_io_rates(psutil.disk_io_counters())
 

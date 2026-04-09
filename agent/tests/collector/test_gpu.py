@@ -197,32 +197,15 @@ class TestAttributionPmeowTask:
 class TestAttributionUserProcess:
     def test_proc_readable(self):
         proc = GpuProcessInfo(pid=9999, gpu_index=0, used_memory_mb=3000.0, process_name="")
-        status_content = "Name:\tpython\nUid:\t1000\t1000\t1000\t1000\n"
-        cmdline_content = b"python\x00train.py\x00--lr=0.01"
 
-        import builtins
-
-        real_open = builtins.open
-
-        def _fake_open(path, *args, **kwargs):
-            if path == "/proc/9999/status":
-                return mock_open(read_data=status_content)()
-            if path == "/proc/9999/cmdline":
-                m = MagicMock()
-                m.__enter__ = lambda s: s
-                m.__exit__ = MagicMock(return_value=False)
-                m.read = MagicMock(return_value=cmdline_content)
-                return m
-            return real_open(path, *args, **kwargs)
-
-        with patch("pmeow.collector.gpu_attribution.pwd.getpwuid") as mock_pw:
-            mock_pw.return_value = MagicMock(pw_name="testuser")
-            with patch("builtins.open", side_effect=_fake_open):
-                summary = attribute_gpu_processes(
-                    gpu_processes=[proc],
-                    running_tasks=[],
-                    per_gpu_memory={0: 24000.0},
-                )
+        with patch("pmeow.collector.gpu_attribution._read_proc_uid", return_value=1000):
+            with patch("pmeow.collector.gpu_attribution._uid_to_username", return_value="testuser"):
+                with patch("pmeow.collector.gpu_attribution._read_proc_cmdline", return_value="python train.py --lr=0.01"):
+                    summary = attribute_gpu_processes(
+                        gpu_processes=[proc],
+                        running_tasks=[],
+                        per_gpu_memory={0: 24000.0},
+                    )
         assert len(summary.per_gpu[0].user_processes) == 1
         up = summary.per_gpu[0].user_processes[0]
         assert isinstance(up, GpuUserProcess)
@@ -243,7 +226,17 @@ class TestAttributionUnknownProcess:
     def test_proc_not_readable(self):
         proc = GpuProcessInfo(pid=7777, gpu_index=1, used_memory_mb=512.0, process_name="")
 
-        with patch("builtins.open", side_effect=OSError("Permission denied")):
+        # Simulate both /proc read and the psutil fallback failing to identify
+        # the owning user. Patch the helpers at the function level (returning
+        # None, the value the real helpers yield when they catch their own
+        # OSError) rather than patching builtins.open, which would also break
+        # psutil's unrelated internal /proc reads and raise before the
+        # attribution code gets a chance to bucket the process as unknown.
+        with patch(
+            "pmeow.collector.gpu_attribution._read_proc_uid", return_value=None,
+        ), patch(
+            "pmeow.collector.gpu_attribution._get_process_username", return_value=None,
+        ):
             summary = attribute_gpu_processes(
                 gpu_processes=[proc],
                 running_tasks=[],

@@ -280,6 +280,12 @@ class NetworkSnapshot:
     rx_bytes_per_sec: float
     tx_bytes_per_sec: float
     interfaces: list[NetworkInterface] = field(default_factory=list)
+    # Internet reachability probe result (optional; None when probe is disabled
+    # or has not yet produced a sample). Mirrors NetworkMetrics on the TS side.
+    internet_reachable: Optional[bool] = None
+    internet_latency_ms: Optional[float] = None
+    internet_probe_target: Optional[str] = None
+    internet_probe_checked_at: Optional[float] = None
 
     def to_dict(self) -> dict:
         return _serialize(self)
@@ -359,4 +365,13 @@ class MetricsSnapshot:
         # gpu_allocation is agent-only; strip if None
         if self.gpu_allocation is None:
             d.pop("gpuAllocation", None)
+        # Strip internet probe fields from the network sub-dict when the agent
+        # has no probe result, so the TS payload matches the optional/undefined
+        # shape instead of carrying explicit nulls on every snapshot.
+        # _serialize is recursive and does not call nested to_dict(), so the
+        # stripping must happen at this level.
+        net = d.get("network")
+        if isinstance(net, dict) and self.network.internet_reachable is None and self.network.internet_probe_checked_at is None:
+            for key in ("internetReachable", "internetLatencyMs", "internetProbeTarget", "internetProbeCheckedAt"):
+                net.pop(key, None)
         return d

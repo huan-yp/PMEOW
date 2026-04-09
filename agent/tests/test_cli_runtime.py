@@ -59,3 +59,53 @@ def test_build_parser_accepts_systemd_commands():
     assert parser.parse_args(["install-service"]).command == "install-service"
     assert parser.parse_args(["install-service", "--enable", "--start"]).start is True
     assert parser.parse_args(["uninstall-service"]).command == "uninstall-service"
+
+
+def test_run_foreground_warns_when_server_url_missing(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("PMEOW_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("PMEOW_SERVER_URL", raising=False)
+
+    class FakeService:
+        def __init__(self, config):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr("pmeow.cli_runtime.DaemonService", FakeService)
+
+    run_foreground(type("Args", (), {"command": "run"})())
+
+    stderr = capsys.readouterr().err
+    assert "PMEOW_SERVER_URL" in stderr
+    assert "export PMEOW_SERVER_URL=" in stderr
+
+
+def test_run_foreground_no_warning_when_server_url_set(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("PMEOW_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PMEOW_SERVER_URL", "http://localhost:17200")
+
+    class FakeService:
+        def __init__(self, config):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr("pmeow.cli_runtime.DaemonService", FakeService)
+
+    run_foreground(type("Args", (), {"command": "run"})())
+
+    stderr = capsys.readouterr().err
+    assert "PMEOW_SERVER_URL" not in stderr
+
+
+def test_start_background_warns_when_server_url_missing(monkeypatch, capsys, tmp_path):
+    monkeypatch.setenv("PMEOW_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("PMEOW_SERVER_URL", raising=False)
+
+    with pytest.raises(SystemExit):
+        start_background(type("Args", (), {"agent_log_file": None})())
+
+    stderr = capsys.readouterr().err
+    assert "PMEOW_SERVER_URL" in stderr

@@ -50,6 +50,20 @@ export function Overview() {
     (latest, snapshot) => Math.max(latest, snapshot.timestamp),
     0,
   );
+
+  // Internet reachability aggregation — only consider snapshots that carry
+  // probe results (the field is optional; SSH nodes with an older collector
+  // or Agents that have disabled the probe will not set it).
+  const networkSnapshots = Array.from(latestMetrics.values()).filter(
+    (s) => s.network.internetReachable !== undefined,
+  );
+  const internetReachableCount = networkSnapshots.filter(
+    (s) => s.network.internetReachable === true,
+  ).length;
+  const internetUnreachableCount = networkSnapshots.filter(
+    (s) => s.network.internetReachable === false,
+  ).length;
+  const hasInternetData = networkSnapshots.length > 0;
   const activeTaskGroups = [...taskQueueGroups]
     .sort((left, right) => (right.running.length + right.queued.length) - (left.running.length + left.queued.length))
     .slice(0, 3);
@@ -94,6 +108,35 @@ export function Overview() {
       badges: [],
     },
     {
+      key: 'internet',
+      label: '外网连通',
+      value: hasInternetData
+        ? `${internetReachableCount}/${networkSnapshots.length}`
+        : '--',
+      hint: !hasInternetData
+        ? '等待节点上报外网探测数据'
+        : internetUnreachableCount === 0
+          ? '所有上报节点外网畅通'
+          : `${internetUnreachableCount} 个节点外网不可达`,
+      cardClassName: !hasInternetData
+        ? 'border-white/10 bg-slate-950/30'
+        : internetUnreachableCount > 0
+          ? 'border-rose-400/20 bg-rose-500/[0.07]'
+          : 'border-emerald-400/20 bg-emerald-500/[0.06]',
+      valueClassName: 'text-slate-100',
+      hintClassName: !hasInternetData
+        ? 'text-slate-400'
+        : internetUnreachableCount > 0
+          ? 'text-rose-300/80'
+          : 'text-emerald-300/75',
+      badges: hasInternetData
+        ? [
+            { label: '可达', value: String(internetReachableCount), className: 'node-badge-base node-badge-status-online' },
+            { label: '不可达', value: String(internetUnreachableCount), className: 'node-badge-base node-badge-status-offline' },
+          ]
+        : [],
+    },
+    {
       key: 'sampling',
       label: '最新采样',
       value: latestMetricTimestamp > 0 ? formatTime(latestMetricTimestamp) : '--',
@@ -113,7 +156,7 @@ export function Overview() {
   return (
     <div className="p-6 space-y-6">
       <section>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {stats.map((item) => (
             <div key={item.key} className={`rounded-2xl border p-4 backdrop-blur-sm ${item.cardClassName}`}>
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500">{item.label}</p>

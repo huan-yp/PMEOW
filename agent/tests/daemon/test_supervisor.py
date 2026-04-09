@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import signal
+import sys
 
 import pytest
 
@@ -44,7 +45,13 @@ def test_stop_background_process_signals_and_removes_pid_file(tmp_path, monkeypa
     monkeypatch.setattr("pmeow.daemon.supervisor.wait_for_exit", lambda pid, timeout: True)
 
     assert stop_background_process(str(pid_file), timeout=1.0) is True
-    assert calls == [(9876, signal.SIGTERM)]
+    if sys.platform == "win32":
+        # On Windows, stop_background_process waits briefly then calls
+        # os.kill only if the process hasn't exited yet.  The monkeypatched
+        # wait_for_exit returns True immediately, so no kill is expected.
+        assert calls == []
+    else:
+        assert calls == [(9876, signal.SIGTERM)]
     assert not pid_file.exists()
 
 
