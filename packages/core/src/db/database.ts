@@ -380,6 +380,26 @@ function initSchema(db: Database.Database): void {
       ON security_events(serverId, eventType, fingerprint)
       WHERE resolved = 0;
   `);
+
+  // Fix historical marked_safe audit events that were incorrectly left as unresolved.
+  // Each marked_safe event references the original event via targetEventId in detailsJson.
+  // We resolve them by copying resolvedBy/resolvedAt from the original event.
+  db.exec(`
+    UPDATE security_events
+    SET resolved = 1,
+        resolvedBy = (
+          SELECT se2.resolvedBy
+          FROM security_events se2
+          WHERE se2.id = CAST(json_extract(security_events.detailsJson, '$.targetEventId') AS INTEGER)
+        ),
+        resolvedAt = (
+          SELECT se2.resolvedAt
+          FROM security_events se2
+          WHERE se2.id = CAST(json_extract(security_events.detailsJson, '$.targetEventId') AS INTEGER)
+        )
+    WHERE eventType = 'marked_safe'
+      AND resolved = 0
+  `);
 }
 
 function ensureColumns(db: Database.Database, tableName: string, columns: SchemaColumn[]): void {

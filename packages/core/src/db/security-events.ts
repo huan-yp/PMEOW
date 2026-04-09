@@ -135,6 +135,12 @@ export function markSecurityEventSafe(
     WHERE id = ?
   `);
 
+  const resolveAuditEvent = db.prepare(`
+    UPDATE security_events
+    SET resolved = 1, resolvedBy = ?, resolvedAt = ?
+    WHERE id = ?
+  `);
+
   const transact = db.transaction(() => {
     runUpdate.run(resolvedBy, resolvedAt, id);
 
@@ -153,7 +159,11 @@ export function markSecurityEventSafe(
       },
     });
 
-    return { resolvedEvent, auditEvent };
+    // Mark the audit event as resolved so it does not show up as an unresolved issue
+    resolveAuditEvent.run(resolvedBy, resolvedAt, auditEvent.id);
+    const finalAuditEvent = getSecurityEventById(auditEvent.id)!;
+
+    return { resolvedEvent, auditEvent: finalAuditEvent };
   });
 
   return transact();
