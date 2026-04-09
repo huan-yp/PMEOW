@@ -220,11 +220,9 @@ describe('person attribution fact persistence', () => {
 
     // getPersonTimeline should surface rows for Alice and include task VRAM in taskVramMB.
     const timeline = getPersonTimeline(alice.id, 24);
-    expect(timeline.length, 'timeline must not be empty for a person whose only GPU usage is a pmeow task').toBeGreaterThan(0);
-    const total = timeline.reduce((sum, p) => sum + p.totalVramMB, 0);
-    const taskOnly = timeline.reduce((sum, p) => sum + p.taskVramMB, 0);
-    expect(total, 'total VRAM should count the task allocation').toBeGreaterThan(0);
-    expect(taskOnly, 'task VRAM should be attributed to taskVramMB (not nonTaskVramMB)').toBeGreaterThan(0);
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero.length, 'timeline must contain at least one non-zero point for a pmeow task').toBeGreaterThan(0);
+    expect(nonZero[0].taskVramMB, 'task VRAM should be attributed to taskVramMB (not nonTaskVramMB)').toBeGreaterThan(0);
   });
 
   it('averages multiple snapshots within a bucket instead of summing them', () => {
@@ -244,11 +242,12 @@ describe('person attribution fact persistence', () => {
     }
 
     // All 3 snapshots land in the same bucket. The chart should show ~4096 MB (average),
-    // NOT 12288 (sum).
+    // NOT 12288 (sum).  Timeline is zero-filled so find the bucket with data.
     const timeline = getPersonTimeline(alice.id, 24);
-    expect(timeline).toHaveLength(1);
-    expect(timeline[0].totalVramMB).toBe(4096);
-    expect(timeline[0].taskVramMB).toBe(4096);
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero).toHaveLength(1);
+    expect(nonZero[0].totalVramMB).toBe(4096);
+    expect(nonZero[0].taskVramMB).toBe(4096);
   });
 
   it('uses finer bucket granularity for shorter periods', () => {
@@ -268,7 +267,9 @@ describe('person attribution fact persistence', () => {
 
     const timeline = getPersonTimeline(alice.id, 24);
     // With 5-min buckets for 24h, the two snapshots (10 min apart) should be in different buckets.
-    expect(timeline.length, 'two snapshots 10 min apart should produce 2 points for 24h period').toBe(2);
+    // Timeline is zero-filled across the full 24h range.
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero.length, 'two snapshots 10 min apart should produce 2 non-zero points for 24h period').toBe(2);
   });
 
   it('runningTaskCount reflects live task status, not historical transitions', () => {
@@ -332,6 +333,56 @@ describe('person attribution fact persistence', () => {
     expect(alice_summary).toBeDefined();
     // Should be 4096 (latest snapshot), NOT 20480 (sum of 5 snapshots).
     expect(alice_summary!.currentVramMB).toBe(4096);
+  });
+
+  it('currentVramMB drops to 0 when person stops using VRAM but server keeps pushing', () => {
+    const server = createServer({ name: 'vram-drop', host: 'vram-drop', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-vram-drop' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // Alice used 4096 MB two minutes ago.
+    insertPersonAttributionFacts([{
+      personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 4096, timestamp: now - 120_000,
+      sourceType: 'gpu_user', resolutionSource: 'binding',
+    }]);
+    // Server kept pushing — an unrelated user appears in the latest snapshot.
+    insertPersonAttributionFacts([{
+      personId: null, rawUser: 'bob', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 2048, timestamp: now,
+      sourceType: 'gpu_user', resolutionSource: 'unassigned',
+    }]);
+
+    const summaries = getPersonSummaries(24);
+    const alice_summary = summaries.find(s => s.personId === alice.id);
+    expect(alice_summary).toBeDefined();
+    // Alice has no facts at the server's latest timestamp → currentVramMB = 0
+    expect(alice_summary!.currentVramMB).toBe(0);
+    // But she should still appear (via cumulative stats) with historical occupancy > 0
+    expect(alice_summary!.vramOccupancyHours).toBeGreaterThan(0);
+  });
+
+  it('timeline extends to current time with zero-fill', () => {
+    const server = createServer({ name: 'timeline-fill', host: 'timeline-fill', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-fill' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 3_600_000 });
+
+    // Single snapshot 1 hour ago.
+    insertPersonAttributionFacts([{
+      personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 2048, timestamp: now - 3_600_000,
+      sourceType: 'gpu_user', resolutionSource: 'binding',
+    }]);
+
+    const timeline = getPersonTimeline(alice.id, 24);
+    // Timeline should span the full 24h range, not just end at the data point.
+    expect(timeline.length).toBeGreaterThan(1);
+    // Last bucket should be at or near now.
+    const lastBucket = timeline[timeline.length - 1];
+    expect(lastBucket.bucketStart).toBeGreaterThanOrEqual(now - 5 * 60_000);
+    expect(lastBucket.totalVramMB).toBe(0); // no data at current time
   });
 
   it('batch inserts via insertPersonAttributionFacts correctly', () => {

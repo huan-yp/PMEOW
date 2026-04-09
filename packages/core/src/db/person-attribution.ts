@@ -160,25 +160,38 @@ export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
   const now = Date.now();
   const from = now - hours * 60 * 60 * 1000;
 
-  // currentVramMB must reflect the LATEST snapshot per server, not the sum across
-  // all historical snapshots.  Find the latest timestamp per (person, server) first,
-  // then sum vramMB only at those timestamps.
+  // currentVramMB must reflect each SERVER's latest snapshot — not the person's
+  // own latest fact.  If a person stopped using VRAM 2 hours ago but the server
+  // kept pushing snapshots, currentVramMB should be 0, not the stale value.
   const gpuRows = db.prepare(`
-    WITH latest AS (
-      SELECT personId, serverId, MAX(timestamp) as latestTs
+    WITH server_latest AS (
+      SELECT serverId, MAX(timestamp) as latestTs
+      FROM person_attribution_facts
+      WHERE sourceType LIKE 'gpu_%' AND timestamp >= ?
+      GROUP BY serverId
+    ),
+    current_vram AS (
+      SELECT f.personId,
+             SUM(f.vramMB) as totalVram,
+             COUNT(DISTINCT f.serverId) as serverCount
+      FROM person_attribution_facts f
+      JOIN server_latest sl ON f.serverId = sl.serverId AND f.timestamp = sl.latestTs
+      WHERE f.personId IS NOT NULL AND f.sourceType LIKE 'gpu_%'
+      GROUP BY f.personId
+    ),
+    last_activity AS (
+      SELECT personId, MAX(timestamp) as lastActivity
       FROM person_attribution_facts
       WHERE personId IS NOT NULL AND sourceType LIKE 'gpu_%' AND timestamp >= ?
-      GROUP BY personId, serverId
+      GROUP BY personId
     )
-    SELECT f.personId,
-           SUM(f.vramMB) as totalVram,
-           COUNT(DISTINCT f.serverId) as serverCount,
-           MAX(f.timestamp) as lastActivity
-    FROM person_attribution_facts f
-    JOIN latest l ON f.personId = l.personId AND f.serverId = l.serverId AND f.timestamp = l.latestTs
-    WHERE f.sourceType LIKE 'gpu_%'
-    GROUP BY f.personId
-  `).all(from) as Array<{ personId: string; totalVram: number; serverCount: number; lastActivity: number }>;
+    SELECT COALESCE(cv.personId, la.personId) as personId,
+           COALESCE(cv.totalVram, 0) as totalVram,
+           COALESCE(cv.serverCount, 0) as serverCount,
+           COALESCE(la.lastActivity, 0) as lastActivity
+    FROM last_activity la
+    LEFT JOIN current_vram cv ON cv.personId = la.personId
+  `).all(from, from) as Array<{ personId: string; totalVram: number; serverCount: number; lastActivity: number }>;
 
   // Use the live status from agent_tasks (not the historical taskStatus recorded
   // in attribution facts) so that finished tasks no longer count as "running".
@@ -237,11 +250,26 @@ export function getPersonSummaries(hours = 168): PersonSummaryItem[] {
 
   const cumulative = queryPersonCumulativeStats(from);
   for (const [personId, stats] of cumulative) {
-    const entry = personMap.get(personId);
-    if (entry) {
-      entry.vramOccupancyHours = stats.occupancyHours;
-      entry.vramGigabyteHours = stats.gbHours;
+    let entry = personMap.get(personId);
+    if (!entry) {
+      const person = getPersonById(personId);
+      if (!person) continue;
+      entry = {
+        personId,
+        displayName: person.displayName,
+        currentVramMB: 0,
+        runningTaskCount: 0,
+        queuedTaskCount: 0,
+        activeServerCount: 0,
+        lastActivityAt: 0,
+        vramOccupancyHours: 0,
+        vramGigabyteHours: 0,
+        taskRuntimeHours: 0,
+      };
+      personMap.set(personId, entry);
     }
+    entry.vramOccupancyHours = stats.occupancyHours;
+    entry.vramGigabyteHours = stats.gbHours;
   }
 
   return Array.from(personMap.values())
@@ -268,6 +296,9 @@ export function getPersonTimeline(personId: string, hours = 168, bucketMinutes?:
     WHERE personId = ? AND sourceType LIKE 'gpu_%' AND timestamp >= ?
     ORDER BY timestamp ASC
   `).all(personId, from) as Array<{ timestamp: number; vramMB: number; sourceType: string }>;
+
+  // No data at all → return empty so UI can show a placeholder.
+  if (rows.length === 0) return [];
 
   // Step 1: aggregate per timestamp (one snapshot may produce multiple fact rows,
   // e.g. one per GPU or one per process).
@@ -296,15 +327,24 @@ export function getPersonTimeline(personId: string, hours = 168, bucketMinutes?:
     buckets.set(bucketStart, acc);
   }
 
-  return Array.from(buckets.entries())
-    .map(([bucketStart, acc]) => ({
-      bucketStart,
+  // Fill zero-value buckets across the full [from, now] range so the chart
+  // x-axis always extends to the current time and time gaps show as zero.
+  const fromBucket = Math.floor(from / bucketSizeMs) * bucketSizeMs;
+  const nowBucket = Math.floor(now / bucketSizeMs) * bucketSizeMs;
+  const result: PersonTimelinePoint[] = [];
+
+  for (let t = fromBucket; t <= nowBucket; t += bucketSizeMs) {
+    const acc = buckets.get(t);
+    result.push({
+      bucketStart: t,
       personId,
-      totalVramMB: Math.round(acc.total / acc.count),
-      taskVramMB: Math.round(acc.task / acc.count),
-      nonTaskVramMB: Math.round(acc.nonTask / acc.count),
-    }))
-    .sort((a, b) => a.bucketStart - b.bucketStart);
+      totalVramMB: acc ? Math.round(acc.total / acc.count) : 0,
+      taskVramMB: acc ? Math.round(acc.task / acc.count) : 0,
+      nonTaskVramMB: acc ? Math.round(acc.nonTask / acc.count) : 0,
+    });
+  }
+
+  return result;
 }
 
 export function getPersonTasks(personId: string, hours = 168): MirroredAgentTaskRecord[] {
