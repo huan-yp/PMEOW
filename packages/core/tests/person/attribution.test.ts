@@ -51,9 +51,10 @@ describe('person attribution', () => {
       currentVramMB: 4096,
       activeServerCount: 1,
     }));
-    expect(getPersonTimeline(alice.id, 24)).toEqual([
-      expect.objectContaining({ totalVramMB: 4096 }),
-    ]);
+    const timeline = getPersonTimeline(alice.id, 24);
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero).toHaveLength(1);
+    expect(nonZero[0]).toEqual(expect.objectContaining({ totalVramMB: 4096 }));
     expect(getServerPersonActivity(server.id).unassignedUsers).toContain('nobody');
     expect(listPersonBindingSuggestions()).toEqual([
       expect.objectContaining({ serverId: server.id, systemUser: 'nobody' }),

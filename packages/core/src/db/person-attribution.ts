@@ -118,38 +118,68 @@ export function estimateSnapshotIntervalMs(from: number): number {
 export function queryPersonCumulativeStats(from: number): Map<string, { occupancyHours: number; gbHours: number }> {
   const db = getDatabase();
 
-  // Estimate snapshot interval per server so multi-server deployments
-  // don't skew results (interleaved timestamps from different cadences
-  // would halve the global interval estimate).
-  const serverRows = db.prepare(`
-    SELECT serverId, MIN(timestamp) as minTs, MAX(timestamp) as maxTs, COUNT(DISTINCT timestamp) as cnt
-    FROM person_attribution_facts
-    WHERE sourceType LIKE 'gpu_%' AND timestamp >= ?
-    GROUP BY serverId
-  `).all(from) as Array<{ serverId: string; minTs: number; maxTs: number; cnt: number }>;
+  // Step 1: For every (serverId, timestamp) pair, compute the actual interval
+  // to the next snapshot using LEAD().  This avoids the inaccuracy of a single
+  // estimated average interval when collection cadences vary or there are gaps.
+  const snapshotRows = db.prepare(`
+    SELECT serverId, timestamp,
+           LEAD(timestamp) OVER (PARTITION BY serverId ORDER BY timestamp) as nextTs
+    FROM (
+      SELECT DISTINCT serverId, timestamp
+      FROM person_attribution_facts
+      WHERE sourceType LIKE 'gpu_%' AND timestamp >= ?
+    )
+  `).all(from) as Array<{ serverId: string; timestamp: number; nextTs: number | null }>;
 
-  const intervalByServer = new Map<string, number>();
-  for (const sr of serverRows) {
-    const interval = sr.cnt < 2 ? 60_000 : Math.max((sr.maxTs - sr.minTs) / (sr.cnt - 1), 60_000);
-    intervalByServer.set(sr.serverId, interval);
+  // Compute a fallback interval per server (average gap) for the last snapshot
+  // of each server where LEAD() returns NULL.
+  const serverTimestamps = new Map<string, number[]>();
+  for (const row of snapshotRows) {
+    let arr = serverTimestamps.get(row.serverId);
+    if (!arr) { arr = []; serverTimestamps.set(row.serverId, arr); }
+    arr.push(row.timestamp);
+  }
+  const fallbackByServer = new Map<string, number>();
+  for (const [serverId, timestamps] of serverTimestamps) {
+    if (timestamps.length < 2) {
+      fallbackByServer.set(serverId, 60_000);
+    } else {
+      const span = timestamps[timestamps.length - 1] - timestamps[0];
+      fallbackByServer.set(serverId, Math.max(span / (timestamps.length - 1), 60_000));
+    }
   }
 
-  // Group by (personId, serverId) so each server's rows use the correct interval.
-  const rows = db.prepare(`
-    SELECT personId, serverId, COUNT(DISTINCT timestamp) as snapshots, SUM(vramMB) as totalVramMB
+  // Build a lookup: "serverId|timestamp" → actual interval in ms.
+  const intervalAt = new Map<string, number>();
+  for (const row of snapshotRows) {
+    const interval = row.nextTs !== null
+      ? (row.nextTs - row.timestamp)
+      : (fallbackByServer.get(row.serverId) ?? 60_000);
+    intervalAt.set(`${row.serverId}|${row.timestamp}`, interval);
+  }
+
+  // Step 2: Get person-level per-snapshot VRAM totals.
+  // Grouping by timestamp ensures each snapshot contributes its own actual
+  // interval to the accumulation, instead of an averaged estimate.
+  const personFacts = db.prepare(`
+    SELECT personId, serverId, timestamp, SUM(vramMB) as vramMB
     FROM person_attribution_facts
     WHERE personId IS NOT NULL AND sourceType LIKE 'gpu_%' AND vramMB > 0 AND timestamp >= ?
-    GROUP BY personId, serverId
-  `).all(from) as Array<{ personId: string; serverId: string; snapshots: number; totalVramMB: number }>;
+    GROUP BY personId, serverId, timestamp
+  `).all(from) as Array<{ personId: string; serverId: string; timestamp: number; vramMB: number }>;
 
+  // Step 3: Accumulate per-person stats using actual per-snapshot intervals.
+  // occupancyHours = Σ actualInterval_i  (for each snapshot where person used VRAM)
+  // gbHours        = Σ (vramMB_i × actualInterval_i)
   const result = new Map<string, { occupancyHours: number; gbHours: number }>();
 
-  for (const row of rows) {
-    const interval = intervalByServer.get(row.serverId) ?? 60_000;
-    const existing = result.get(row.personId) ?? { occupancyHours: 0, gbHours: 0 };
-    existing.occupancyHours += (row.snapshots * interval) / 3_600_000;
-    existing.gbHours += (row.totalVramMB * interval) / (1024 * 3_600_000);
-    result.set(row.personId, existing);
+  for (const fact of personFacts) {
+    const interval = intervalAt.get(`${fact.serverId}|${fact.timestamp}`)
+                     ?? (fallbackByServer.get(fact.serverId) ?? 60_000);
+    const existing = result.get(fact.personId) ?? { occupancyHours: 0, gbHours: 0 };
+    existing.occupancyHours += interval / 3_600_000;
+    existing.gbHours += (fact.vramMB * interval) / (1024 * 3_600_000);
+    result.set(fact.personId, existing);
   }
 
   return result;

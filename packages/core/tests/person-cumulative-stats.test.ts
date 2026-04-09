@@ -153,4 +153,73 @@ describe('person cumulative stats', () => {
     const interval = estimateSnapshotIntervalMs(now - 300_000);
     expect(interval).toBe(60_000);
   });
+
+  it('uses actual per-snapshot intervals for non-uniform collection cadences', () => {
+    const server = createServer({ name: 'cum-nonuniform', host: 'cum-nonuniform', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-cum-nu' });
+    const eve = createPerson({ displayName: 'Eve', customFields: {} });
+    createPersonBinding({ personId: eve.id, serverId: server.id, systemUser: 'eve', source: 'manual', effectiveFrom: 0 });
+
+    const now = Date.now();
+    // Server collects at T-300s, T-240s, T-180s (60s apart) then a gap, then T-60s, T (60s apart).
+    // Eve uses 8 GB at T-300s and T-240s (short gap), then 2 GB at T-60s.
+    // Server-wide snapshots at all 5 timestamps anchor the actual intervals.
+    const T0 = now - 300_000;
+    const T1 = now - 240_000;
+    const T2 = now - 180_000;
+    const T3 = now - 60_000;
+    const T4 = now;
+
+    // Server facts at all 5 timestamps (unassigned to anchor the interval grid)
+    insertGpuFact(server.id, null, 'other', 1, 100, T0);
+    insertGpuFact(server.id, null, 'other', 1, 100, T1);
+    insertGpuFact(server.id, null, 'other', 1, 100, T2);
+    insertGpuFact(server.id, null, 'other', 1, 100, T3);
+    insertGpuFact(server.id, null, 'other', 1, 100, T4);
+
+    // Eve's VRAM usage at T0 (8 GB), T1 (8 GB), T3 (2 GB)
+    insertGpuFact(server.id, eve.id, 'eve', 0, 8192, T0);
+    insertGpuFact(server.id, eve.id, 'eve', 0, 8192, T1);
+    insertGpuFact(server.id, eve.id, 'eve', 0, 2048, T3);
+
+    const from = now - 600_000;
+    const stats = queryPersonCumulativeStats(from);
+    const eveStats = stats.get(eve.id)!;
+
+    // Actual intervals for each server timestamp:
+    //   T0→T1 = 60s, T1→T2 = 60s, T2→T3 = 120s, T3→T4 = 60s, T4→null = fallback ~75s
+    // Eve is present at T0 (interval 60s), T1 (interval 60s), T3 (interval 60s).
+    // occupancyHours = (60000 + 60000 + 60000) / 3600000 = 0.05
+    expect(eveStats.occupancyHours).toBeCloseTo((60_000 + 60_000 + 60_000) / 3_600_000, 4);
+
+    // gbHours = (8192*60000 + 8192*60000 + 2048*60000) / (1024*3600000)
+    const expectedGbH = (8192 * 60_000 + 8192 * 60_000 + 2048 * 60_000) / (1024 * 3_600_000);
+    expect(eveStats.gbHours).toBeCloseTo(expectedGbH, 4);
+  });
+
+  it('weights gbHours by actual interval when person has varying VRAM across non-uniform gaps', () => {
+    const server = createServer({ name: 'cum-weighted', host: 'cum-weighted', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-cum-w' });
+    const frank = createPerson({ displayName: 'Frank', customFields: {} });
+    createPersonBinding({ personId: frank.id, serverId: server.id, systemUser: 'frank', source: 'manual', effectiveFrom: 0 });
+
+    const now = Date.now();
+    // Only two server snapshots: T0 and T1, 120s apart.
+    // Frank uses 8 GB at T0 and 2 GB at T1.
+    const T0 = now - 120_000;
+    const T1 = now;
+
+    insertGpuFact(server.id, frank.id, 'frank', 0, 8192, T0);
+    insertGpuFact(server.id, frank.id, 'frank', 0, 2048, T1);
+
+    const from = now - 300_000;
+    const stats = queryPersonCumulativeStats(from);
+    const frankStats = stats.get(frank.id)!;
+
+    // T0→T1 = 120s actual, T1→null = fallback 120s (only 2 timestamps, span=120s, avg=120s)
+    // occupancyHours = (120000 + 120000) / 3600000
+    expect(frankStats.occupancyHours).toBeCloseTo((120_000 + 120_000) / 3_600_000, 4);
+
+    // gbHours = (8192*120000 + 2048*120000) / (1024*3600000)
+    const expectedGbH = (8192 * 120_000 + 2048 * 120_000) / (1024 * 3_600_000);
+    expect(frankStats.gbHours).toBeCloseTo(expectedGbH, 4);
+  });
 });

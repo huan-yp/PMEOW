@@ -231,9 +231,13 @@ describe('person attribution fact persistence', () => {
     const now = Date.now();
     createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
 
-    // Three snapshots 1 minute apart, each showing 4096 MB VRAM for Alice's task.
+    // Three snapshots 1 minute apart, anchored inside the same 5-min bucket
+    // to avoid timing-dependent boundary straddle.
+    const bucketSizeMs = 5 * 60_000;
+    const bucketStart = Math.floor(now / bucketSizeMs) * bucketSizeMs;
+    // Place all 3 snapshots 1 minute apart starting 1 minute into the bucket.
     for (let i = 0; i < 3; i++) {
-      const ts = now - (2 - i) * 60_000;
+      const ts = bucketStart + 60_000 + i * 60_000;
       insertPersonAttributionFacts([{
         personId: alice.id, rawUser: 'alice', taskId: 'task-avg', serverId: server.id,
         gpuIndex: 0, vramMB: 4096, timestamp: ts, sourceType: 'gpu_task',
