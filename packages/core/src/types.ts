@@ -692,5 +692,6 @@ export interface PersonAttributionFact {
   gpuIndex: number;
   vramMB: number;
   timestamp: number;
+  sourceType: 'gpu_task' | 'gpu_user' | 'gpu_unknown';
   resolutionSource: 'binding' | 'override' | 'unassigned';
 }

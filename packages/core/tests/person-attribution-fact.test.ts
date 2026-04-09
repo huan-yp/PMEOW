@@ -4,7 +4,8 @@ import { createServer } from '../src/db/servers.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../src/db/persons.js';
 import { upsertAgentTask } from '../src/db/agent-tasks.js';
 import { writeAttributionFacts } from '../src/person/attribution.js';
-import { insertPersonAttributionFacts } from '../src/db/person-attribution.js';
+import { insertPersonAttributionFact, insertPersonAttributionFacts, getPersonTimeline, getPersonSummaries } from '../src/db/person-attribution.js';
+import { ingestAgentMetrics } from '../src/agent/ingest.js';
 import type { MetricsSnapshot, PersonAttributionFact } from '../src/types.js';
 
 function makeSnapshot(serverId: string, overrides?: Partial<MetricsSnapshot>): MetricsSnapshot {
@@ -181,13 +182,220 @@ describe('person attribution fact persistence', () => {
     expect(facts[0].resolutionSource).toBe('override');
   });
 
+  it('produces a non-empty person timeline when the only GPU usage is a pmeow task (agent pipeline)', () => {
+    const server = createServer({ name: 'task-only', host: 'task-only', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-task-only' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 10 * 60 * 1000 });
+    upsertAgentTask({ serverId: server.id, taskId: 'task-only-1', status: 'running', user: 'alice', startedAt: now - 60_000 });
+
+    const snapshot: MetricsSnapshot = {
+      serverId: server.id,
+      timestamp: now,
+      cpu: { usagePercent: 0, coreCount: 1, modelName: 'CPU', frequencyMhz: 0, perCoreUsage: [0] },
+      memory: { totalMB: 1, usedMB: 0, availableMB: 1, usagePercent: 0, swapTotalMB: 0, swapUsedMB: 0, swapPercent: 0 },
+      disk: { disks: [], ioReadKBs: 0, ioWriteKBs: 0 },
+      network: { rxBytesPerSec: 0, txBytesPerSec: 0, interfaces: [] },
+      gpu: { available: true, totalMemoryMB: 24576, usedMemoryMB: 6144, memoryUsagePercent: 25, utilizationPercent: 0, temperatureC: 0, gpuCount: 1 },
+      processes: [],
+      docker: [],
+      system: { hostname: 'task-only', uptime: '1 day', loadAvg1: 0, loadAvg5: 0, loadAvg15: 0, kernelVersion: '6.8.0' },
+      gpuAllocation: {
+        perGpu: [{
+          gpuIndex: 0,
+          totalMemoryMB: 24576,
+          usedMemoryMB: 6144,
+          pmeowTasks: [{ taskId: 'task-only-1', gpuIndex: 0, declaredVramMB: 8192, actualVramMB: 6144 }],
+          userProcesses: [],
+          unknownProcesses: [],
+          effectiveFreeMB: 18432,
+        }],
+        byUser: [],
+      },
+    };
+
+    // Replicate scheduler.handleMetrics for agent data: both attribution paths run.
+    ingestAgentMetrics(snapshot);
+    writeAttributionFacts(snapshot, []);
+
+    // getPersonTimeline should surface rows for Alice and include task VRAM in taskVramMB.
+    const timeline = getPersonTimeline(alice.id, 24);
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero.length, 'timeline must contain at least one non-zero point for a pmeow task').toBeGreaterThan(0);
+    expect(nonZero[0].taskVramMB, 'task VRAM should be attributed to taskVramMB (not nonTaskVramMB)').toBeGreaterThan(0);
+  });
+
+  it('averages multiple snapshots within a bucket instead of summing them', () => {
+    const server = createServer({ name: 'avg-test', host: 'avg-test', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-avg' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // Three snapshots 1 minute apart, anchored inside the same 5-min bucket
+    // to avoid timing-dependent boundary straddle.
+    const bucketSizeMs = 5 * 60_000;
+    const bucketStart = Math.floor(now / bucketSizeMs) * bucketSizeMs;
+    // Place all 3 snapshots 1 minute apart starting 1 minute into the bucket.
+    for (let i = 0; i < 3; i++) {
+      const ts = bucketStart + 60_000 + i * 60_000;
+      insertPersonAttributionFacts([{
+        personId: alice.id, rawUser: 'alice', taskId: 'task-avg', serverId: server.id,
+        gpuIndex: 0, vramMB: 4096, timestamp: ts, sourceType: 'gpu_task',
+        resolutionSource: 'binding',
+      }]);
+    }
+
+    // All 3 snapshots land in the same bucket. The chart should show ~4096 MB (average),
+    // NOT 12288 (sum).  Timeline is zero-filled so find the bucket with data.
+    const timeline = getPersonTimeline(alice.id, 24);
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero).toHaveLength(1);
+    expect(nonZero[0].totalVramMB).toBe(4096);
+    expect(nonZero[0].taskVramMB).toBe(4096);
+  });
+
+  it('uses finer bucket granularity for shorter periods', () => {
+    const server = createServer({ name: 'granularity', host: 'granularity', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-gran' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 3_600_000 });
+
+    // Two snapshots 10 minutes apart — these should land in different buckets for 24h
+    // (5-min buckets) but would collapse into the same 60-min bucket with the old code.
+    const ts1 = now - 15 * 60_000;
+    const ts2 = now - 5 * 60_000;
+    insertPersonAttributionFacts([
+      { personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 2048, timestamp: ts1, sourceType: 'gpu_user', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 8192, timestamp: ts2, sourceType: 'gpu_user', resolutionSource: 'binding' },
+    ]);
+
+    const timeline = getPersonTimeline(alice.id, 24);
+    // With 5-min buckets for 24h, the two snapshots (10 min apart) should be in different buckets.
+    // Timeline is zero-filled across the full 24h range.
+    const nonZero = timeline.filter(p => p.totalVramMB > 0);
+    expect(nonZero.length, 'two snapshots 10 min apart should produce 2 non-zero points for 24h period').toBe(2);
+  });
+
+  it('runningTaskCount reflects live task status, not historical transitions', () => {
+    const server = createServer({ name: 'task-count', host: 'task-count', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-task-count' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // Task went queued → running → finished.
+    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'queued', user: 'alice', createdAt: now - 300_000 });
+    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'running', user: 'alice', startedAt: now - 200_000 });
+    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'finished', user: 'alice', startedAt: now - 200_000, finishedAt: now - 100_000 });
+
+    // Record task_update attribution facts for each status transition (via singular insert).
+    const transitions: Array<{ status: string; ts: number }> = [
+      { status: 'queued', ts: now - 300_000 },
+      { status: 'running', ts: now - 200_000 },
+      { status: 'finished', ts: now - 100_000 },
+    ];
+    for (const t of transitions) {
+      insertPersonAttributionFact({
+        timestamp: t.ts, sourceType: 'task_update', serverId: server.id,
+        personId: alice.id, rawUser: 'alice', taskId: 'task-done',
+        gpuIndex: null, vramMB: null, taskStatus: t.status,
+        resolutionSource: 'binding', metadataJson: '{}',
+      });
+    }
+
+    // Also give Alice some GPU usage so she appears in summaries.
+    insertPersonAttributionFacts([{
+      personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 1024, timestamp: now,
+      sourceType: 'gpu_user', resolutionSource: 'binding',
+    }]);
+
+    const summaries = getPersonSummaries(24);
+    const alice_summary = summaries.find(s => s.personId === alice.id);
+    expect(alice_summary).toBeDefined();
+    // Task is finished — runningTaskCount should be 0, not 1.
+    expect(alice_summary!.runningTaskCount).toBe(0);
+    expect(alice_summary!.queuedTaskCount).toBe(0);
+  });
+
+  it('currentVramMB in person summaries reflects latest snapshot, not historical sum', () => {
+    const server = createServer({ name: 'summary-vram', host: 'summary-vram', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-summary' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // 5 snapshots 1 minute apart, each showing 4096 MB.
+    for (let i = 0; i < 5; i++) {
+      insertPersonAttributionFacts([{
+        personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+        gpuIndex: 0, vramMB: 4096, timestamp: now - (4 - i) * 60_000,
+        sourceType: 'gpu_user', resolutionSource: 'binding',
+      }]);
+    }
+
+    const summaries = getPersonSummaries(24);
+    const alice_summary = summaries.find(s => s.personId === alice.id);
+    expect(alice_summary).toBeDefined();
+    // Should be 4096 (latest snapshot), NOT 20480 (sum of 5 snapshots).
+    expect(alice_summary!.currentVramMB).toBe(4096);
+  });
+
+  it('currentVramMB drops to 0 when person stops using VRAM but server keeps pushing', () => {
+    const server = createServer({ name: 'vram-drop', host: 'vram-drop', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-vram-drop' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    // Alice used 4096 MB two minutes ago.
+    insertPersonAttributionFacts([{
+      personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 4096, timestamp: now - 120_000,
+      sourceType: 'gpu_user', resolutionSource: 'binding',
+    }]);
+    // Server kept pushing — an unrelated user appears in the latest snapshot.
+    insertPersonAttributionFacts([{
+      personId: null, rawUser: 'bob', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 2048, timestamp: now,
+      sourceType: 'gpu_user', resolutionSource: 'unassigned',
+    }]);
+
+    const summaries = getPersonSummaries(24);
+    const alice_summary = summaries.find(s => s.personId === alice.id);
+    expect(alice_summary).toBeDefined();
+    // Alice has no facts at the server's latest timestamp → currentVramMB = 0
+    expect(alice_summary!.currentVramMB).toBe(0);
+    // But she should still appear (via cumulative stats) with historical occupancy > 0
+    expect(alice_summary!.vramOccupancyHours).toBeGreaterThan(0);
+  });
+
+  it('timeline extends to current time with zero-fill', () => {
+    const server = createServer({ name: 'timeline-fill', host: 'timeline-fill', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-fill' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+    createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 3_600_000 });
+
+    // Single snapshot 1 hour ago.
+    insertPersonAttributionFacts([{
+      personId: alice.id, rawUser: 'alice', taskId: null, serverId: server.id,
+      gpuIndex: 0, vramMB: 2048, timestamp: now - 3_600_000,
+      sourceType: 'gpu_user', resolutionSource: 'binding',
+    }]);
+
+    const timeline = getPersonTimeline(alice.id, 24);
+    // Timeline should span the full 24h range, not just end at the data point.
+    expect(timeline.length).toBeGreaterThan(1);
+    // Last bucket should be at or near now.
+    const lastBucket = timeline[timeline.length - 1];
+    expect(lastBucket.bucketStart).toBeGreaterThanOrEqual(now - 5 * 60_000);
+    expect(lastBucket.totalVramMB).toBe(0); // no data at current time
+  });
+
   it('batch inserts via insertPersonAttributionFacts correctly', () => {
     const server = createServer({ name: 'fact-batch', host: 'fact-batch', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-batch' });
     const now = Date.now();
 
     const batch: PersonAttributionFact[] = [
-      { personId: null, rawUser: 'user-a', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 1024, timestamp: now, resolutionSource: 'unassigned' },
-      { personId: null, rawUser: 'user-b', taskId: null, serverId: server.id, gpuIndex: 1, vramMB: 2048, timestamp: now, resolutionSource: 'unassigned' },
+      { personId: null, rawUser: 'user-a', taskId: null, serverId: server.id, gpuIndex: 0, vramMB: 1024, timestamp: now, sourceType: 'gpu_user', resolutionSource: 'unassigned' },
+      { personId: null, rawUser: 'user-b', taskId: null, serverId: server.id, gpuIndex: 1, vramMB: 2048, timestamp: now, sourceType: 'gpu_user', resolutionSource: 'unassigned' },
     ];
 
     insertPersonAttributionFacts(batch);

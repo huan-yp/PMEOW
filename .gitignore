@@ -12,3 +12,4 @@ packages/ui/android/.gradle/
 packages/ui/android/app/src/main/assets/public/
 
 CLAUDE.md
+.claude/

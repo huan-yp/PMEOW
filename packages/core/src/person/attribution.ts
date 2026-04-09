@@ -25,6 +25,7 @@ export function writeAttributionFacts(snapshot: MetricsSnapshot, _mirroredTasks:
         gpuIndex: gpu.gpuIndex,
         vramMB: taskAlloc.actualVramMB,
         timestamp: ts,
+        sourceType: 'gpu_task',
         resolutionSource: resolution.resolutionSource === 'unknown' ? 'unassigned' : resolution.resolutionSource,
       });
     }
@@ -40,6 +41,7 @@ export function writeAttributionFacts(snapshot: MetricsSnapshot, _mirroredTasks:
         gpuIndex: gpu.gpuIndex,
         vramMB: proc.usedMemoryMB,
         timestamp: ts,
+        sourceType: 'gpu_user',
         resolutionSource: resolution.resolutionSource === 'unknown' ? 'unassigned' : resolution.resolutionSource,
       });
     }
@@ -53,6 +55,7 @@ export function writeAttributionFacts(snapshot: MetricsSnapshot, _mirroredTasks:
         gpuIndex: gpu.gpuIndex,
         vramMB: proc.usedMemoryMB,
         timestamp: ts,
+        sourceType: 'gpu_unknown',
         resolutionSource: 'unassigned',
       });
     }
