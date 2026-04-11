@@ -54,7 +54,7 @@ export function Settings() {
         <div className="bg-dark-card border border-dark-border rounded-lg p-4">
           <h3 className="text-sm font-medium text-slate-300 mb-3">数据采集</h3>
           <div>
-            <label htmlFor="refreshIntervalMs" className="text-xs text-slate-500 block mb-1">刷新间隔 (毫秒)</label>
+            <label htmlFor="refreshIntervalMs" className="text-xs text-slate-500 block mb-1">刷新间隔</label>
             <div className="flex items-center gap-3">
               <input id="refreshIntervalMs" type="range" min={1000} max={30000} step={1000}
                 value={local.refreshIntervalMs}
