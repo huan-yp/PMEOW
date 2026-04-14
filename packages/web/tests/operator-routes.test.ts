@@ -6,8 +6,11 @@ import {
   getSettings,
   getGpuOverview,
   getAgentTaskQueueGroups,
+  markSecurityEventSafe,
   saveMetrics,
   saveGpuUsageRows,
+  saveAlert,
+  suppressAlert,
   type MetricsSnapshot,
 } from '@monitor/core';
 import request from 'supertest';
@@ -284,5 +287,131 @@ describe('operator routes', () => {
     ]);
     expect(response.body[0].resolvedPersonId).toBeUndefined();
     expect(response.body[0].resolvedPersonName).toBeUndefined();
+  });
+
+  it('unresolves a previously resolved security event', async () => {
+    const server = createServer({
+      name: 'gpu-unresolve',
+      host: 'gpu-unresolve',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-unresolve',
+    });
+
+    const event = createSecurityEvent({
+      serverId: server.id,
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-unresolve',
+      details: {
+        reason: '命中关键词 xmrig',
+        pid: 9999,
+        user: 'alice',
+        command: 'xmrig',
+      },
+    });
+
+    markSecurityEventSafe(event.id, 'operator', 'false positive');
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post(`/api/security/events/${event.id}/unresolve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ reason: 'need re-investigation' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.reopenedEvent).toEqual(
+      expect.objectContaining({
+        id: event.id,
+        resolved: false,
+        resolvedBy: null,
+        resolvedAt: null,
+      }),
+    );
+    expect(response.body.auditEvent).toEqual(
+      expect.objectContaining({
+        eventType: 'unresolve',
+        resolved: true,
+      }),
+    );
+    expect(response.body.auditEvent.details.targetEventId).toBe(event.id);
+  });
+
+  it('returns 404 when unresolving a nonexistent security event', async () => {
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post('/api/security/events/99999/unresolve')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe('安全事件不存在');
+  });
+
+  it('returns 400 when unresolving an already-unresolved security event', async () => {
+    const server = createServer({
+      name: 'gpu-unresolve2',
+      host: 'gpu-unresolve2',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-unresolve2',
+    });
+
+    const event = createSecurityEvent({
+      serverId: server.id,
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-unresolve2',
+      details: { reason: 'test', pid: 100, user: 'bob', command: 'sus' },
+    });
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post(`/api/security/events/${event.id}/unresolve`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('该事件尚未被忽略');
+  });
+
+  it('unsuppresses a previously suppressed alert', async () => {
+    saveAlert({
+      id: 'alert-unsup-1',
+      serverId: 'srv-1',
+      serverName: 'gpu-1',
+      metric: 'cpu_usage',
+      value: 95,
+      threshold: 90,
+      timestamp: Date.now(),
+      suppressedUntil: null,
+    });
+    suppressAlert('alert-unsup-1', Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post('/api/alerts/alert-unsup-1/unsuppress')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+
+    const alertsResponse = await request(baseUrl)
+      .get('/api/alerts')
+      .set('Authorization', `Bearer ${token}`);
+
+    const alert = alertsResponse.body.find((a: any) => a.id === 'alert-unsup-1');
+    expect(alert.suppressedUntil).toBeNull();
   });
 });

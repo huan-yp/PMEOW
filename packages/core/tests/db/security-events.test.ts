@@ -5,6 +5,7 @@ import {
   findOpenSecurityEvent,
   listSecurityEvents,
   markSecurityEventSafe,
+  unresolveSecurityEvent,
 } from '../../src/db/security-events.js';
 
 describe('security_events schema', () => {
@@ -222,5 +223,152 @@ describe('security event repository', () => {
       firstResult!.auditEvent,
       firstResult!.resolvedEvent,
     ]);
+  });
+});
+
+describe('unresolveSecurityEvent', () => {
+  it('reopens a resolved event and creates an unresolve audit event', () => {
+    vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(100_000)   // create original
+      .mockReturnValueOnce(200_000)   // markSecurityEventSafe resolvedAt
+      .mockReturnValueOnce(300_000)   // markSecurityEventSafe audit createdAt
+      .mockReturnValueOnce(400_000)   // unresolve now (used for update + audit fingerprint)
+      .mockReturnValueOnce(400_000);  // unresolve audit createdAt
+
+    const original = createSecurityEvent({
+      serverId: 'server-u1',
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-u1',
+      details: {
+        reason: 'matched keyword',
+        pid: 111,
+        user: 'alice',
+        command: 'xmrig',
+        taskId: 'task-u1',
+      },
+    });
+
+    markSecurityEventSafe(original.id, 'op-1', 'false positive');
+
+    const result = unresolveSecurityEvent(original.id, 'op-2', 'need to re-investigate');
+    expect(result).not.toHaveProperty('error');
+
+    const { reopenedEvent, auditEvent } = result as { reopenedEvent: any; auditEvent: any };
+
+    expect(reopenedEvent.id).toBe(original.id);
+    expect(reopenedEvent.resolved).toBe(false);
+    expect(reopenedEvent.resolvedBy).toBeNull();
+    expect(reopenedEvent.resolvedAt).toBeNull();
+
+    expect(auditEvent.eventType).toBe('unresolve');
+    expect(auditEvent.resolved).toBe(true);
+    expect(auditEvent.resolvedBy).toBe('op-2');
+    expect(auditEvent.details.targetEventId).toBe(original.id);
+    expect(auditEvent.details.reason).toBe('need to re-investigate');
+    expect(auditEvent.details.pid).toBe(111);
+    expect(auditEvent.details.user).toBe('alice');
+    expect(auditEvent.details.command).toBe('xmrig');
+
+    expect(findOpenSecurityEvent('server-u1', 'suspicious_process', 'fp-u1')).toEqual(reopenedEvent);
+  });
+
+  it('returns not_found for nonexistent event', () => {
+    const result = unresolveSecurityEvent(99999, 'op', 'reason');
+    expect(result).toEqual({ error: 'not_found' });
+  });
+
+  it('returns not_resolved for an unresolved event', () => {
+    vi.spyOn(Date, 'now').mockReturnValueOnce(500_000);
+
+    const event = createSecurityEvent({
+      serverId: 'server-u2',
+      eventType: 'unowned_gpu',
+      fingerprint: 'fp-u2',
+      details: { reason: 'unowned gpu' },
+    });
+
+    const result = unresolveSecurityEvent(event.id, 'op', 'reason');
+    expect(result).toEqual({ error: 'not_resolved' });
+  });
+
+  it('returns not_found when trying to unresolve a marked_safe audit event', () => {
+    vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(600_000)
+      .mockReturnValueOnce(700_000)
+      .mockReturnValueOnce(800_000);
+
+    const event = createSecurityEvent({
+      serverId: 'server-u3',
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-u3',
+      details: { reason: 'keyword', pid: 222, user: 'bob', command: 'miner' },
+    });
+
+    const safeResult = markSecurityEventSafe(event.id, 'op', 'safe');
+    const auditId = safeResult!.auditEvent!.id;
+
+    const result = unresolveSecurityEvent(auditId, 'op', 'reason');
+    expect(result).toEqual({ error: 'not_found' });
+  });
+
+  it('returns duplicate_open when an open event with same fingerprint exists', () => {
+    vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(900_000)
+      .mockReturnValueOnce(1_000_000)
+      .mockReturnValueOnce(1_100_000)
+      .mockReturnValueOnce(1_200_000);
+
+    const eventA = createSecurityEvent({
+      serverId: 'server-u4',
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-u4',
+      details: { reason: 'keyword', pid: 333, user: 'charlie', command: 'bad' },
+    });
+
+    markSecurityEventSafe(eventA.id, 'op', 'safe');
+
+    // Create a new event with same fingerprint (system re-detected the condition)
+    createSecurityEvent({
+      serverId: 'server-u4',
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-u4',
+      details: { reason: 'keyword again', pid: 333, user: 'charlie', command: 'bad' },
+    });
+
+    const result = unresolveSecurityEvent(eventA.id, 'op', 'reason');
+    expect(result).toEqual({ error: 'duplicate_open' });
+  });
+
+  it('supports a full resolve-unresolve-resolve cycle', () => {
+    vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(2_000_000)   // create
+      .mockReturnValueOnce(2_100_000)   // mark safe resolvedAt
+      .mockReturnValueOnce(2_200_000)   // mark safe audit createdAt
+      .mockReturnValueOnce(2_300_000)   // unresolve now
+      .mockReturnValueOnce(2_300_000)   // unresolve audit createdAt
+      .mockReturnValueOnce(2_400_000)   // mark safe again resolvedAt
+      .mockReturnValueOnce(2_500_000);  // mark safe again audit createdAt
+
+    const event = createSecurityEvent({
+      serverId: 'server-u5',
+      eventType: 'suspicious_process',
+      fingerprint: 'fp-u5',
+      details: { reason: 'keyword', pid: 444, user: 'dave', command: 'sus' },
+    });
+
+    markSecurityEventSafe(event.id, 'op-1', 'safe');
+    unresolveSecurityEvent(event.id, 'op-2', 're-check');
+    markSecurityEventSafe(event.id, 'op-3', 'confirmed safe');
+
+    const allEvents = listSecurityEvents({ serverId: 'server-u5' });
+    const markedSafeEvents = allEvents.filter(e => e.eventType === 'marked_safe');
+    const unresolveEvents = allEvents.filter(e => e.eventType === 'unresolve');
+
+    expect(markedSafeEvents).toHaveLength(2);
+    expect(unresolveEvents).toHaveLength(1);
+
+    const finalEvent = allEvents.find(e => e.id === event.id);
+    expect(finalEvent!.resolved).toBe(true);
+    expect(finalEvent!.resolvedBy).toBe('op-3');
   });
 });

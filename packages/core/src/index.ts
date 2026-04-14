@@ -43,6 +43,7 @@ export {
 	findOpenSecurityEvent,
 	listSecurityEvents,
 	markSecurityEventSafe,
+	unresolveSecurityEvent,
 } from './db/security-events.js';
 export type { SecurityEventInput, SecurityEventQuery } from './db/security-events.js';
 export {
@@ -66,7 +67,7 @@ export {
 export { insertServerStatusEvent, listServerStatusEvents } from './db/server-status-events.js';
 export { Scheduler } from './scheduler.js';
 export { setAlertCallback } from './alerts.js';
-export { saveAlert, getAlerts, suppressAlert, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
+export { saveAlert, getAlerts, suppressAlert, unsuppressAlert, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
 export { setNotifyCallback } from './hooks/actions.js';
 export { setHookTriggeredCallback, resetHookState } from './hooks/engine.js';
 export { evaluateCondition, getGpuIdleMinutes, resetIdleTracking } from './hooks/conditions.js';

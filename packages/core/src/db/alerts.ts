@@ -24,6 +24,11 @@ export function suppressAlert(id: string, untilMs: number): void {
   db.prepare(`UPDATE alert_history SET suppressedUntil = ? WHERE id = ?`).run(untilMs, id);
 }
 
+export function unsuppressAlert(id: string): void {
+  const db = getDatabase();
+  db.prepare('UPDATE alert_history SET suppressedUntil = NULL WHERE id = ?').run(id);
+}
+
 export function getActiveSuppressions(): Map<string, number> {
   const db = getDatabase();
   const now = Date.now();

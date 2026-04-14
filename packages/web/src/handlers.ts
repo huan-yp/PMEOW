@@ -11,7 +11,7 @@ import {
   getSettings, saveSettings,
   setAlertCallback, setHookTriggeredCallback, setNotifyCallback,
   SSHManager,
-  getAlerts, suppressAlert,
+  getAlerts, suppressAlert, unsuppressAlert,
 } from '@monitor/core';
 import type { ServerInput, HookRuleInput } from '@monitor/core';
 
@@ -206,6 +206,11 @@ export function setupRestRoutes(app: any, scheduler: Scheduler): void {
     const days = Number(req.body.days) || settings.alertSuppressDefaultDays || 7;
     const untilMs = Date.now() + days * 24 * 60 * 60 * 1000;
     suppressAlert(req.params.id, untilMs);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/alerts/:id/unsuppress', (req: any, res: any) => {
+    unsuppressAlert(req.params.id);
     res.json({ ok: true });
   });
 

@@ -169,6 +169,67 @@ export function markSecurityEventSafe(
   return transact();
 }
 
+export function unresolveSecurityEvent(
+  id: number,
+  actor: string,
+  reason: string,
+): { reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord } | { error: 'not_found' | 'not_resolved' | 'duplicate_open' } {
+  const db = getDatabase();
+  const existing = getSecurityEventById(id);
+  if (!existing || existing.eventType === 'marked_safe' || existing.eventType === 'unresolve') {
+    return { error: 'not_found' };
+  }
+
+  if (!existing.resolved) {
+    return { error: 'not_resolved' };
+  }
+
+  const open = findOpenSecurityEvent(existing.serverId, existing.eventType, existing.fingerprint);
+  if (open) {
+    return { error: 'duplicate_open' };
+  }
+
+  const now = Date.now();
+
+  const runUpdate = db.prepare(`
+    UPDATE security_events
+    SET resolved = 0, resolvedBy = NULL, resolvedAt = NULL
+    WHERE id = ?
+  `);
+
+  const resolveAuditEvent = db.prepare(`
+    UPDATE security_events
+    SET resolved = 1, resolvedBy = ?, resolvedAt = ?
+    WHERE id = ?
+  `);
+
+  const transact = db.transaction(() => {
+    runUpdate.run(id);
+
+    const reopenedEvent = getSecurityEventById(id)!;
+    const auditEvent = createSecurityEvent({
+      serverId: existing.serverId,
+      eventType: 'unresolve',
+      fingerprint: `unresolve:${id}:${now}`,
+      details: {
+        reason,
+        targetEventId: id,
+        pid: existing.details.pid,
+        user: existing.details.user,
+        command: existing.details.command,
+        taskId: existing.details.taskId,
+      },
+    });
+
+    resolveAuditEvent.run(actor, now, auditEvent.id);
+    const finalAuditEvent = getSecurityEventById(auditEvent.id)!;
+
+    return { reopenedEvent, auditEvent: finalAuditEvent };
+  });
+
+  return transact();
+}
+
 function getSecurityEventById(id: number): SecurityEventRecord | undefined {
   const db = getDatabase();
   const row = db.prepare('SELECT * FROM security_events WHERE id = ?').get(id) as RawSecurityEventRow | undefined;

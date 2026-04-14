@@ -242,6 +242,12 @@ export class WebSocketAdapter implements TransportAdapter {
     });
   }
 
+  async unsuppressAlert(id: string): Promise<void> {
+    await this.fetch(`/api/alerts/${id}/unsuppress`, {
+      method: 'POST',
+    });
+  }
+
   async getTaskQueue(): Promise<AgentTaskQueueGroup[]> {
     return this.fetch('/api/task-queue');
   }
@@ -264,6 +270,16 @@ export class WebSocketAdapter implements TransportAdapter {
     reason?: string,
   ): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }> {
     return this.fetch(`/api/security/events/${id}/mark-safe`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async unresolveSecurityEvent(
+    id: number,
+    reason?: string,
+  ): Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }> {
+    return this.fetch(`/api/security/events/${id}/unresolve`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });

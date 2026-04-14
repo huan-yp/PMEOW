@@ -63,12 +63,14 @@ export interface TransportAdapter {
   // Alerts
   getAlerts(limit?: number, offset?: number): Promise<AlertRecord[]>;
   suppressAlert(id: string, days?: number): Promise<void>;
+  unsuppressAlert(id: string): Promise<void>;
 
   // Operator data
   getTaskQueue(): Promise<AgentTaskQueueGroup[]>;
   getProcessAudit(serverId: string): Promise<ProcessAuditRow[]>;
   getSecurityEvents(query?: SecurityEventQuery): Promise<SecurityEventRecord[]>;
   markSecurityEventSafe(id: number, reason?: string): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>;
+  unresolveSecurityEvent(id: number, reason?: string): Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>;
   getGpuOverview(): Promise<GpuOverviewResponse>;
   getGpuUsageSummary(hours?: number): Promise<GpuUsageSummaryItem[]>;
   getGpuUsageByUser(user: string, hours?: number): Promise<GpuUsageTimelinePoint[]>;

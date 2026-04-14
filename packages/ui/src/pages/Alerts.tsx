@@ -10,6 +10,7 @@ export function Alerts() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [suppressingId, setSuppressingId] = useState<string | null>(null);
+  const [unsuppressingId, setUnsuppressingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +34,17 @@ export function Alerts() {
       // ignore
     }
     setSuppressingId(null);
+  };
+
+  const handleUnsuppress = async (id: string) => {
+    setUnsuppressingId(id);
+    try {
+      await transport.unsuppressAlert(id);
+      await load();
+    } catch {
+      // ignore
+    }
+    setUnsuppressingId(null);
   };
 
   const formatTime = (ts: number) => new Date(ts).toLocaleString();
@@ -84,7 +96,16 @@ export function Alerts() {
                       )}
                     </td>
                     <td className="py-2">
-                      {!isSuppressed && (
+                      {isSuppressed ? (
+                        <button
+                          onClick={() => handleUnsuppress(a.id)}
+                          disabled={unsuppressingId === a.id}
+                          aria-label={`取消忽略 ${a.id}`}
+                          className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
+                        >
+                          取消忽略
+                        </button>
+                      ) : (
                         <div className="flex gap-1">
                           {[1, 3, 7, 30].map(d => (
                             <button
