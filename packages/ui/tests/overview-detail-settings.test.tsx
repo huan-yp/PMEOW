@@ -176,8 +176,11 @@ function createMockTransport(): TransportAdapter {
     login: vi.fn<(password: string) => Promise<{ success: boolean; token?: string; error?: string }>>(async (_password) => ({ success: true, token: 'token' })),
     setPassword: vi.fn<(password: string) => Promise<{ success: boolean }>>(async (_password) => ({ success: true })),
     checkAuth: vi.fn<() => Promise<{ authenticated: boolean; needsSetup: boolean }>>(async () => ({ authenticated: true, needsSetup: false })),
-    getAlerts: vi.fn<(limit?: number, offset?: number) => Promise<AlertRecord[]>>(async (_limit, _offset) => []),
+    getAlerts: vi.fn<(query?: unknown) => Promise<AlertRecord[]>>(async (_query) => []),
     suppressAlert: vi.fn<(id: string, days?: number) => Promise<void>>(async (_id, _days) => undefined),
+    unsuppressAlert: vi.fn<(id: string) => Promise<void>>(async (_id) => undefined),
+    batchSuppressAlerts: vi.fn<(ids: string[], days?: number) => Promise<void>>(async (_ids, _days) => undefined),
+    batchUnsuppressAlerts: vi.fn<(ids: string[]) => Promise<void>>(async (_ids) => undefined),
     getTaskQueue: vi.fn<() => Promise<AgentTaskQueueGroup[]>>(async () => [
       {
         serverId: 'server-agent-1',

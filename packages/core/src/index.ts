@@ -67,7 +67,8 @@ export {
 export { insertServerStatusEvent, listServerStatusEvents } from './db/server-status-events.js';
 export { Scheduler } from './scheduler.js';
 export { setAlertCallback } from './alerts.js';
-export { saveAlert, getAlerts, suppressAlert, unsuppressAlert, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
+export { saveAlert, getAlerts, suppressAlert, unsuppressAlert, batchSuppressAlerts, batchUnsuppressAlerts, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
+export type { AlertQuery } from './db/alerts.js';
 export { setNotifyCallback } from './hooks/actions.js';
 export { setHookTriggeredCallback, resetHookState } from './hooks/engine.js';
 export { evaluateCondition, getGpuIdleMinutes, resetIdleTracking } from './hooks/conditions.js';

@@ -14,6 +14,13 @@ export interface SecurityEventQuery {
   hours?: number;
 }
 
+export interface AlertQuery {
+  limit?: number;
+  offset?: number;
+  /** true = only suppressed; false = only active; undefined = all */
+  suppressed?: boolean;
+}
+
 export interface TransportAdapter {
   readonly isElectron?: boolean;
 
@@ -61,9 +68,11 @@ export interface TransportAdapter {
   checkAuth(): Promise<{ authenticated: boolean; needsSetup: boolean }>;
 
   // Alerts
-  getAlerts(limit?: number, offset?: number): Promise<AlertRecord[]>;
+  getAlerts(query?: AlertQuery): Promise<AlertRecord[]>;
   suppressAlert(id: string, days?: number): Promise<void>;
   unsuppressAlert(id: string): Promise<void>;
+  batchSuppressAlerts(ids: string[], days?: number): Promise<void>;
+  batchUnsuppressAlerts(ids: string[]): Promise<void>;
 
   // Operator data
   getTaskQueue(): Promise<AgentTaskQueueGroup[]>;

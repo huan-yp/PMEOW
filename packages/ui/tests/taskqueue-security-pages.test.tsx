@@ -21,7 +21,7 @@ import type {
 } from '@monitor/core';
 import { DEFAULT_SETTINGS } from '@monitor/core';
 import App from '../src/App.js';
-import type { SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
+import type { AlertQuery, SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
 import { useStore } from '../src/store/useStore.js';
 
 function createDeferred<T>() {
@@ -139,9 +139,11 @@ function createMockTransport() {
     login: vi.fn<(password: string) => Promise<{ success: boolean; token?: string; error?: string }>>(async (_password) => ({ success: true, token: 'token' })),
     setPassword: vi.fn<(password: string) => Promise<{ success: boolean }>>(async (_password) => ({ success: true })),
     checkAuth: vi.fn<() => Promise<{ authenticated: boolean; needsSetup: boolean }>>(async () => ({ authenticated: true, needsSetup: false })),
-    getAlerts: vi.fn<(limit?: number, offset?: number) => Promise<AlertRecord[]>>(async (_limit, _offset) => []),
+    getAlerts: vi.fn<(query?: AlertQuery) => Promise<AlertRecord[]>>(async (_query) => []),
     suppressAlert: vi.fn<(id: string, days?: number) => Promise<void>>(async (_id, _days) => undefined),
     unsuppressAlert: vi.fn<(id: string) => Promise<void>>(async (_id) => undefined),
+    batchSuppressAlerts: vi.fn<(ids: string[], days?: number) => Promise<void>>(async (_ids, _days) => undefined),
+    batchUnsuppressAlerts: vi.fn<(ids: string[]) => Promise<void>>(async (_ids) => undefined),
     getTaskQueue: vi.fn<() => Promise<AgentTaskQueueGroup[]>>(async () => taskQueueGroups),
     getProcessAudit: vi.fn<(serverId: string) => Promise<ProcessAuditRow[]>>(async (_serverId) => []),
     getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async (_query) => securityEvents),

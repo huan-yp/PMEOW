@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -78,7 +78,7 @@ function createMockTransport() {
     getProcessAudit: vi.fn<(serverId: string) => Promise<ProcessAuditRow[]>>(async (_serverId) => []),
     getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async (_query) => []),
     markSecurityEventSafe: vi.fn<(id: number, reason?: string) => Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>>(async (id, _reason) => ({ resolvedEvent: { id, serverId: 's', eventType: 'suspicious_process', fingerprint: 'fp', details: { reason: '' }, resolved: true, resolvedBy: 'op', createdAt: 1, resolvedAt: 1 } })),
-    unresolveSecurityEvent: vi.fn<(id: number, reason?: string) => Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>>(async (id, _reason) => { throw new Error('not implemented'); }),
+    unresolveSecurityEvent: vi.fn<(id: number, reason?: string) => Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>>(async (_id, _reason) => { throw new Error('not implemented'); }),
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 1, users: [], servers: [] })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
     getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageTimelinePoint[]>>(async (_user, _hours) => []),
@@ -109,7 +109,7 @@ function renderApp(transport: TransportAdapter, route = '/') {
   return render(<AppWithAdapter adapter={transport} />);
 }
 
-describe('alerts unsuppress', () => {
+describe('alerts page', () => {
   beforeEach(() => {
     useStore.setState({
       servers: [],
@@ -124,63 +124,155 @@ describe('alerts unsuppress', () => {
     });
   });
 
-  it('suppressed alerts show a "取消忽略" button and call unsuppressAlert when clicked', async () => {
+  it('switching to "已忽略" tab calls getAlerts with suppressed=true', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    renderApp(transport, '/alerts');
+
+    expect(await screen.findByRole('button', { name: '已忽略' })).toBeTruthy();
+
+    transport.getAlerts.mockClear();
+
+    await user.click(screen.getByRole('button', { name: '已忽略' }));
+
+    await waitFor(() => {
+      expect(transport.getAlerts).toHaveBeenCalledWith(
+        expect.objectContaining({ suppressed: true }),
+      );
+    });
+  });
+
+  it('switching to "活跃" tab calls getAlerts with suppressed=false', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    renderApp(transport, '/alerts');
+    await screen.findByRole('button', { name: '全部' });
+
+    transport.getAlerts.mockClear();
+
+    await user.click(screen.getByRole('button', { name: '活跃' }));
+
+    await waitFor(() => {
+      expect(transport.getAlerts).toHaveBeenCalledWith(
+        expect.objectContaining({ suppressed: false }),
+      );
+    });
+  });
+
+  it('search filters rows by serverName or metric', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    transport.getAlerts = vi.fn(async () => [
+      createAlertRecord({ id: 'a-1', serverName: 'node-gpu-01', metric: 'cpu_usage' }),
+      createAlertRecord({ id: 'a-2', serverName: 'node-gpu-02', metric: 'memory_usage' }),
+    ]);
+
+    renderApp(transport, '/alerts');
+
+    expect(await screen.findByText('node-gpu-01')).toBeTruthy();
+    expect(screen.getByText('node-gpu-02')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('search'), 'memory');
+
+    await waitFor(() => {
+      expect(screen.queryByText('node-gpu-01')).toBeNull();
+      expect(screen.getByText('node-gpu-02')).toBeTruthy();
+    });
+  });
+
+  it('checkbox selects a row and header checkbox selects all', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    transport.getAlerts = vi.fn(async () => [
+      createAlertRecord({ id: 'chk-1', serverName: 'n1', metric: 'cpu_usage' }),
+      createAlertRecord({ id: 'chk-2', serverName: 'n2', metric: 'mem_usage' }),
+    ]);
+
+    renderApp(transport, '/alerts');
+
+    await screen.findByText('n1');
+
+    const rowCheckbox = screen.getByLabelText('选择 chk-1');
+    await user.click(rowCheckbox);
+    expect((rowCheckbox as HTMLInputElement).checked).toBe(true);
+
+    // Batch bar appears
+    expect(await screen.findByText(/已选 1 条/)).toBeTruthy();
+
+    // Header select-all
+    const allCheckbox = screen.getByLabelText('全选');
+    await user.click(allCheckbox);
+    expect((screen.getByLabelText('选择 chk-2') as HTMLInputElement).checked).toBe(true);
+    expect(await screen.findByText(/已选 2 条/)).toBeTruthy();
+  });
+
+  it('batch suppress calls batchSuppressAlerts with selected ids', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    transport.getAlerts = vi.fn(async () => [
+      createAlertRecord({ id: 'bs-1', serverName: 'node-bs-1', metric: 'cpu_usage' }),
+      createAlertRecord({ id: 'bs-2', serverName: 'node-bs-2', metric: 'mem_usage' }),
+    ]);
+
+    renderApp(transport, '/alerts');
+
+    await screen.findByText('node-bs-1');
+
+    // Select both rows via header checkbox
+    await user.click(screen.getByLabelText('全选'));
+
+    expect(await screen.findByText(/已选 2 条/)).toBeTruthy();
+
+    transport.batchSuppressAlerts.mockClear();
+    // Click the "7天" button in the batch action bar (first one in DOM)
+    const dayButtons = screen.getAllByRole('button', { name: '7天' });
+    await user.click(dayButtons[0]);
+
+    await waitFor(() => {
+      expect(transport.batchSuppressAlerts).toHaveBeenCalledWith(
+        expect.arrayContaining(['bs-1', 'bs-2']),
+        7,
+      );
+    });
+  });
+
+  it('batch unsuppress calls batchUnsuppressAlerts with selected ids', async () => {
     const transport = createMockTransport();
     const user = userEvent.setup();
 
     const futureTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
     transport.getAlerts = vi.fn(async () => [
-      createAlertRecord({
-        id: 'alert-sup-1',
-        suppressedUntil: futureTime,
-      }),
+      createAlertRecord({ id: 'bu-1', serverName: 'n', metric: 'cpu_usage', suppressedUntil: futureTime }),
     ]);
 
     renderApp(transport, '/alerts');
 
-    expect(await screen.findByRole('button', { name: '取消忽略 alert-sup-1' })).toBeTruthy();
-    expect(screen.queryByText('1天')).toBeNull();
+    await screen.findByText('n');
 
-    transport.unsuppressAlert.mockClear();
+    await user.click(screen.getByLabelText('选择 bu-1'));
+    expect(await screen.findByText(/已选 1 条/)).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: '取消忽略 alert-sup-1' }));
+    transport.batchUnsuppressAlerts.mockClear();
+    await user.click(screen.getByRole('button', { name: '批量取消忽略' }));
 
     await waitFor(() => {
-      expect(transport.unsuppressAlert).toHaveBeenCalledWith('alert-sup-1');
+      expect(transport.batchUnsuppressAlerts).toHaveBeenCalledWith(['bu-1']);
     });
   });
 
-  it('active alerts do not show "取消忽略" button but show suppress day buttons', async () => {
+  it('registers onAlert subscription on mount', async () => {
     const transport = createMockTransport();
-
-    transport.getAlerts = vi.fn(async () => [
-      createAlertRecord({
-        id: 'alert-active-1',
-        suppressedUntil: null,
-      }),
-    ]);
 
     renderApp(transport, '/alerts');
 
-    await screen.findByText('活跃');
-    expect(screen.queryByRole('button', { name: '取消忽略 alert-active-1' })).toBeNull();
-    expect(screen.getByRole('button', { name: '1天' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '7天' })).toBeTruthy();
-  });
+    await screen.findByText('暂无告警记录');
 
-  it('expired suppressedUntil alerts show suppress buttons, not "取消忽略"', async () => {
-    const transport = createMockTransport();
-
-    transport.getAlerts = vi.fn(async () => [
-      createAlertRecord({
-        id: 'alert-expired-1',
-        suppressedUntil: 1_000, // far in the past
-      }),
-    ]);
-
-    renderApp(transport, '/alerts');
-
-    await screen.findByText('活跃');
-    expect(screen.queryByRole('button', { name: '取消忽略 alert-expired-1' })).toBeNull();
+    // onAlert subscription was registered during mount
+    expect(transport.onAlert).toHaveBeenCalled();
   });
 });

@@ -414,4 +414,85 @@ describe('operator routes', () => {
     const alert = alertsResponse.body.find((a: any) => a.id === 'alert-unsup-1');
     expect(alert.suppressedUntil).toBeNull();
   });
+
+  it('GET /api/alerts?suppressed=true returns only suppressed alerts', async () => {
+    saveAlert({
+      id: 'alert-filter-sup',
+      serverId: 'srv-flt',
+      serverName: 'gpu-flt',
+      metric: 'cpu_usage',
+      value: 92,
+      threshold: 90,
+      timestamp: Date.now(),
+      suppressedUntil: null,
+    });
+    saveAlert({
+      id: 'alert-filter-active',
+      serverId: 'srv-flt',
+      serverName: 'gpu-flt',
+      metric: 'memory_usage',
+      value: 88,
+      threshold: 80,
+      timestamp: Date.now(),
+      suppressedUntil: null,
+    });
+    suppressAlert('alert-filter-sup', Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const suppResponse = await request(baseUrl)
+      .get('/api/alerts?suppressed=true')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(suppResponse.status).toBe(200);
+    const suppIds = suppResponse.body.map((a: any) => a.id);
+    expect(suppIds).toContain('alert-filter-sup');
+    expect(suppIds).not.toContain('alert-filter-active');
+  });
+
+  it('batch suppress returns 200', async () => {
+    saveAlert({ id: 'bat-rt-1', serverId: 's', serverName: 'n', metric: 'cpu', value: 90, threshold: 80, timestamp: Date.now(), suppressedUntil: null });
+    saveAlert({ id: 'bat-rt-2', serverId: 's', serverName: 'n', metric: 'mem', value: 90, threshold: 80, timestamp: Date.now(), suppressedUntil: null });
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post('/api/alerts/batch/suppress')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: ['bat-rt-1', 'bat-rt-2'], days: 7 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+  });
+
+  it('batch unsuppress returns 200', async () => {
+    saveAlert({ id: 'bat-rt-3', serverId: 's', serverName: 'n', metric: 'cpu', value: 90, threshold: 80, timestamp: Date.now(), suppressedUntil: null });
+    suppressAlert('bat-rt-3', Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post('/api/alerts/batch/unsuppress')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: ['bat-rt-3'] });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+  });
+
+  it('batch suppress with empty ids returns 400', async () => {
+    const { baseUrl } = await startTestRuntime();
+    const token = await login(baseUrl);
+
+    const response = await request(baseUrl)
+      .post('/api/alerts/batch/suppress')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ids: [] });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('缺少 ids 参数');
+  });
 });
