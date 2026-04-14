@@ -11,8 +11,10 @@ import {
   getServerById,
   listSecurityEvents,
   markSecurityEventSafe,
+  unresolveSecurityEvent,
   resolveRawUserPerson,
   type Scheduler,
+  type SecurityEventRecord,
 } from '@monitor/core';
 import type { Express, Request, Response } from 'express';
 import type { Namespace } from 'socket.io';
@@ -175,6 +177,41 @@ export function setupOperatorRoutes(app: Express, options: OperatorRouteOptions)
     if (result.auditEvent) {
       options.uiNamespace.emit('securityEvent', result.auditEvent);
     }
+
+    res.json(result);
+  });
+
+  app.post('/api/security/events/:id/unresolve', (req: AuthenticatedRequest, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: '非法事件 ID' });
+      return;
+    }
+
+    const reasonValue = (req.body as { reason?: unknown } | null | undefined)?.reason;
+    const reason = typeof reasonValue === 'string' && reasonValue.trim()
+      ? reasonValue.trim()
+      : 'unresolve';
+
+    const result = unresolveSecurityEvent(id, getAuthenticatedActor(req), reason);
+    if ('error' in result) {
+      if (result.error === 'not_found') {
+        res.status(404).json({ error: '安全事件不存在' });
+        return;
+      }
+      if (result.error === 'not_resolved') {
+        res.status(400).json({ error: '该事件尚未被忽略' });
+        return;
+      }
+      if (result.error === 'duplicate_open') {
+        res.status(409).json({ error: '相同指纹的事件已处于未处理状态' });
+        return;
+      }
+    }
+
+    const { reopenedEvent, auditEvent } = result as { reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord };
+    options.uiNamespace.emit('securityEvent', reopenedEvent);
+    options.uiNamespace.emit('securityEvent', auditEvent);
 
     res.json(result);
   });

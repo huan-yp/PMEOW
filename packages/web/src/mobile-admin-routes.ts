@@ -65,7 +65,7 @@ export function setupMobileAdminRoutes(app: Express, options: SetupMobileAdminRo
   });
 
   app.get('/api/mobile/admin/notifications', (_req, res) => {
-    const alerts = getAlerts(50);
+    const alerts = getAlerts({ limit: 50 });
     res.json(alerts);
   });
 }

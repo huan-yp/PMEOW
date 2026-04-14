@@ -10,7 +10,7 @@ import type {
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
   MirroredAgentTaskRecord, ResolvedGpuAllocationResponse,
 } from '@monitor/core';
-import type { SecurityEventQuery } from './types.js';
+import type { SecurityEventQuery, AlertQuery } from './types.js';
 
 export class WebSocketAdapter implements TransportAdapter {
   readonly isElectron = false;
@@ -231,14 +231,38 @@ export class WebSocketAdapter implements TransportAdapter {
   }
 
   // Alerts
-  async getAlerts(limit = 50, offset = 0): Promise<AlertRecord[]> {
-    return this.fetch(`/api/alerts?limit=${limit}&offset=${offset}`);
+  async getAlerts(query: AlertQuery = {}): Promise<AlertRecord[]> {
+    const params = new URLSearchParams();
+    params.set('limit', String(query.limit ?? 50));
+    params.set('offset', String(query.offset ?? 0));
+    if (query.suppressed !== undefined) params.set('suppressed', String(query.suppressed));
+    return this.fetch(`/api/alerts?${params.toString()}`);
   }
 
   async suppressAlert(id: string, days?: number): Promise<void> {
     await this.fetch(`/api/alerts/${id}/suppress`, {
       method: 'POST',
       body: JSON.stringify({ days }),
+    });
+  }
+
+  async unsuppressAlert(id: string): Promise<void> {
+    await this.fetch(`/api/alerts/${id}/unsuppress`, {
+      method: 'POST',
+    });
+  }
+
+  async batchSuppressAlerts(ids: string[], days?: number): Promise<void> {
+    await this.fetch('/api/alerts/batch/suppress', {
+      method: 'POST',
+      body: JSON.stringify({ ids, days }),
+    });
+  }
+
+  async batchUnsuppressAlerts(ids: string[]): Promise<void> {
+    await this.fetch('/api/alerts/batch/unsuppress', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
     });
   }
 
@@ -264,6 +288,16 @@ export class WebSocketAdapter implements TransportAdapter {
     reason?: string,
   ): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }> {
     return this.fetch(`/api/security/events/${id}/mark-safe`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async unresolveSecurityEvent(
+    id: number,
+    reason?: string,
+  ): Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }> {
+    return this.fetch(`/api/security/events/${id}/unresolve`, {
       method: 'POST',
       body: JSON.stringify({ reason }),
     });

@@ -21,7 +21,7 @@ import type {
 } from '@monitor/core';
 import { DEFAULT_SETTINGS } from '@monitor/core';
 import App from '../src/App.js';
-import type { SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
+import type { AlertQuery, SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
 import { useStore } from '../src/store/useStore.js';
 
 function createDeferred<T>() {
@@ -139,13 +139,20 @@ function createMockTransport() {
     login: vi.fn<(password: string) => Promise<{ success: boolean; token?: string; error?: string }>>(async (_password) => ({ success: true, token: 'token' })),
     setPassword: vi.fn<(password: string) => Promise<{ success: boolean }>>(async (_password) => ({ success: true })),
     checkAuth: vi.fn<() => Promise<{ authenticated: boolean; needsSetup: boolean }>>(async () => ({ authenticated: true, needsSetup: false })),
-    getAlerts: vi.fn<(limit?: number, offset?: number) => Promise<AlertRecord[]>>(async (_limit, _offset) => []),
+    getAlerts: vi.fn<(query?: AlertQuery) => Promise<AlertRecord[]>>(async (_query) => []),
     suppressAlert: vi.fn<(id: string, days?: number) => Promise<void>>(async (_id, _days) => undefined),
+    unsuppressAlert: vi.fn<(id: string) => Promise<void>>(async (_id) => undefined),
+    batchSuppressAlerts: vi.fn<(ids: string[], days?: number) => Promise<void>>(async (_ids, _days) => undefined),
+    batchUnsuppressAlerts: vi.fn<(ids: string[]) => Promise<void>>(async (_ids) => undefined),
     getTaskQueue: vi.fn<() => Promise<AgentTaskQueueGroup[]>>(async () => taskQueueGroups),
     getProcessAudit: vi.fn<(serverId: string) => Promise<ProcessAuditRow[]>>(async (_serverId) => []),
     getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async (_query) => securityEvents),
     markSecurityEventSafe: vi.fn<(id: number, reason?: string) => Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>>(async (id, _reason) => ({
       resolvedEvent: createSecurityEvent({ id, resolved: true, resolvedBy: 'operator', resolvedAt: 1_710_000_100_000 }),
+    })),
+    unresolveSecurityEvent: vi.fn<(id: number, reason?: string) => Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>>(async (id, _reason) => ({
+      reopenedEvent: createSecurityEvent({ id, resolved: false, resolvedBy: null, resolvedAt: null }),
+      auditEvent: createSecurityEvent({ id: id + 1000, eventType: 'unresolve', resolved: true, resolvedBy: 'operator', resolvedAt: 1_710_000_200_000, details: { reason: 'unresolve', targetEventId: id } }),
     })),
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 1_710_000_000_000, users: [], servers: [] })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
@@ -335,5 +342,71 @@ describe('task queue and security pages', () => {
     expect(await screen.findByText('已标记安全')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '标记安全 102' })).toBeNull();
     expect(transport.markSecurityEventSafe).not.toHaveBeenCalled();
+  });
+
+  it('shows "取消忽略" button for resolved events and calls unresolveSecurityEvent', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    transport.getSecurityEvents = vi.fn(async () => [
+      createSecurityEvent({
+        id: 201,
+        resolved: true,
+        resolvedBy: 'operator',
+        resolvedAt: 1_710_000_100_000,
+      }),
+    ]);
+
+    renderApp(transport, '/security');
+
+    expect(await screen.findByRole('button', { name: '取消忽略 201' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '标记安全 201' })).toBeNull();
+
+    transport.unresolveSecurityEvent.mockClear();
+    transport.getSecurityEvents.mockClear();
+
+    await user.click(screen.getByRole('button', { name: '取消忽略 201' }));
+
+    await waitFor(() => {
+      expect(transport.unresolveSecurityEvent).toHaveBeenCalledWith(201);
+    });
+  });
+
+  it('shows resolved-by details for resolved events', async () => {
+    const transport = createMockTransport();
+
+    transport.getSecurityEvents = vi.fn(async () => [
+      createSecurityEvent({
+        id: 202,
+        resolved: true,
+        resolvedBy: 'admin-user',
+        resolvedAt: 1_710_000_150_000,
+      }),
+    ]);
+
+    renderApp(transport, '/security');
+
+    expect(await screen.findByText(/admin-user/)).toBeTruthy();
+  });
+
+  it('does not show "取消忽略" button for unresolve audit events', async () => {
+    const transport = createMockTransport();
+
+    transport.getSecurityEvents = vi.fn(async () => [
+      createSecurityEvent({
+        id: 203,
+        eventType: 'unresolve',
+        resolved: true,
+        resolvedBy: 'operator',
+        resolvedAt: 1_710_000_200_000,
+        details: { reason: 'unresolve', targetEventId: 101 },
+      }),
+    ]);
+
+    renderApp(transport, '/security');
+
+    // The unresolve audit event is visible in the history but has no action button
+    expect(await screen.findByText('取消忽略')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '取消忽略 203' })).toBeNull();
   });
 });

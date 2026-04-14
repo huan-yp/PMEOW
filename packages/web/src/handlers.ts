@@ -11,7 +11,7 @@ import {
   getSettings, saveSettings,
   setAlertCallback, setHookTriggeredCallback, setNotifyCallback,
   SSHManager,
-  getAlerts, suppressAlert,
+  getAlerts, suppressAlert, unsuppressAlert, batchSuppressAlerts, batchUnsuppressAlerts,
 } from '@monitor/core';
 import type { ServerInput, HookRuleInput } from '@monitor/core';
 
@@ -198,7 +198,34 @@ export function setupRestRoutes(app: any, scheduler: Scheduler): void {
   app.get('/api/alerts', (req: any, res: any) => {
     const limit = Number(req.query.limit) || 50;
     const offset = Number(req.query.offset) || 0;
-    res.json(getAlerts(limit, offset));
+    let suppressed: boolean | undefined;
+    if (req.query.suppressed === 'true') suppressed = true;
+    else if (req.query.suppressed === 'false') suppressed = false;
+    res.json(getAlerts({ limit, offset, suppressed }));
+  });
+
+  // Batch routes must be registered before the :id wildcard routes
+  app.post('/api/alerts/batch/suppress', (req: any, res: any) => {
+    const ids: unknown = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string')) {
+      res.status(400).json({ error: '缺少 ids 参数' });
+      return;
+    }
+    const settings = getSettings();
+    const days = Number(req.body.days) || settings.alertSuppressDefaultDays || 7;
+    const untilMs = Date.now() + days * 24 * 60 * 60 * 1000;
+    batchSuppressAlerts(ids as string[], untilMs);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/alerts/batch/unsuppress', (req: any, res: any) => {
+    const ids: unknown = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string')) {
+      res.status(400).json({ error: '缺少 ids 参数' });
+      return;
+    }
+    batchUnsuppressAlerts(ids as string[]);
+    res.json({ ok: true });
   });
 
   app.post('/api/alerts/:id/suppress', (req: any, res: any) => {
@@ -206,6 +233,11 @@ export function setupRestRoutes(app: any, scheduler: Scheduler): void {
     const days = Number(req.body.days) || settings.alertSuppressDefaultDays || 7;
     const untilMs = Date.now() + days * 24 * 60 * 60 * 1000;
     suppressAlert(req.params.id, untilMs);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/alerts/:id/unsuppress', (req: any, res: any) => {
+    unsuppressAlert(req.params.id);
     res.json({ ok: true });
   });
 

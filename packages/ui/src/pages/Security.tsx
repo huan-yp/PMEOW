@@ -47,6 +47,8 @@ function formatEventType(eventType: SecurityEventRecord['eventType']) {
       return 'GPU 高利用率';
     case 'marked_safe':
       return '已标记安全';
+    case 'unresolve':
+      return '取消忽略';
     default:
       return eventType;
   }
@@ -58,6 +60,10 @@ function formatTimestamp(timestamp: number) {
 
 function canMarkEventSafe(event: SecurityEventRecord) {
   return !event.resolved && event.eventType !== 'marked_safe';
+}
+
+function canUnresolveEvent(event: SecurityEventRecord) {
+  return event.resolved && event.eventType !== 'marked_safe' && event.eventType !== 'unresolve';
 }
 
 export function Security() {
@@ -72,6 +78,7 @@ export function Security() {
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
   const [resolvingId, setResolvingId] = useState<number | null>(null);
+  const [unresolvingId, setUnresolvingId] = useState<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = transport.onSecurityEvent(() => {
@@ -89,7 +96,7 @@ export function Security() {
       try {
         const nextEvents = await transport.getSecurityEvents(appliedQuery);
         if (!cancelled) {
-          setEvents(nextEvents.filter((e) => e.eventType !== 'marked_safe'));
+          setEvents(nextEvents);
         }
       } catch {
         if (!cancelled) {
@@ -128,6 +135,18 @@ export function Security() {
       return;
     } finally {
       setResolvingId(null);
+    }
+  };
+
+  const handleUnresolve = async (eventId: number) => {
+    setUnresolvingId(eventId);
+    try {
+      await transport.unresolveSecurityEvent(eventId);
+      setReloadToken((value) => value + 1);
+    } catch {
+      return;
+    } finally {
+      setUnresolvingId(null);
     }
   };
 
@@ -224,7 +243,16 @@ export function Security() {
                     ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-400">
-                    {event.resolved ? '已处理' : '未处理'}
+                    {event.resolved ? (
+                      <div>
+                        <div>已处理</div>
+                        {event.resolvedBy && event.resolvedAt ? (
+                          <div className="mt-0.5 text-xs text-slate-500">
+                            由 {event.resolvedBy} 于 {formatTimestamp(event.resolvedAt)}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : '未处理'}
                   </td>
                   <td className="px-4 py-3">
                     {canMarkEventSafe(event) ? (
@@ -236,6 +264,16 @@ export function Security() {
                         className="rounded border border-dark-border px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
                       >
                         标记安全
+                      </button>
+                    ) : canUnresolveEvent(event) ? (
+                      <button
+                        type="button"
+                        aria-label={`取消忽略 ${event.id}`}
+                        onClick={() => handleUnresolve(event.id)}
+                        disabled={unresolvingId === event.id}
+                        className="rounded border border-dark-border px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
+                      >
+                        取消忽略
                       </button>
                     ) : (
                       <span className="text-xs text-slate-500">已标记</span>
