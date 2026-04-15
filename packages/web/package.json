@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc && rm -rf ./dist/public && cp -r ../ui/dist ./dist/public",
+    "build": "tsc && node ./scripts/copy-ui-dist.mjs",
     "start": "node dist/server.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
