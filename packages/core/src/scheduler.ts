@@ -1,8 +1,8 @@
 import { EventEmitter } from 'events';
 import { getAllServers, getServerById } from './db/servers.js';
-import { saveMetrics, cleanOldMetrics } from './db/metrics.js';
+import { saveMetrics, cleanOldMetrics, cleanOldMetricsAgg, aggregateMetrics, aggregateMetrics15mFrom1m, getAggregationCursor, setAggregationCursor } from './db/metrics.js';
 import { ingestAgentMetrics } from './agent/ingest.js';
-import { cleanOldGpuUsage } from './db/gpu-usage.js';
+import { cleanOldGpuUsage, cleanOldGpuUsageAgg, aggregateGpuUsage, aggregateGpuUsage15mFrom1m } from './db/gpu-usage.js';
 import { getSettings } from './db/settings.js';
 import { checkAlerts } from './alerts.js';
 import { evaluateHooks } from './hooks/engine.js';
@@ -14,7 +14,8 @@ import { AgentDataSource } from './datasource/agent-datasource.js';
 import type { NodeDataSource } from './datasource/types.js';
 import { insertServerStatusEvent } from './db/server-status-events.js';
 import { writeAttributionFacts } from './person/attribution.js';
-import type { MetricsSnapshot, ServerStatus, ConnectionStatus } from './types.js';
+import { exportArchive } from './db/archive.js';
+import type { MetricsSnapshot, ServerStatus, ConnectionStatus, BucketSize } from './types.js';
 
 export class Scheduler extends EventEmitter {
   private sharedSSH = new SSHManager();
@@ -106,9 +107,7 @@ export class Scheduler extends EventEmitter {
 
     // Cleanup old metrics every hour
     this.cleanupTimerId = setInterval(() => {
-      const s = getSettings();
-      cleanOldMetrics(s.historyRetentionDays);
-      cleanOldGpuUsage(s.historyRetentionDays);
+      this.runMaintenancePipeline();
     }, 60 * 60 * 1000);
   }
 
@@ -299,6 +298,75 @@ export class Scheduler extends EventEmitter {
       writeAttributionFacts(snapshot, []);
     } catch {
       // Attribution recording failure should not break the metrics pipeline
+    }
+  }
+
+  /**
+   * Hourly maintenance pipeline:
+   * 1. Aggregate raw data into 1-minute buckets
+   * 2. Roll up 1-minute buckets into 15-minute buckets
+   * 3. Archive old aggregation data (if enabled)
+   * 4. Delete expired raw data and old aggregation data
+   */
+  private runMaintenancePipeline(): void {
+    const s = getSettings();
+    const now = Date.now();
+    const BUCKET_1M: BucketSize = 60_000;
+
+    try {
+      // Step 1: Aggregate raw → 1min buckets
+      // Process from last cursor to 2 minutes ago (avoid aggregating incomplete buckets)
+      const metricsCursor = getAggregationCursor('metrics_1m');
+      const gpuCursor = getAggregationCursor('gpu_1m');
+      const safeTo = now - 2 * 60_000;
+
+      const metricsFrom = metricsCursor || (now - s.rawRetentionDays * 86_400_000);
+      const gpuFrom = gpuCursor || (now - s.rawRetentionDays * 86_400_000);
+
+      if (metricsFrom < safeTo) {
+        aggregateMetrics(BUCKET_1M, metricsFrom, safeTo);
+        setAggregationCursor('metrics_1m', safeTo);
+      }
+
+      if (gpuFrom < safeTo) {
+        aggregateGpuUsage(BUCKET_1M, gpuFrom, safeTo);
+        setAggregationCursor('gpu_1m', safeTo);
+      }
+
+      // Step 2: Roll up 1min → 15min buckets
+      const metrics15mCursor = getAggregationCursor('metrics_15m');
+      const gpu15mCursor = getAggregationCursor('gpu_15m');
+      const safe15mTo = now - 15 * 60_000;
+
+      const metrics15mFrom = metrics15mCursor || (now - s.rawRetentionDays * 86_400_000);
+      const gpu15mFrom = gpu15mCursor || (now - s.rawRetentionDays * 86_400_000);
+
+      if (metrics15mFrom < safe15mTo) {
+        aggregateMetrics15mFrom1m(metrics15mFrom, safe15mTo);
+        setAggregationCursor('metrics_15m', safe15mTo);
+      }
+
+      if (gpu15mFrom < safe15mTo) {
+        aggregateGpuUsage15mFrom1m(gpu15mFrom, safe15mTo);
+        setAggregationCursor('gpu_15m', safe15mTo);
+      }
+
+      // Step 3: Archive (if enabled)
+      if (s.archiveEnabled) {
+        try {
+          exportArchive(s);
+        } catch {
+          // Archive failure should not block cleanup
+        }
+      }
+
+      // Step 4: Delete old data
+      cleanOldMetrics(s.rawRetentionDays);
+      cleanOldGpuUsage(s.rawRetentionDays);
+      cleanOldMetricsAgg(s.aggregationRetentionDays);
+      cleanOldGpuUsageAgg(s.aggregationRetentionDays);
+    } catch {
+      // Maintenance pipeline failure should not crash the scheduler
     }
   }
 }

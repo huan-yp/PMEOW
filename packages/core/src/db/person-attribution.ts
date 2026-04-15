@@ -448,6 +448,74 @@ export function getServerPersonActivity(serverId: string): ServerPersonActivity 
   };
 }
 
+export interface PersonNodeDistribution {
+  serverId: string;
+  serverName: string;
+  avgVramMB: number;
+  maxVramMB: number;
+  sampleCount: number;
+}
+
+export interface PersonPeakPeriod {
+  bucketStart: number;
+  totalVramMB: number;
+}
+
+export function getPersonNodeDistribution(personId: string, hours = 168): PersonNodeDistribution[] {
+  const db = getDatabase();
+  const from = Date.now() - hours * 60 * 60 * 1000;
+
+  const rows = db.prepare(`
+    SELECT serverId, AVG(vramMB) as avgVram, MAX(vramMB) as maxVram, COUNT(*) as cnt
+    FROM person_attribution_facts
+    WHERE personId = ? AND sourceType LIKE 'gpu_%' AND timestamp >= ?
+    GROUP BY serverId
+    ORDER BY avgVram DESC
+  `).all(personId, from) as Array<{ serverId: string; avgVram: number; maxVram: number; cnt: number }>;
+
+  const serverNames = new Map(
+    (db.prepare('SELECT id, name FROM servers').all() as Array<{ id: string; name: string }>).map(r => [r.id, r.name]),
+  );
+
+  return rows.map(r => ({
+    serverId: r.serverId,
+    serverName: serverNames.get(r.serverId) ?? r.serverId,
+    avgVramMB: Math.round(r.avgVram),
+    maxVramMB: Math.round(r.maxVram),
+    sampleCount: r.cnt,
+  }));
+}
+
+export function getPersonPeakPeriods(personId: string, hours = 168, topN = 3): PersonPeakPeriod[] {
+  const db = getDatabase();
+  const from = Date.now() - hours * 60 * 60 * 1000;
+  const bucketMinutes = hours <= 24 ? 5 : hours <= 168 ? 30 : 120;
+  const bucketSizeMs = bucketMinutes * 60 * 1000;
+
+  const rows = db.prepare(`
+    SELECT timestamp, vramMB FROM person_attribution_facts
+    WHERE personId = ? AND sourceType LIKE 'gpu_%' AND timestamp >= ?
+    ORDER BY timestamp ASC
+  `).all(personId, from) as Array<{ timestamp: number; vramMB: number }>;
+
+  // Group by bucket → sum vram per snapshot → max within bucket
+  const snapshots = new Map<number, number>();
+  for (const row of rows) {
+    snapshots.set(row.timestamp, (snapshots.get(row.timestamp) ?? 0) + (row.vramMB ?? 0));
+  }
+
+  const buckets = new Map<number, number>();
+  for (const [ts, vram] of snapshots) {
+    const bucketStart = Math.floor(ts / bucketSizeMs) * bucketSizeMs;
+    buckets.set(bucketStart, Math.max(buckets.get(bucketStart) ?? 0, vram));
+  }
+
+  return Array.from(buckets.entries())
+    .map(([bucketStart, totalVramMB]) => ({ bucketStart, totalVramMB }))
+    .sort((a, b) => b.totalVramMB - a.totalVramMB)
+    .slice(0, topN);
+}
+
 function listBindingUserObservations(): BindingUserObservation[] {
   const db = getDatabase();
   const rows = db.prepare(`

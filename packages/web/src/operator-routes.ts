@@ -4,6 +4,7 @@ import {
   getGpuOverview,
   getGpuUsageSummary,
   getGpuUsageTimelineByUser,
+  getGpuUsageBucketed,
   getLatestGpuUsageByServerId,
   getLatestMetrics,
   getLatestUnownedGpuDurationMinutes,
@@ -86,6 +87,29 @@ export function setupOperatorRoutes(app: Express, options: OperatorRouteOptions)
 
     const hours = parseHours(req.query.hours, 168);
     res.json(getGpuUsageTimelineByUser(user, hours));
+  });
+
+  // Bucketed GPU usage history with auto source/granularity selection
+  app.get('/api/gpu-usage/by-user/bucketed', (req: Request, res: Response) => {
+    const user = typeof req.query.user === 'string' ? req.query.user.trim() : '';
+    if (!user) {
+      res.status(400).json({ error: '缺少 user 参数' });
+      return;
+    }
+
+    const now = Date.now();
+    const from = req.query.from ? Number(req.query.from) : (now - parseHours(req.query.hours, 168) * 3600 * 1000);
+    const to = req.query.to ? Number(req.query.to) : now;
+    const bucketMs = req.query.bucket ? Number(req.query.bucket) : undefined;
+    const settings = getSettings();
+    const result = getGpuUsageBucketed(user, from, to, bucketMs, settings.rawRetentionDays);
+    res.json({
+      from,
+      to,
+      bucketMs: result.bucketMs,
+      source: result.source,
+      buckets: result.buckets,
+    });
   });
 
   app.get('/api/servers/:id/process-audit', (req: Request, res: Response) => {

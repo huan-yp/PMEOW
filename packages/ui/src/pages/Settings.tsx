@@ -66,10 +66,49 @@ export function Settings() {
             </div>
           </div>
           <div className="mt-3">
-            <label htmlFor="historyRetentionDays" className="text-xs text-slate-500 block mb-1">历史数据保留天数</label>
+            <label htmlFor="historyRetentionDays" className="text-xs text-slate-500 block mb-1">历史数据保留天数 (原始快照)</label>
             <input id="historyRetentionDays" type="number" value={local.historyRetentionDays} min={1} max={90}
               onChange={e => update('historyRetentionDays', Number(e.target.value))}
               className="bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 w-24 focus:border-accent-blue focus:outline-none" />
+            <p className="text-xs text-slate-500 mt-1">兼容设置，推荐通过下方分层保留配置管理</p>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="rawRetentionDays" className="text-xs text-slate-500 block mb-1">原始数据保留 (天)</label>
+              <input id="rawRetentionDays" type="number" value={local.rawRetentionDays} min={1} max={30}
+                onChange={e => update('rawRetentionDays', Number(e.target.value))}
+                className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
+              <p className="text-xs text-slate-500 mt-1">5 秒采样原始快照保留天数</p>
+            </div>
+            <div>
+              <label htmlFor="aggregationRetentionDays" className="text-xs text-slate-500 block mb-1">聚合数据保留 (天)</label>
+              <input id="aggregationRetentionDays" type="number" value={local.aggregationRetentionDays} min={7} max={365}
+                onChange={e => update('aggregationRetentionDays', Number(e.target.value))}
+                className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 focus:border-accent-blue focus:outline-none" />
+              <p className="text-xs text-slate-500 mt-1">1 分钟和 15 分钟聚合数据保留天数</p>
+            </div>
+          </div>
+
+          <div className="mt-3 border-t border-dark-border pt-3">
+            <div className="flex items-center gap-3 mb-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={local.archiveEnabled}
+                  onChange={e => update('archiveEnabled', e.target.checked)}
+                  className="accent-accent-blue" />
+                <span className="text-sm text-slate-300">启用归档导出</span>
+              </label>
+            </div>
+            {local.archiveEnabled && (
+              <div>
+                <label htmlFor="archivePath" className="text-xs text-slate-500 block mb-1">归档目录</label>
+                <input id="archivePath" value={local.archivePath}
+                  onChange={e => update('archivePath', e.target.value)}
+                  placeholder="./data/archive"
+                  className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-slate-200 font-mono focus:border-accent-blue focus:outline-none" />
+                <p className="text-xs text-slate-500 mt-1">超过聚合保留期的数据导出为 JSONL.gz 归档</p>
+              </div>
+            )}
           </div>
         </div>
 

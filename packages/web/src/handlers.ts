@@ -6,7 +6,7 @@ import multer from 'multer';
 import { hashPassword } from './auth.js';
 import {
   getAllServers, getServerById, createServer, updateServer, deleteServer,
-  getLatestMetrics, getMetricsHistory,
+  getLatestMetrics, getMetricsHistory, getMetricsBucketed,
   getAllHooks, createHook, updateHook, deleteHook, getHookLogs,
   getSettings, saveSettings,
   setAlertCallback, setHookTriggeredCallback, setNotifyCallback,
@@ -126,11 +126,30 @@ export function setupRestRoutes(app: any, scheduler: Scheduler): void {
   });
 
   app.get('/api/metrics/:serverId/history', (req: any, res: any) => {
-    const hours = Number(req.query.hours) || 24;
-    const to = Date.now();
-    const from = to - hours * 3600 * 1000;
+    const now = Date.now();
+    // Support both legacy `hours` and new `from`/`to` params
+    const from = req.query.from ? Number(req.query.from) : (now - (Number(req.query.hours) || 24) * 3600 * 1000);
+    const to = req.query.to ? Number(req.query.to) : now;
     const metrics = getMetricsHistory(req.params.serverId, from, to);
     res.json(metrics);
+  });
+
+  // Bucketed history endpoint — returns aggregated metrics with auto source/granularity selection
+  app.get('/api/metrics/:serverId/history/bucketed', (req: any, res: any) => {
+    const now = Date.now();
+    const from = req.query.from ? Number(req.query.from) : (now - (Number(req.query.hours) || 24) * 3600 * 1000);
+    const to = req.query.to ? Number(req.query.to) : now;
+    const bucketMs = req.query.bucket ? Number(req.query.bucket) : undefined;
+    const settings = getSettings();
+    const result = getMetricsBucketed(req.params.serverId, from, to, bucketMs, settings.rawRetentionDays);
+    res.json({
+      serverId: req.params.serverId,
+      from,
+      to,
+      bucketMs: result.bucketMs,
+      source: result.source,
+      buckets: result.buckets,
+    });
   });
 
   // ---------- Server Statuses ----------

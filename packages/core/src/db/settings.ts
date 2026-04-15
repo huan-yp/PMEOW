@@ -32,6 +32,10 @@ export function getSettings(): AppSettings {
     securityHighGpuDurationMinutes: getNumberSetting('securityHighGpuDurationMinutes', DEFAULT_SETTINGS.securityHighGpuDurationMinutes),
     password: map.get('password') ?? DEFAULT_SETTINGS.password,
     agentMetricsTimeoutMs: getNumberSetting('agentMetricsTimeoutMs', DEFAULT_SETTINGS.agentMetricsTimeoutMs),
+    rawRetentionDays: getNumberSetting('rawRetentionDays', DEFAULT_SETTINGS.rawRetentionDays),
+    aggregationRetentionDays: getNumberSetting('aggregationRetentionDays', DEFAULT_SETTINGS.aggregationRetentionDays),
+    archiveEnabled: map.get('archiveEnabled') === 'true' ? true : DEFAULT_SETTINGS.archiveEnabled,
+    archivePath: map.get('archivePath') ?? DEFAULT_SETTINGS.archivePath,
   };
 }
 

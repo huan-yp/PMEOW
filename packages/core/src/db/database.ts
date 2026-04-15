@@ -313,6 +313,65 @@ function initSchema(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_server_status_events_created
       ON server_status_events(createdAt DESC);
+
+    CREATE TABLE IF NOT EXISTS metrics_agg (
+      serverId TEXT NOT NULL,
+      bucketStart INTEGER NOT NULL,
+      bucketSize INTEGER NOT NULL,
+      cpuAvg REAL NOT NULL DEFAULT 0,
+      cpuMax REAL NOT NULL DEFAULT 0,
+      memUsedAvgMB REAL NOT NULL DEFAULT 0,
+      memUsedMaxMB REAL NOT NULL DEFAULT 0,
+      memTotalMB REAL NOT NULL DEFAULT 0,
+      memPercAvg REAL NOT NULL DEFAULT 0,
+      swapUsedAvgMB REAL NOT NULL DEFAULT 0,
+      swapPercAvg REAL NOT NULL DEFAULT 0,
+      gpuUtilAvg REAL NOT NULL DEFAULT 0,
+      gpuUtilMax REAL NOT NULL DEFAULT 0,
+      gpuMemUsedAvgMB REAL NOT NULL DEFAULT 0,
+      gpuMemUsedMaxMB REAL NOT NULL DEFAULT 0,
+      gpuMemTotalMB REAL NOT NULL DEFAULT 0,
+      gpuMemPercAvg REAL NOT NULL DEFAULT 0,
+      gpuTempAvg REAL NOT NULL DEFAULT 0,
+      gpuTempMax REAL NOT NULL DEFAULT 0,
+      netRxAvgBps REAL NOT NULL DEFAULT 0,
+      netTxAvgBps REAL NOT NULL DEFAULT 0,
+      diskReadAvgKBs REAL NOT NULL DEFAULT 0,
+      diskWriteAvgKBs REAL NOT NULL DEFAULT 0,
+      diskUsageJson TEXT NOT NULL DEFAULT '[]',
+      internetReachableRatio REAL NOT NULL DEFAULT 0,
+      internetLatencyAvgMs REAL,
+      sampleCount INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (serverId, bucketStart, bucketSize)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_metrics_agg_server_bucket
+      ON metrics_agg(serverId, bucketSize, bucketStart);
+
+    CREATE TABLE IF NOT EXISTS gpu_usage_agg (
+      serverId TEXT NOT NULL,
+      userName TEXT NOT NULL,
+      personId TEXT,
+      bucketStart INTEGER NOT NULL,
+      bucketSize INTEGER NOT NULL,
+      totalVramAvgMB REAL NOT NULL DEFAULT 0,
+      totalVramMaxMB REAL NOT NULL DEFAULT 0,
+      taskVramAvgMB REAL NOT NULL DEFAULT 0,
+      nonTaskVramAvgMB REAL NOT NULL DEFAULT 0,
+      sampleCount INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (serverId, userName, bucketStart, bucketSize)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_agg_user_bucket
+      ON gpu_usage_agg(userName, bucketSize, bucketStart);
+
+    CREATE INDEX IF NOT EXISTS idx_gpu_usage_agg_person_bucket
+      ON gpu_usage_agg(personId, bucketSize, bucketStart);
+
+    CREATE TABLE IF NOT EXISTS aggregation_cursor (
+      id TEXT PRIMARY KEY,
+      lastAggregatedAt INTEGER NOT NULL
+    );
   `);
 
   ensureColumns(db, 'servers', [

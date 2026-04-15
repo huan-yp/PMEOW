@@ -7,6 +7,8 @@ import {
   getPersonTimeline,
   getPersonTasks,
   getServerPersonActivity,
+  getPersonNodeDistribution,
+  getPersonPeakPeriods,
   listPersonBindingSuggestions,
   listPersons,
   listPersonBindings,
@@ -43,6 +45,10 @@ export function setupPersonRoutes(app: Express): void {
   app.get('/api/persons/:id/timeline', (req, res) => res.json(getPersonTimeline(req.params.id, Number(req.query.hours ?? 168))));
 
   app.get('/api/persons/:id/tasks', (req, res) => res.json(getPersonTasks(req.params.id, Number(req.query.hours ?? 168))));
+
+  app.get('/api/persons/:id/node-distribution', (req, res) => res.json(getPersonNodeDistribution(req.params.id, Number(req.query.hours ?? 168))));
+
+  app.get('/api/persons/:id/peak-periods', (req, res) => res.json(getPersonPeakPeriods(req.params.id, Number(req.query.hours ?? 168), Number(req.query.top ?? 3))));
 
   app.post('/api/person-bindings', (req, res) => res.json(createPersonBinding(req.body)));
 

@@ -10,9 +10,26 @@ import { GpuAllocationBars } from '../components/GpuAllocationBars.js';
 import { ProgressBar } from '../components/ProgressBar.js';
 import { buildAdaptiveRateChart, formatBytesPerSecond } from '../utils/rates';
 import { formatMemoryPairGB, formatVramGB, formatVramPairGB } from '../utils/vram.js';
-import type { MetricsSnapshot, ProcessAuditRow, ServerPersonActivity, ResolvedGpuAllocationResponse } from '@monitor/core';
+import type { MetricsSnapshot, MetricsHistoryResponse, MetricsBucketRow, ProcessAuditRow, ServerPersonActivity, ResolvedGpuAllocationResponse } from '@monitor/core';
 
-type Tab = 'overview' | 'processes' | 'docker' | 'tasks';
+type Tab = 'overview' | 'history' | 'processes' | 'docker' | 'tasks';
+
+type HistoryRange = '1h' | '6h' | '24h' | '7d' | '30d' | '90d';
+
+const HISTORY_RANGES: { key: HistoryRange; label: string; ms: number }[] = [
+  { key: '1h', label: '1 小时', ms: 3_600_000 },
+  { key: '6h', label: '6 小时', ms: 6 * 3_600_000 },
+  { key: '24h', label: '24 小时', ms: 24 * 3_600_000 },
+  { key: '7d', label: '7 天', ms: 7 * 86_400_000 },
+  { key: '30d', label: '30 天', ms: 30 * 86_400_000 },
+  { key: '90d', label: '90 天', ms: 90 * 86_400_000 },
+];
+
+function bucketGranularityLabel(bucketMs: number): string {
+  if (bucketMs <= 60_000) return '1 分钟';
+  if (bucketMs <= 900_000) return '15 分钟';
+  return `${Math.round(bucketMs / 60_000)} 分钟`;
+}
 
 function getGpuUtilTextClass(utilizationPercent: number) {
   if (utilizationPercent >= 90) {
@@ -95,6 +112,10 @@ export function ServerDetail() {
   const [processAudit, setProcessAudit] = useState<ProcessAuditRow[]>([]);
   const [personActivity, setPersonActivity] = useState<ServerPersonActivity | null>(null);
   const [resolvedGpuAllocation, setResolvedGpuAllocation] = useState<ResolvedGpuAllocationResponse | null>(null);
+  const [historyRange, setHistoryRange] = useState<HistoryRange>('24h');
+  const [bucketedData, setBucketedData] = useState<MetricsHistoryResponse | null>(null);
+  const [bucketedLoading, setBucketedLoading] = useState(false);
+  const bucketedRequestIdRef = useRef(0);
   const requestScopeRef = useRef({ serverId: id, version: 0 });
   const historyRequestIdRef = useRef(0);
   const processAuditRequestIdRef = useRef(0);
@@ -167,6 +188,35 @@ export function ServerDetail() {
     }
   }, [id, transport]);
 
+  const loadBucketedHistory = useCallback(async () => {
+    if (!id) return;
+    const serverId = id;
+    const scopeVersion = requestScopeRef.current.version;
+    const requestId = ++bucketedRequestIdRef.current;
+    setBucketedLoading(true);
+    const rangeMs = HISTORY_RANGES.find(r => r.key === historyRange)?.ms ?? 24 * 3_600_000;
+    const to = Date.now();
+    const from = to - rangeMs;
+    try {
+      const data = await transport.getMetricsHistoryBucketed(serverId, from, to);
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        bucketedRequestIdRef.current !== requestId
+      ) return;
+      setBucketedData(data);
+    } catch {
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        bucketedRequestIdRef.current !== requestId
+      ) return;
+      setBucketedData(null);
+    } finally {
+      setBucketedLoading(false);
+    }
+  }, [id, transport, historyRange]);
+
   useLayoutEffect(() => {
     setHistory([]);
     setProcessAudit([]);
@@ -181,6 +231,12 @@ export function ServerDetail() {
   useEffect(() => {
     void loadProcessAudit();
   }, [loadProcessAudit]);
+
+  useEffect(() => {
+    if (tab === 'history') {
+      void loadBucketedHistory();
+    }
+  }, [tab, loadBucketedHistory]);
 
   useEffect(() => {
     if (!id) return;
@@ -218,6 +274,7 @@ export function ServerDetail() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'overview', label: '概览' },
+    { key: 'history', label: '历史' },
     ...(server.sourceType === 'agent' ? [{ key: 'tasks' as const, label: '任务' }] : []),
     { key: 'processes', label: '进程' },
     { key: 'docker', label: 'Docker' },
@@ -423,6 +480,119 @@ export function ServerDetail() {
               {personActivity.unassignedVramMB > 0 && (
                 <p className="mt-2 text-xs text-slate-500">未分配显存: {formatVramGB(personActivity.unassignedVramMB)}</p>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'history' && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {HISTORY_RANGES.map((range) => (
+              <button
+                key={range.key}
+                onClick={() => setHistoryRange(range.key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  historyRange === range.key
+                    ? 'bg-accent-blue text-white'
+                    : 'border border-dark-border bg-dark-card text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+            {bucketedData && (
+              <span className="ml-2 text-xs text-slate-500">
+                粒度: {bucketGranularityLabel(bucketedData.bucketMs)} · 来源: {bucketedData.source === 'raw' ? '原始数据' : '聚合数据'}
+              </span>
+            )}
+            {bucketedLoading && <span className="ml-2 text-xs text-slate-500">加载中…</span>}
+          </div>
+
+          {bucketedData && bucketedData.buckets.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">CPU 使用率</h3>
+                <MetricChart
+                  series={[
+                    { name: '平均', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.cpuAvg })), color: '#3b82f6', unit: '%' },
+                    { name: '峰值', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.cpuMax })), color: '#ef4444', unit: '%' },
+                  ]}
+                  yAxisFormatter={(v) => `${v}%`}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">内存使用率</h3>
+                <MetricChart
+                  series={[
+                    { name: '平均', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.memPercAvg })), color: '#10b981', unit: '%' },
+                    { name: '峰值 MB', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.memTotalMB > 0 ? (b.memUsedMaxMB / b.memTotalMB) * 100 : 0 })), color: '#ef4444', unit: '%' },
+                  ]}
+                  yAxisFormatter={(v) => `${v}%`}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">GPU 利用率</h3>
+                <MetricChart
+                  series={[
+                    { name: '平均', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.gpuUtilAvg })), color: '#8b5cf6', unit: '%' },
+                    { name: '峰值', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.gpuUtilMax })), color: '#ef4444', unit: '%' },
+                  ]}
+                  yAxisFormatter={(v) => `${v}%`}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">GPU 显存</h3>
+                <MetricChart
+                  series={[
+                    { name: '平均 MB', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.gpuMemUsedAvgMB })), color: '#f59e0b', unit: 'MB' },
+                    { name: '峰值 MB', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.gpuMemUsedMaxMB })), color: '#ef4444', unit: 'MB' },
+                  ]}
+                  yAxisFormatter={(v) => `${v} MB`}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">网络吞吐</h3>
+                <MetricChart
+                  series={[
+                    { name: '接收 KB/s', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.netRxAvgBps / 1024 })), color: '#10b981', unit: 'KB/s' },
+                    { name: '发送 KB/s', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.netTxAvgBps / 1024 })), color: '#3b82f6', unit: 'KB/s' },
+                  ]}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">磁盘 IO</h3>
+                <MetricChart
+                  series={[
+                    { name: '读取 KB/s', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.diskReadAvgKBs })), color: '#06b6d4', unit: 'KB/s' },
+                    { name: '写入 KB/s', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.diskWriteAvgKBs })), color: '#f59e0b', unit: 'KB/s' },
+                  ]}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">外网连通率</h3>
+                <MetricChart
+                  series={[
+                    { name: '连通率', data: bucketedData.buckets.map(b => ({ time: b.bucketStart, value: b.internetReachableRatio * 100 })), color: '#22d3ee', unit: '%' },
+                  ]}
+                  yAxisFormatter={(v) => `${v}%`}
+                />
+              </div>
+              <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+                <h3 className="mb-2 text-sm text-slate-400">外网延迟</h3>
+                <MetricChart
+                  series={[
+                    { name: '延迟', data: bucketedData.buckets.filter(b => b.internetLatencyAvgMs != null).map(b => ({ time: b.bucketStart, value: b.internetLatencyAvgMs! })), color: '#a78bfa', unit: 'ms' },
+                  ]}
+                  yAxisFormatter={(v) => `${v} ms`}
+                />
+              </div>
+            </div>
+          )}
+
+          {bucketedData && bucketedData.buckets.length === 0 && !bucketedLoading && (
+            <div className="rounded-lg border border-dark-border bg-dark-card p-8 text-center">
+              <p className="text-sm text-slate-500">所选时间范围内无历史数据</p>
             </div>
           )}
         </div>

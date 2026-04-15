@@ -139,6 +139,8 @@ export function PersonDetail() {
   const [bindings, setBindings] = useState<PersonBindingRecord[]>([]);
   const [summary, setSummary] = useState<PersonSummaryItem | null>(null);
   const [period, setPeriod] = useState<24 | 168 | 720>(168);
+  const [nodeDistribution, setNodeDistribution] = useState<Array<{ serverId: string; serverName: string; avgVramMB: number; maxVramMB: number; sampleCount: number }>>([]);
+  const [peakPeriods, setPeakPeriods] = useState<Array<{ bucketStart: number; totalVramMB: number }>>([]);
   const [tokenStatus, setTokenStatus] = useState<{ hasToken: boolean; createdAt?: number; lastUsedAt?: number | null } | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -154,6 +156,12 @@ export function PersonDetail() {
     void transport.getPersonSummary(period).then(all => setSummary(all.find(s => s.personId === id) ?? null)).catch(() => setSummary(null));
     void transport.getPersonTimeline(id, period).then(setTimeline).catch(() => setTimeline([]));
     void transport.getPersonTasks(id, period).then(setTasks).catch(() => setTasks([]));
+    void adminFetch<Array<{ serverId: string; serverName: string; avgVramMB: number; maxVramMB: number; sampleCount: number }>>(
+      `/api/persons/${encodeURIComponent(id)}/node-distribution?hours=${period}`,
+    ).then(setNodeDistribution).catch(() => setNodeDistribution([]));
+    void adminFetch<Array<{ bucketStart: number; totalVramMB: number }>>(
+      `/api/persons/${encodeURIComponent(id)}/peak-periods?hours=${period}`,
+    ).then(setPeakPeriods).catch(() => setPeakPeriods([]));
   }, [id, transport, period]);
 
   const refreshTokenStatus = useCallback(() => {
@@ -279,6 +287,58 @@ export function PersonDetail() {
         ) : (
           <VramTimelineChart timeline={timeline} periodHours={period} />
         )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-dark-border bg-dark-card p-5">
+          <h2 className="text-sm text-slate-400 mb-3">节点 VRAM 分布</h2>
+          {nodeDistribution.length === 0 ? (
+            <p className="text-sm text-slate-500">暂无数据</p>
+          ) : (
+            <div className="space-y-2">
+              {nodeDistribution.map(n => {
+                const maxBar = Math.max(...nodeDistribution.map(d => d.maxVramMB), 1);
+                return (
+                  <div key={n.serverId} className="text-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-slate-300 truncate" title={n.serverId}>{n.serverName}</span>
+                      <span className="text-slate-400 ml-2 shrink-0">
+                        均 {formatVramGB(n.avgVramMB)} / 峰 {formatVramGB(n.maxVramMB)}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-dark-border overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-accent-blue"
+                        style={{ width: `${(n.maxVramMB / maxBar) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-dark-border bg-dark-card p-5">
+          <h2 className="text-sm text-slate-400 mb-3">峰值时段 Top 3</h2>
+          {peakPeriods.length === 0 ? (
+            <p className="text-sm text-slate-500">暂无数据</p>
+          ) : (
+            <div className="space-y-2">
+              {peakPeriods.map((p, i) => (
+                <div key={p.bucketStart} className="flex items-center gap-3 text-sm">
+                  <span className={`shrink-0 w-5 text-center font-medium ${i === 0 ? 'text-yellow-400' : 'text-slate-500'}`}>
+                    #{i + 1}
+                  </span>
+                  <span className="text-slate-300">
+                    {new Date(p.bucketStart).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span className="ml-auto text-slate-100 font-medium">{formatVramGB(p.totalVramMB)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-dark-border bg-dark-card p-5">
