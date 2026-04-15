@@ -70,6 +70,7 @@ Agent 侧测试主要覆盖：
 - `packages/ui/tests/person-create-wizard.test.tsx`：人员创建向导、绑定迁移确认
 - `packages/web/tests/agent-integration.test.ts`：Agent 注册、hostname 绑定、serverId 规范化、命令分发
 - `agent/tests/` 下的调度与 daemon 用例：Agent 本地队列和执行语义
+- `agent/tests/test_cli_runtime.py`、`agent/tests/test_cli_python.py`、`agent/tests/store/test_tasks.py`：固定 `submit` 的 cwd / 环境快照 / Python 解释器规范化，以及 Python 直达模式的 attached 启动语义
 
 这些测试对文档也很重要，因为它们把当前实际行为固定了下来。
 

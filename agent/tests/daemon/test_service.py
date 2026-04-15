@@ -62,6 +62,9 @@ def test_submit_enqueues_task(svc: DaemonService):
     rec = svc.submit_task(_make_spec())
     assert rec.status == TaskStatus.queued
     assert rec.command == "echo hello"
+    content = read_task_log(rec.id, svc.config.log_dir)
+    assert "task submitted: user=tester" in content
+    assert "cwd=/tmp" in content
 
 
 def test_list_returns_tasks(svc: DaemonService):
@@ -308,6 +311,66 @@ def test_collect_cycle_sends_local_users_only_when_inventory_changes(svc, monkey
     assert [user.username for user in second_inventory.users] == ["alice", "bob"]
 
 
+def test_set_task_priority_updates_queued_task_and_records_event(svc: DaemonService):
+    record = svc.submit_task(_make_spec(priority=10))
+
+    assert svc.set_task_priority(record.id, 3) is True
+
+    updated = svc.get_task(record.id)
+    assert updated is not None
+    assert updated.priority == 3
+
+    events = svc.get_task_events(record.id)
+    priority_event = next(event for event in events if event["event_type"] == "priority_updated")
+    assert priority_event["details"]["old_priority"] == 10
+    assert priority_event["details"]["new_priority"] == 3
+
+
+def test_collect_cycle_writes_schedule_block_reason_once_per_change(svc, monkeypatch):
+    from pmeow.models import PerGpuAllocationSummary
+
+    gpu = PerGpuAllocationSummary(
+        gpu_index=0,
+        total_memory_mb=16000.0,
+        effective_free_mb=4000.0,
+    )
+
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_snapshot",
+        lambda **kw: _fake_snapshot(per_gpu=[gpu]),
+    )
+
+    record = svc.submit_task(_make_spec(require_vram_mb=8000))
+
+    svc.collect_cycle()
+    svc.collect_cycle()
+
+    events = svc.get_task_events(record.id)
+    blocked = [event for event in events if event["event_type"] == "schedule_blocked"]
+    assert len(blocked) == 1
+    assert blocked[0]["details"]["reason_code"] == "insufficient_gpu_count"
+
+    content = read_task_log(record.id, svc.config.log_dir)
+    assert content.count("schedule blocked") == 1
+
+
+def test_collect_cycle_records_queue_paused_reason(svc, monkeypatch):
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_snapshot",
+        lambda **kw: _fake_snapshot(),
+    )
+
+    record = svc.submit_task(_make_spec())
+    svc.pause_queue()
+
+    svc.collect_cycle()
+
+    events = svc.get_task_events(record.id)
+    paused = [event for event in events if event["event_type"] == "queue_paused"]
+    assert len(paused) == 1
+    assert paused[0]["details"]["reason_code"] == "queue_paused"
+
+
 # ------------------------------------------------------------------
 # attached task confirm / finish / events
 # ------------------------------------------------------------------
@@ -400,6 +463,8 @@ def test_socket_roundtrip_for_attached_methods(tmp_state):
         assert "submitted" in event_types
         assert "attached_started" in event_types
         assert "attached_finished" in event_types
+        submitted = next(event for event in events["result"] if event["event_type"] == "submitted")
+        assert submitted["details"]["user"] == "tester"
     finally:
         srv.shutdown()
         close_database(svc.db)

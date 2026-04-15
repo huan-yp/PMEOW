@@ -180,6 +180,16 @@ class TestInboundCommands:
         assert len(received) == 1
         assert received[0]["taskId"] == "t-99"
 
+    def test_inbound_handler_return_value_is_propagated(self):
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+        client.on_command("server:getTaskEvents", lambda data: [{"id": 1, "task_id": data["taskId"]}])
+
+        handler = _registered_handler(mock_sio, "server:getTaskEvents")
+        result = handler({"taskId": "t-42"})
+
+        assert result == [{"id": 1, "task_id": "t-42"}]
+
 
 class TestReconnect:
     def test_reconnect_resends_register(self):

@@ -2,6 +2,7 @@ import {
   AGENT_EVENT,
   AgentDataSource,
   type AgentHeartbeatPayload,
+  type AgentTaskEventsResponse,
   type AgentLocalUsersPayload,
   type AgentRegisterPayload,
   AgentSessionRegistry,
@@ -15,6 +16,7 @@ import {
   SERVER_COMMAND,
   type ServerCancelTaskPayload,
   type ServerCommandEnvelope,
+  type ServerGetTaskEventsPayload,
   type ServerPauseQueuePayload,
   type ServerResumeQueuePayload,
   type ServerSetPriorityPayload,
@@ -56,6 +58,10 @@ interface AgentNamespaceClientEvents {
 
 interface AgentNamespaceServerEvents {
   [SERVER_COMMAND.cancelTask]: (payload: ServerCancelTaskPayload) => void;
+  [SERVER_COMMAND.getTaskEvents]: (
+    payload: ServerGetTaskEventsPayload,
+    callback: (response: AgentTaskEventsResponse) => void,
+  ) => void;
   [SERVER_COMMAND.pauseQueue]: (payload: ServerPauseQueuePayload) => void;
   [SERVER_COMMAND.resumeQueue]: (payload: ServerResumeQueuePayload) => void;
   [SERVER_COMMAND.setPriority]: (payload: ServerSetPriorityPayload) => void;
@@ -153,6 +159,9 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
         case SERVER_COMMAND.cancelTask:
           socket.emit(SERVER_COMMAND.cancelTask, command.data);
           break;
+        case SERVER_COMMAND.getTaskEvents:
+          socket.emit(SERVER_COMMAND.getTaskEvents, command.data, () => undefined);
+          break;
         case SERVER_COMMAND.pauseQueue:
           socket.emit(SERVER_COMMAND.pauseQueue, command.data);
           break;
@@ -163,6 +172,21 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
           socket.emit(SERVER_COMMAND.setPriority, command.data);
           break;
       }
+    },
+    requestTaskEvents(payload: ServerGetTaskEventsPayload): Promise<AgentTaskEventsResponse> {
+      return new Promise((resolve, reject) => {
+        socket.timeout(5_000).emit(
+          SERVER_COMMAND.getTaskEvents,
+          payload,
+          (error: Error | null, response: AgentTaskEventsResponse) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve(response);
+          },
+        );
+      });
     },
   };
 }

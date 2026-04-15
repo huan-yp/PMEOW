@@ -5,12 +5,31 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 
 from pmeow import cli_runtime
 
 
 _DEFAULT_SOCKET = os.path.expanduser("~/.pmeow/pmeow.sock")
+
+
+def _is_generic_python_command(token: str) -> bool:
+    name = os.path.basename(token).lower()
+    return name == "python" or name == "py" or name.startswith("python3")
+
+
+def _normalize_submit_command(command_args: list[str]) -> tuple[str, list[str] | None]:
+    if not command_args:
+        return "", None
+
+    if _is_generic_python_command(command_args[0]) and len(command_args) >= 2:
+        second = command_args[1]
+        if second.endswith(".py") or second in {"-m", "-c"}:
+            argv = [sys.executable, *command_args[1:]]
+            return shlex.join(argv), argv
+
+    return shlex.join(command_args), None
 
 
 def _socket_path(args: argparse.Namespace) -> str:
@@ -58,7 +77,7 @@ def _cmd_logs(args: argparse.Namespace) -> None:
 def _cmd_submit(args: argparse.Namespace) -> None:
     from pmeow.daemon.socket_server import send_request
 
-    command = " ".join(args.command_args)
+    command, argv = _normalize_submit_command(args.command_args)
     if not command:
         print("error: no command specified", file=sys.stderr)
         raise SystemExit(1)
@@ -69,6 +88,8 @@ def _cmd_submit(args: argparse.Namespace) -> None:
         "require_vram_mb": args.pvram,
         "require_gpu_count": args.gpu,
         "priority": args.priority,
+        "argv": argv,
+        "env_overrides": dict(os.environ),
     })
     if not resp.get("ok"):
         print(f"error: {resp.get('error')}", file=sys.stderr)

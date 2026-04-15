@@ -8,7 +8,8 @@ import type {
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
-  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse,
+  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
+  MetricsHistoryResponse, GpuUsageHistoryResponse,
 } from '@monitor/core';
 import type { SecurityEventQuery, AlertQuery } from './types.js';
 
@@ -142,8 +143,19 @@ export class WebSocketAdapter implements TransportAdapter {
   }
 
   async getMetricsHistory(serverId: string, from: number, to: number): Promise<MetricsSnapshot[]> {
-    const hours = Math.max(1, Math.ceil((to - from) / (3600 * 1000)));
-    return this.fetch(`/api/metrics/${serverId}/history?hours=${hours}`);
+    return this.fetch(`/api/metrics/${serverId}/history?from=${from}&to=${to}`);
+  }
+
+  async getMetricsHistoryBucketed(serverId: string, from: number, to: number, bucketMs?: number): Promise<MetricsHistoryResponse> {
+    const params = new URLSearchParams({ from: String(from), to: String(to) });
+    if (bucketMs) params.set('bucket', String(bucketMs));
+    return this.fetch(`/api/metrics/${serverId}/history/bucketed?${params}`);
+  }
+
+  async getGpuUsageByUserBucketed(user: string, from: number, to: number, bucketMs?: number): Promise<GpuUsageHistoryResponse> {
+    const params = new URLSearchParams({ user, from: String(from), to: String(to) });
+    if (bucketMs) params.set('bucket', String(bucketMs));
+    return this.fetch(`/api/gpu-usage/by-user/bucketed?${params}`);
   }
 
   async getServerStatuses(): Promise<ServerStatus[]> {
@@ -268,6 +280,10 @@ export class WebSocketAdapter implements TransportAdapter {
 
   async getTaskQueue(): Promise<AgentTaskQueueGroup[]> {
     return this.fetch('/api/task-queue');
+  }
+
+  async getTaskEvents(serverId: string, taskId: string, afterId = 0): Promise<AgentTaskEventRecord[]> {
+    return this.fetch(`/api/servers/${serverId}/tasks/${taskId}/events?afterId=${afterId}`);
   }
 
   async getProcessAudit(serverId: string): Promise<ProcessAuditRow[]> {

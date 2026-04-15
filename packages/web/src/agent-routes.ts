@@ -125,6 +125,44 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
     res.json(task);
   });
 
+  app.get('/api/servers/:id/tasks/:taskId/events', async (req: Request, res: Response) => {
+    const serverId = requireServer(req, res);
+    if (!serverId) {
+      return;
+    }
+
+    const taskId = requireTaskForServer(serverId, req, res);
+    if (!taskId) {
+      return;
+    }
+
+    const rawAfterId = req.query.afterId;
+    const afterId = typeof rawAfterId === 'string' && rawAfterId.trim()
+      ? Number(rawAfterId)
+      : 0;
+
+    if (!Number.isInteger(afterId) || afterId < 0) {
+      res.status(400).json({ error: 'afterId 必须为非负整数' });
+      return;
+    }
+
+    const dataSource = resolveCommandDataSource(serverId, options, res);
+    if (!dataSource) {
+      return;
+    }
+
+    try {
+      res.json(await dataSource.getTaskEvents(taskId, afterId));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('is offline')) {
+        res.status(409).json({ error: 'Agent 未在线' });
+        return;
+      }
+
+      res.status(500).json({ error: error instanceof Error ? error.message : '获取任务事件失败' });
+    }
+  });
+
   app.get('/api/servers/:id/gpu-allocation', (req: Request, res: Response) => {
     const serverId = requireServer(req, res);
     if (!serverId) {

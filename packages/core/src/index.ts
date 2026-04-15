@@ -1,6 +1,7 @@
 // Core package - public API
 export * from './types.js';
 export type {
+	AgentTaskEventRecord,
 	AgentTaskQueueGroup,
 	GpuOverviewResponse,
 	GpuOverviewServerSummary,
@@ -36,6 +37,10 @@ export {
 	getGpuUsageTimelineByUser,
 	getLatestUnownedGpuDurationMinutes,
 	cleanOldGpuUsage,
+	cleanOldGpuUsageAgg,
+	aggregateGpuUsage,
+	aggregateGpuUsage15mFrom1m,
+	getGpuUsageBucketed,
 } from './db/gpu-usage.js';
 export type { GpuUsageRowInput, StoredGpuUsageRow } from './db/gpu-usage.js';
 export {
@@ -56,7 +61,18 @@ export {
 	bindAgentToServer,
 	deleteServer,
 } from './db/servers.js';
-export { saveMetrics, getLatestMetrics, getMetricsHistory, cleanOldMetrics } from './db/metrics.js';
+export {
+	saveMetrics,
+	getLatestMetrics,
+	getMetricsHistory,
+	getMetricsBucketed,
+	cleanOldMetrics,
+	cleanOldMetricsAgg,
+	aggregateMetrics,
+	aggregateMetrics15mFrom1m,
+	getAggregationCursor,
+	setAggregationCursor,
+} from './db/metrics.js';
 export { replaceServerLocalUsers, listServerLocalUsers } from './db/server-local-users.js';
 export { getAllHooks, getHookById, getHooksByServerId, createHook, updateHook, deleteHook, getHookLogs, addHookLog } from './db/hooks.js';
 export {
@@ -113,6 +129,8 @@ export {
   getPersonTimeline,
   getPersonTasks,
   getServerPersonActivity,
+  getPersonNodeDistribution,
+  getPersonPeakPeriods,
 	listPersonBindingCandidates,
   listPersonBindingSuggestions,
 } from './db/person-attribution.js';

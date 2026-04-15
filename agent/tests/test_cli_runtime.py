@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import shlex
+import sys
+from typing import Any
 
 import pytest
 
@@ -109,3 +113,27 @@ def test_start_background_warns_when_server_url_missing(monkeypatch, capsys, tmp
 
     stderr = capsys.readouterr().err
     assert "PMEOW_SERVER_URL" in stderr
+
+
+def test_submit_freezes_current_cwd_environment_and_python_interpreter(monkeypatch, tmp_path):
+    captured: dict[str, Any] = {}
+
+    def fake_send_request(socket_path, method, params):
+        captured["socket_path"] = socket_path
+        captured["method"] = method
+        captured["params"] = params
+        return {"ok": True, "result": {"id": "task-1"}}
+
+    monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
+    monkeypatch.setenv("USER", "tester")
+    monkeypatch.setenv("PMEOW_TEST_ENV", "submit-snapshot")
+    monkeypatch.chdir(tmp_path)
+
+    main(["submit", "python", "train.py", "--epochs", "3"])
+
+    params = captured["params"]
+    assert captured["method"] == "submit_task"
+    assert params["cwd"] == str(tmp_path)
+    assert params["env_overrides"]["PMEOW_TEST_ENV"] == "submit-snapshot"
+    assert params["argv"] == [sys.executable, "train.py", "--epochs", "3"]
+    assert params["command"] == shlex.join([sys.executable, "train.py", "--epochs", "3"])

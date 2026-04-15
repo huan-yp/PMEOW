@@ -11,6 +11,19 @@ from typing import Optional
 from pmeow.models import TaskLaunchMode, TaskRecord, TaskSpec, TaskStatus
 
 
+def _deserialize_env_json(env_json: str | None) -> dict[str, str] | None:
+    if env_json is None:
+        return None
+    raw = json.loads(env_json)
+    if not isinstance(raw, dict):
+        return None
+    return {
+        str(key): value
+        for key, value in raw.items()
+        if isinstance(value, str)
+    }
+
+
 def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
     """Convert a raw database row into a :class:`TaskRecord`."""
     (
@@ -29,6 +42,7 @@ def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
         exit_code,
         pid,
         argv_json,
+        env_json,
         launch_mode,
         report_requested,
         launch_deadline,
@@ -45,6 +59,7 @@ def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
         status=TaskStatus(status),
         created_at=created_at,
         argv=json.loads(argv_json) if argv_json is not None else None,
+        env_overrides=_deserialize_env_json(env_json),
         launch_mode=TaskLaunchMode(launch_mode),
         report_requested=bool(report_requested),
         launch_deadline=launch_deadline,
@@ -58,7 +73,7 @@ def _row_to_record(row: sqlite3.Row | tuple) -> TaskRecord:
 _SELECT_COLS = (
     "id, command, cwd, user, require_vram_mb, require_gpu_count, "
     "gpu_ids, priority, status, created_at, started_at, finished_at, "
-    "exit_code, pid, argv_json, launch_mode, report_requested, launch_deadline"
+    "exit_code, pid, argv_json, env_json, launch_mode, report_requested, launch_deadline"
 )
 
 
@@ -68,12 +83,13 @@ def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
     now = time.time()
     gpu_ids_json = json.dumps(spec.gpu_ids) if spec.gpu_ids is not None else None
     argv_json = json.dumps(spec.argv) if spec.argv is not None else None
+    env_json = json.dumps(spec.env_overrides) if spec.env_overrides is not None else None
 
     conn.execute(
         "INSERT INTO tasks "
         "(id, command, cwd, user, require_vram_mb, require_gpu_count, "
-        "gpu_ids, priority, status, created_at, argv_json, launch_mode, report_requested) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)",
+        "gpu_ids, priority, status, created_at, argv_json, env_json, launch_mode, report_requested) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
         (
             task_id,
             spec.command,
@@ -85,6 +101,7 @@ def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
             spec.priority,
             now,
             argv_json,
+            env_json,
             spec.launch_mode.value,
             int(spec.report_requested),
         ),
@@ -103,6 +120,7 @@ def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
         status=TaskStatus.queued,
         created_at=now,
         argv=spec.argv,
+        env_overrides=spec.env_overrides,
         launch_mode=spec.launch_mode,
         report_requested=spec.report_requested,
     )
@@ -276,13 +294,15 @@ def append_task_event(
     task_id: str,
     event_type: str,
     timestamp: float,
-    details: Optional[str] = None,
+    details: dict | None = None,
 ) -> None:
     """Insert a structured event into the task_events table."""
+    serialized_details = None if details is None else json.dumps(details, sort_keys=True)
+
     conn.execute(
         "INSERT INTO task_events (task_id, event_type, timestamp, details) "
         "VALUES (?, ?, ?, ?)",
-        (task_id, event_type, timestamp, details),
+        (task_id, event_type, timestamp, serialized_details),
     )
     conn.commit()
 
@@ -304,7 +324,21 @@ def list_task_events(
             "task_id": r[1],
             "event_type": r[2],
             "timestamp": r[3],
-            "details": r[4],
+            "details": None if r[4] is None else json.loads(r[4]),
         }
         for r in rows
     ]
+
+
+def update_task_priority(
+    conn: sqlite3.Connection,
+    task_id: str,
+    priority: int,
+) -> bool:
+    """Update a queued task's priority. Returns True if a row changed."""
+    cursor = conn.execute(
+        "UPDATE tasks SET priority = ? WHERE id = ? AND status = 'queued'",
+        (priority, task_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0

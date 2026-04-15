@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { MirroredAgentTaskRecord } from '@monitor/core';
+import type { AgentTaskEventRecord, MirroredAgentTaskRecord } from '@monitor/core';
 import { useTransport } from '../transport/TransportProvider.js';
 import { useStore } from '../store/useStore.js';
 
@@ -24,18 +24,105 @@ function formatTaskStatus(status: MirroredAgentTaskRecord['status']) {
   }
 }
 
+function formatReasonLabel(reasonCode: unknown) {
+  switch (reasonCode) {
+    case 'queue_paused':
+      return '队列已暂停';
+    case 'blocked_by_higher_priority':
+      return '被更高优先级任务占用';
+    case 'insufficient_gpu_count':
+      return '当前可用 GPU 数不足';
+    case 'sustained_window_not_satisfied':
+      return '持续窗口不满足';
+    default:
+      return '等待调度';
+  }
+}
+
+function formatEventTimestamp(timestamp: number) {
+  return new Date(timestamp * 1000).toLocaleString('zh-CN', { hour12: false });
+}
+
+function isStructuredDetails(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatList(value: unknown) {
+  if (!Array.isArray(value) || value.length === 0) {
+    return '无';
+  }
+
+  return value.join(', ');
+}
+
+function extractLatestSchedulingEvent(events: AgentTaskEventRecord[]) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event.eventType === 'schedule_blocked' || event.eventType === 'queue_paused') {
+      return event;
+    }
+  }
+
+  return null;
+}
+
+function SchedulingReasonPanel({ event }: { event: AgentTaskEventRecord | null }) {
+  if (!event) {
+    return <div className="mt-2 text-xs text-slate-500">暂未收到结构化调度原因。</div>;
+  }
+
+  const details = isStructuredDetails(event.details) ? event.details : {};
+  const message = typeof details.message === 'string' ? details.message : '';
+
+  return (
+    <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-slate-300">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+          {formatReasonLabel(details.reason_code)}
+        </span>
+        <span className="text-slate-500">{formatEventTimestamp(event.timestamp)}</span>
+      </div>
+      {message ? <p className="mt-2 break-words text-slate-300">{message}</p> : null}
+      <div className="mt-2 grid gap-2 md:grid-cols-3">
+        <div>
+          <div className="text-slate-500">当前候选 GPU</div>
+          <div className="mt-1 font-mono text-slate-300">{formatList(details.current_eligible_gpu_ids)}</div>
+        </div>
+        <div>
+          <div className="text-slate-500">持续窗口交集</div>
+          <div className="mt-1 font-mono text-slate-300">{formatList(details.sustained_eligible_gpu_ids)}</div>
+        </div>
+        <div>
+          <div className="text-slate-500">阻塞任务</div>
+          <div className="mt-1 font-mono text-slate-300">{formatList(details.blocker_task_ids)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TaskSection({
   title,
   tasks,
   busyTaskKeys,
+  expandedTaskKey,
+  loadingReasonTaskKeys,
+  reasonEventsByTaskKey,
+  reasonErrorsByTaskKey,
   onCancel,
   onRaisePriority,
+  onToggleReason,
 }: {
   title: string;
   tasks: MirroredAgentTaskRecord[];
   busyTaskKeys: string[];
+  expandedTaskKey: string | null;
+  loadingReasonTaskKeys: string[];
+  reasonEventsByTaskKey: Record<string, AgentTaskEventRecord[]>;
+  reasonErrorsByTaskKey: Record<string, string>;
   onCancel: (task: MirroredAgentTaskRecord) => void;
   onRaisePriority: (task: MirroredAgentTaskRecord) => void;
+  onToggleReason: (task: MirroredAgentTaskRecord) => void;
 }) {
   return (
     <section className="rounded-lg border border-dark-border bg-dark-bg/60 p-4">
@@ -61,9 +148,15 @@ function TaskSection({
             </thead>
             <tbody>
               {tasks.map((task) => {
-                const taskBusy = busyTaskKeys.includes(getTaskBusyKey(task));
+                const taskKey = getTaskBusyKey(task);
+                const taskBusy = busyTaskKeys.includes(taskKey);
                 const canCancel = task.status === 'queued' || task.status === 'running';
                 const canRaisePriority = task.status === 'queued';
+                const canViewReason = task.status === 'queued';
+                const isExpanded = expandedTaskKey === taskKey;
+                const isLoadingReason = loadingReasonTaskKeys.includes(taskKey);
+                const reasonError = reasonErrorsByTaskKey[taskKey];
+                const latestSchedulingEvent = extractLatestSchedulingEvent(reasonEventsByTaskKey[taskKey] ?? []);
 
                 return (
                   <tr key={task.taskId} className="border-b border-dark-border/50 align-top last:border-b-0">
@@ -96,7 +189,27 @@ function TaskSection({
                             提高优先级
                           </button>
                         ) : null}
+                        {canViewReason ? (
+                          <button
+                            type="button"
+                            aria-label={`查看调度原因 ${task.taskId}`}
+                            onClick={() => onToggleReason(task)}
+                            disabled={isLoadingReason}
+                            className="rounded border border-amber-500/20 px-2 py-1 text-xs text-amber-200 transition-colors hover:bg-amber-500/10 disabled:opacity-50"
+                          >
+                            {isExpanded ? '收起原因' : '查看调度原因'}
+                          </button>
+                        ) : null}
                       </div>
+                      {isExpanded ? (
+                        reasonError ? (
+                          <div className="mt-2 text-xs text-rose-300">{reasonError}</div>
+                        ) : isLoadingReason ? (
+                          <div className="mt-2 text-xs text-slate-500">正在加载调度原因...</div>
+                        ) : (
+                          <SchedulingReasonPanel event={latestSchedulingEvent} />
+                        )
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -114,8 +227,13 @@ export function TaskQueue() {
   const taskQueueGroups = useStore((state) => state.taskQueueGroups);
   const [busyServerIds, setBusyServerIds] = useState<string[]>([]);
   const [busyTaskKeys, setBusyTaskKeys] = useState<string[]>([]);
+  const [expandedTaskKey, setExpandedTaskKey] = useState<string | null>(null);
+  const [loadingReasonTaskKeys, setLoadingReasonTaskKeys] = useState<string[]>([]);
+  const [reasonEventsByTaskKey, setReasonEventsByTaskKey] = useState<Record<string, AgentTaskEventRecord[]>>({});
+  const [reasonErrorsByTaskKey, setReasonErrorsByTaskKey] = useState<Record<string, string>>({});
   const busyServerIdsRef = useRef(new Set<string>());
   const busyTaskKeysRef = useRef(new Set<string>());
+  const loadingReasonTaskKeysRef = useRef(new Set<string>());
 
   const runServerAction = async (serverId: string, action: () => Promise<void>) => {
     if (busyServerIdsRef.current.has(serverId)) {
@@ -172,6 +290,43 @@ export function TaskQueue() {
     void runTaskAction(task, () => transport.setTaskPriority(task.serverId, task.taskId, nextPriority));
   };
 
+  const handleToggleReason = (task: MirroredAgentTaskRecord) => {
+    const taskKey = getTaskBusyKey(task);
+    if (expandedTaskKey === taskKey) {
+      setExpandedTaskKey(null);
+      return;
+    }
+
+    setExpandedTaskKey(taskKey);
+    setReasonErrorsByTaskKey((current) => ({ ...current, [taskKey]: '' }));
+
+    if (reasonEventsByTaskKey[taskKey] || typeof transport.getTaskEvents !== 'function') {
+      return;
+    }
+
+    if (loadingReasonTaskKeysRef.current.has(taskKey)) {
+      return;
+    }
+
+    loadingReasonTaskKeysRef.current.add(taskKey);
+    setLoadingReasonTaskKeys((current) => current.includes(taskKey) ? current : [...current, taskKey]);
+
+    void transport.getTaskEvents(task.serverId, task.taskId, 0)
+      .then((events) => {
+        setReasonEventsByTaskKey((current) => ({ ...current, [taskKey]: events }));
+      })
+      .catch((error: unknown) => {
+        setReasonErrorsByTaskKey((current) => ({
+          ...current,
+          [taskKey]: error instanceof Error ? error.message : '加载调度原因失败',
+        }));
+      })
+      .finally(() => {
+        loadingReasonTaskKeysRef.current.delete(taskKey);
+        setLoadingReasonTaskKeys((current) => current.filter((value) => value !== taskKey));
+      });
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-end justify-between gap-4">
@@ -221,22 +376,37 @@ export function TaskQueue() {
                 title="排队中"
                 tasks={group.queued}
                 busyTaskKeys={busyTaskKeys}
+                expandedTaskKey={expandedTaskKey}
+                loadingReasonTaskKeys={loadingReasonTaskKeys}
+                reasonEventsByTaskKey={reasonEventsByTaskKey}
+                reasonErrorsByTaskKey={reasonErrorsByTaskKey}
                 onCancel={handleCancelTask}
                 onRaisePriority={handleRaisePriority}
+                onToggleReason={handleToggleReason}
               />
               <TaskSection
                 title="运行中"
                 tasks={group.running}
                 busyTaskKeys={busyTaskKeys}
+                expandedTaskKey={expandedTaskKey}
+                loadingReasonTaskKeys={loadingReasonTaskKeys}
+                reasonEventsByTaskKey={reasonEventsByTaskKey}
+                reasonErrorsByTaskKey={reasonErrorsByTaskKey}
                 onCancel={handleCancelTask}
                 onRaisePriority={handleRaisePriority}
+                onToggleReason={handleToggleReason}
               />
               <TaskSection
                 title="最近完成"
                 tasks={group.recent}
                 busyTaskKeys={busyTaskKeys}
+                expandedTaskKey={expandedTaskKey}
+                loadingReasonTaskKeys={loadingReasonTaskKeys}
+                reasonEventsByTaskKey={reasonEventsByTaskKey}
+                reasonErrorsByTaskKey={reasonErrorsByTaskKey}
                 onCancel={handleCancelTask}
                 onRaisePriority={handleRaisePriority}
+                onToggleReason={handleToggleReason}
               />
             </div>
           </section>

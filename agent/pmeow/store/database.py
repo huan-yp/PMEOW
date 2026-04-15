@@ -79,6 +79,8 @@ def _ensure_task_columns(conn: sqlite3.Connection) -> None:
     names = {row[1] for row in cols}
     if "argv_json" not in names:
         conn.execute("ALTER TABLE tasks ADD COLUMN argv_json TEXT")
+    if "env_json" not in names:
+        conn.execute("ALTER TABLE tasks ADD COLUMN env_json TEXT")
     if "launch_mode" not in names:
         conn.execute(
             "ALTER TABLE tasks ADD COLUMN launch_mode TEXT NOT NULL DEFAULT 'daemon_shell'"

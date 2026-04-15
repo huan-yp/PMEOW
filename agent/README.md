@@ -77,6 +77,11 @@ pmeow-agent submit --pvram 0 --gpu 0 -- bash run_preprocessing.sh
 - `--gpu`：需要的 GPU 数量，默认 `1`
 - `--priority`：优先级，数字越小越先调度，默认 `10`
 
+`submit` 模式的执行语义有两点需要注意：
+
+- 提交时会冻结当前工作目录和当前进程环境；任务真正开始时，daemon 会用这份 cwd 和整份环境快照启动命令。
+- 如果命令看起来是 `python ...`、`py ...` 或 `python3 ...`，并且后面跟的是脚本、`-m` 或 `-c`，CLI 会把它规范成当前 `sys.executable`，避免排队后落到 daemon 自己 PATH 里的另一个 Python。
+
 ### 查看队列状态
 
 ```bash
@@ -110,6 +115,12 @@ pmeow -vram=10g -gpus=2 --report train.py --epochs 50
 - 脚本路径之后的参数会原样传给 Python
 - `--report` 会在排队期间打印调度尝试和当前 GPU 占用概览
 - GPU 资源就绪后，同一个终端会直接切换成 Python 进程的 stdin、stdout 和 stderr
+
+这个 Python 直达模式和 `submit` 的区别是：
+
+- daemon 只负责排队、资源保留和状态同步；真正的 Python 进程是在当前等待中的终端里以前台 attached 方式启动。
+- 启动时仍然使用提交时记录的工作目录与解释器参数，但 stdin、stdout 和 stderr 行为更接近你直接在这个终端里运行 `python script.py`。
+- 调度器仍然会额外注入 `CUDA_VISIBLE_DEVICES`，所以它不是完全裸的本地执行，而是“带资源绑定的前台 Python”。
 
 ### 可选的 PyTorch 样例任务
 

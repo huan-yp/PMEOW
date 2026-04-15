@@ -185,6 +185,14 @@ export interface AgentTaskQueueGroup {
   recent: MirroredAgentTaskRecord[];
 }
 
+export interface AgentTaskEventRecord {
+  id: number;
+  taskId: string;
+  eventType: string;
+  timestamp: number;
+  details: Record<string, unknown> | null;
+}
+
 export interface GpuOverviewUserSummary {
   user: string;
   totalVramMB: number;
@@ -409,6 +417,10 @@ export interface AppSettings {
   apiPort: number;
   apiToken: string;
   historyRetentionDays: number;
+  rawRetentionDays: number;              // raw snapshot retention (days), default 7
+  aggregationRetentionDays: number;      // online aggregation retention (days), default 90
+  archiveEnabled: boolean;               // whether to export archives before deleting
+  archivePath: string;                   // directory for archive exports, empty = data/archive
   securityMiningKeywords: string[];
   securityUnownedGpuMinutes: number;
   securityHighGpuUtilizationPercent: number;
@@ -428,6 +440,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   apiPort: 17210,
   apiToken: '',
   historyRetentionDays: 7,
+  rawRetentionDays: 7,
+  aggregationRetentionDays: 90,
+  archiveEnabled: false,
+  archivePath: '',
   securityMiningKeywords: ['xmrig', 'ethminer', 'nbminer'],
   securityUnownedGpuMinutes: 30,
   securityHighGpuUtilizationPercent: 90,
@@ -694,4 +710,86 @@ export interface PersonAttributionFact {
   timestamp: number;
   sourceType: 'gpu_task' | 'gpu_user' | 'gpu_unknown';
   resolutionSource: 'binding' | 'override' | 'unassigned';
+}
+
+// ========================
+// Metrics Aggregation (History)
+// ========================
+
+export type BucketSize = 60_000 | 900_000;  // 1min or 15min in ms
+
+export interface MetricsBucketRow {
+  serverId: string;
+  bucketStart: number;     // ms epoch, aligned to bucket boundary
+  bucketSize: number;      // 60000 or 900000
+  cpuAvg: number;
+  cpuMax: number;
+  memUsedAvgMB: number;
+  memUsedMaxMB: number;
+  memTotalMB: number;
+  memPercAvg: number;
+  swapUsedAvgMB: number;
+  swapPercAvg: number;
+  gpuUtilAvg: number;
+  gpuUtilMax: number;
+  gpuMemUsedAvgMB: number;
+  gpuMemUsedMaxMB: number;
+  gpuMemTotalMB: number;
+  gpuMemPercAvg: number;
+  gpuTempAvg: number;
+  gpuTempMax: number;
+  netRxAvgBps: number;
+  netTxAvgBps: number;
+  diskReadAvgKBs: number;
+  diskWriteAvgKBs: number;
+  diskUsageJson: string;   // JSON array of { mountPoint, avgPercent, maxPercent }
+  internetReachableRatio: number;
+  internetLatencyAvgMs: number | null;
+  sampleCount: number;
+}
+
+export interface GpuUsageBucketRow {
+  serverId: string;
+  userName: string;
+  personId: string | null;
+  bucketStart: number;
+  bucketSize: number;
+  totalVramAvgMB: number;
+  totalVramMaxMB: number;
+  taskVramAvgMB: number;
+  nonTaskVramAvgMB: number;
+  sampleCount: number;
+}
+
+export interface MetricsHistoryQuery {
+  serverId: string;
+  from: number;
+  to: number;
+  bucketMs?: number;       // requested bucket granularity; auto-selected if omitted
+}
+
+export interface MetricsHistoryResponse {
+  serverId: string;
+  from: number;
+  to: number;
+  bucketMs: number;        // actual bucket granularity used
+  source: 'raw' | 'agg';  // whether data came from raw snapshots or aggregation table
+  buckets: MetricsBucketRow[];
+}
+
+export interface GpuUsageHistoryQuery {
+  userName?: string;
+  personId?: string;
+  serverId?: string;
+  from: number;
+  to: number;
+  bucketMs?: number;
+}
+
+export interface GpuUsageHistoryResponse {
+  from: number;
+  to: number;
+  bucketMs: number;
+  source: 'raw' | 'agg';
+  buckets: GpuUsageBucketRow[];
 }

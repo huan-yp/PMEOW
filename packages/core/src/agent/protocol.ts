@@ -3,6 +3,7 @@ import type {
   AgentLocalUserRecord,
   AgentLocalUsersPayload,
   AgentRegisterPayload,
+  AgentTaskEventRecord,
   AgentTaskStatus,
   AgentTaskUpdatePayload,
   GpuAllocationSummary,
@@ -36,6 +37,7 @@ export const SERVER_COMMAND = {
   pauseQueue: 'server:pauseQueue',
   resumeQueue: 'server:resumeQueue',
   setPriority: 'server:setPriority',
+  getTaskEvents: 'server:getTaskEvents',
 } as const;
 
 export const AGENT_TASK_STATUSES = [
@@ -59,6 +61,11 @@ export interface ServerCancelTaskPayload {
 export interface ServerSetPriorityPayload {
   taskId: string;
   priority: number;
+}
+
+export interface ServerGetTaskEventsPayload {
+  taskId: string;
+  afterId?: number;
 }
 
 export interface AgentRegisterEnvelope {
@@ -113,11 +120,19 @@ export interface ServerSetPriorityEnvelope {
   data: ServerSetPriorityPayload;
 }
 
+export interface ServerGetTaskEventsEnvelope {
+  event: typeof SERVER_COMMAND.getTaskEvents;
+  data: ServerGetTaskEventsPayload;
+}
+
 export type ServerCommandEnvelope =
   | ServerCancelTaskEnvelope
   | ServerPauseQueueEnvelope
   | ServerResumeQueueEnvelope
-  | ServerSetPriorityEnvelope;
+  | ServerSetPriorityEnvelope
+  | ServerGetTaskEventsEnvelope;
+
+export type AgentTaskEventsResponse = AgentTaskEventRecord[];
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -368,6 +383,12 @@ export function isServerSetPriorityPayload(value: unknown): value is ServerSetPr
     && isInteger(value.priority);
 }
 
+export function isServerGetTaskEventsPayload(value: unknown): value is ServerGetTaskEventsPayload {
+  return isRecord(value)
+    && isString(value.taskId)
+    && (value.afterId === undefined || isInteger(value.afterId));
+}
+
 export function isAgentRegisterEnvelope(value: unknown): value is AgentRegisterEnvelope {
   return hasEnvelopeShape(value)
     && value.event === AGENT_EVENT.register
@@ -430,9 +451,16 @@ export function isServerSetPriorityEnvelope(value: unknown): value is ServerSetP
     && isServerSetPriorityPayload(value.data);
 }
 
+export function isServerGetTaskEventsEnvelope(value: unknown): value is ServerGetTaskEventsEnvelope {
+  return hasEnvelopeShape(value)
+    && value.event === SERVER_COMMAND.getTaskEvents
+    && isServerGetTaskEventsPayload(value.data);
+}
+
 export function isServerCommandEnvelope(value: unknown): value is ServerCommandEnvelope {
   return isServerCancelTaskEnvelope(value)
     || isServerPauseQueueEnvelope(value)
     || isServerResumeQueueEnvelope(value)
-    || isServerSetPriorityEnvelope(value);
+    || isServerSetPriorityEnvelope(value)
+    || isServerGetTaskEventsEnvelope(value);
 }

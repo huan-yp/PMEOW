@@ -112,7 +112,7 @@ def run_python_invocation(
     submit = send_request(socket_path, "submit_task", {
         "command": shlex.join(argv),
         "cwd": os.getcwd(),
-        "user": os.environ.get("USER", "unknown"),
+        "user": os.environ.get("USER") or os.environ.get("USERNAME", "unknown"),
         "require_vram_mb": invocation.require_vram_mb,
         "require_gpu_count": invocation.require_gpu_count,
         "priority": invocation.priority,
@@ -137,12 +137,7 @@ def run_python_invocation(
             events = send_request(socket_path, "get_task_events", {"task_id": task_id, "after_id": last_event_id})
             for event in events.get("result", []):
                 details = event.get("details")
-                if isinstance(details, dict):
-                    message = details.get("message")
-                elif isinstance(details, str):
-                    message = details
-                else:
-                    message = None
+                message = details.get("message") if isinstance(details, dict) else None
                 if message:
                     print(message)
                 last_event_id = event["id"]

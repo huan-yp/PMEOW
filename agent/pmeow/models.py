@@ -82,6 +82,7 @@ class TaskSpec:
     gpu_ids: Optional[list[int]] = None
     priority: int = 10
     argv: Optional[list[str]] = None
+    env_overrides: Optional[dict[str, str]] = None
     launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
     report_requested: bool = False
 
@@ -99,6 +100,7 @@ class TaskRecord:
     status: TaskStatus
     created_at: float
     argv: Optional[list[str]] = None
+    env_overrides: Optional[dict[str, str]] = None
     launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
     report_requested: bool = False
     launch_deadline: Optional[float] = None

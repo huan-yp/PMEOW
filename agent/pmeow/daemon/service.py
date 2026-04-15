@@ -7,6 +7,7 @@ import signal
 import socket
 import threading
 import time
+from collections.abc import Sequence
 from typing import Iterable
 
 from pmeow import __version__
@@ -42,8 +43,15 @@ from pmeow.store.tasks import (
     list_tasks as db_list_tasks,
     requeue_expired_attached_launches,
     reserve_attached_launch,
+    update_task_priority,
 )
-from pmeow.task_reporting import format_launch_report, format_waiting_report
+from pmeow.task_reporting import (
+    format_launch_report,
+    format_queue_paused_report,
+    format_schedule_block_report,
+    format_schedule_block_summary,
+    format_submission_report,
+)
 from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
@@ -78,6 +86,7 @@ class DaemonService:
                 heartbeat_interval=config.heartbeat_interval,
             )
         self._last_local_users_signature: tuple[tuple[str, int, int, str, str, str], ...] | None = None
+        self._last_queue_reason_signatures: dict[str, tuple] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -95,6 +104,7 @@ class DaemonService:
         srv_thread.start()
 
         if self.transport:
+            self._register_transport_commands()
             self.transport.connect()
             self.transport.send_register(
                 hostname=socket.gethostname(),
@@ -134,11 +144,84 @@ class DaemonService:
     # ------------------------------------------------------------------
 
     def _record_task_message(
-        self, task_id: str, event_type: str, message: str
+        self,
+        task_id: str,
+        event_type: str,
+        message: str,
+        *,
+        details: dict | None = None,
     ) -> None:
         """Write *message* to both the task log file and the task_events table."""
         append_task_log_line(task_id, self.config.log_dir, message)
-        append_task_event(self.db, task_id, event_type, time.time(), message)
+        append_task_event(
+            self.db,
+            task_id,
+            event_type,
+            time.time(),
+            details if details is not None else {"message": message},
+        )
+
+    def _register_transport_commands(self) -> None:
+        if not self.transport:
+            return
+
+        self.transport.on_command(
+            "server:cancelTask",
+            lambda data: self.cancel_task(str(data["taskId"])),
+        )
+        self.transport.on_command(
+            "server:pauseQueue",
+            lambda _data: self.pause_queue(),
+        )
+        self.transport.on_command(
+            "server:resumeQueue",
+            lambda _data: self.resume_queue(),
+        )
+        self.transport.on_command(
+            "server:setPriority",
+            lambda data: self.set_task_priority(str(data["taskId"]), int(data["priority"])),
+        )
+        self.transport.on_command(
+            "server:getTaskEvents",
+            lambda data: self.get_task_events(
+                str(data["taskId"]),
+                after_id=int(data.get("afterId", 0)),
+            ),
+        )
+
+    def _clear_queue_reason(self, task_id: str) -> None:
+        self._last_queue_reason_signatures.pop(task_id, None)
+
+    def _queue_reason_signature(
+        self,
+        reason_code: str,
+        current_eligible_gpu_ids: Sequence[int] = (),
+        sustained_eligible_gpu_ids: Sequence[int] = (),
+        blocker_task_ids: Sequence[str] = (),
+    ) -> tuple:
+        return (
+            reason_code,
+            tuple(current_eligible_gpu_ids),
+            tuple(sustained_eligible_gpu_ids),
+            tuple(blocker_task_ids),
+        )
+
+    def _record_queue_waiting(
+        self,
+        task: TaskRecord,
+        *,
+        event_type: str,
+        signature: tuple,
+        daemon_summary: str,
+        message: str,
+        details: dict,
+    ) -> None:
+        if self._last_queue_reason_signatures.get(task.id) == signature:
+            return
+
+        self._last_queue_reason_signatures[task.id] = signature
+        self._record_task_message(task.id, event_type, message, details=details)
+        log.info("task %s waiting: %s", task.id, daemon_summary)
 
     # ------------------------------------------------------------------
     # Collection cycle
@@ -192,6 +275,7 @@ class DaemonService:
             # Requeue expired attached launches
             requeued = requeue_expired_attached_launches(self.db, time.time())
             for task_id in requeued:
+                self._clear_queue_reason(task_id)
                 self._record_task_message(
                     task_id, "launch_reservation_expired",
                     "launch reservation expired — task requeued",
@@ -202,6 +286,7 @@ class DaemonService:
             for task_id, exit_code in self.runner.check_completed():
                 finished_at = time.time()
                 finish_task(self.db, task_id, exit_code, finished_at)
+                self._clear_queue_reason(task_id)
                 log.info("task %s finished (exit=%d)", task_id, exit_code)
                 if self.transport:
                     self.transport.send_task_update(TaskUpdate(
@@ -211,20 +296,70 @@ class DaemonService:
                         exit_code=exit_code,
                     ))
 
-            # Write queue probe reports for queued attached tasks
             queued_tasks = db_list_tasks(self.db, TaskStatus.queued)
-            for t in queued_tasks:
-                if t.launch_mode == TaskLaunchMode.attached_python and t.report_requested:
-                    msg = format_waiting_report(t, per_gpu)
-                    self._record_task_message(t.id, "queue_probe", msg)
+            queued_by_id = {task.id: task for task in queued_tasks}
 
             # Scheduling
-            if not is_queue_paused(self.db):
-                decisions = self.scheduler.try_schedule(self.db, per_gpu)
+            if is_queue_paused(self.db):
+                for task in queued_tasks:
+                    message = format_queue_paused_report(task, per_gpu)
+                    self._record_queue_waiting(
+                        task,
+                        event_type="queue_paused",
+                        signature=self._queue_reason_signature("queue_paused"),
+                        daemon_summary="queue paused",
+                        message=message,
+                        details={
+                            "message": message,
+                            "reason_code": "queue_paused",
+                        },
+                    )
+            else:
+                schedule_result = self.scheduler.try_schedule(self.db, per_gpu)
+                if isinstance(schedule_result, list):
+                    decisions = schedule_result
+                    evaluations = []
+                else:
+                    decisions = schedule_result.decisions
+                    evaluations = schedule_result.evaluations
+
+                for evaluation in evaluations:
+                    task = queued_by_id.get(evaluation.task_id)
+                    if task is None:
+                        continue
+                    if evaluation.can_run:
+                        self._clear_queue_reason(task.id)
+                        continue
+
+                    message = format_schedule_block_report(task, evaluation, per_gpu)
+                    self._record_queue_waiting(
+                        task,
+                        event_type="schedule_blocked",
+                        signature=self._queue_reason_signature(
+                            evaluation.reason_code,
+                            evaluation.current_eligible_gpu_ids,
+                            evaluation.sustained_eligible_gpu_ids,
+                            evaluation.blocker_task_ids,
+                        ),
+                        daemon_summary=format_schedule_block_summary(task, evaluation),
+                        message=message,
+                        details={
+                            "message": message,
+                            "reason_code": evaluation.reason_code,
+                            "current_eligible_gpu_ids": evaluation.current_eligible_gpu_ids,
+                            "sustained_eligible_gpu_ids": evaluation.sustained_eligible_gpu_ids,
+                            "current_effective_free_mb": evaluation.current_effective_free_mb,
+                            "history_min_free_mb": evaluation.history_min_free_mb,
+                            "pending_vram_mb": evaluation.pending_vram_mb,
+                            "blocker_task_ids": evaluation.blocker_task_ids,
+                        },
+                    )
+
                 for dec in decisions:
                     task = get_task(self.db, dec.task_id)
                     if task is None:
                         continue
+                    self._clear_queue_reason(task.id)
 
                     if task.launch_mode == TaskLaunchMode.attached_python:
                         # Reserve GPUs for attached launch instead of spawning
@@ -271,9 +406,28 @@ class DaemonService:
         with self._lock:
             rec = create_task(self.db, spec)
             ensure_task_log(rec.id, self.config.log_dir)
+            message = format_submission_report(rec)
             self._record_task_message(
                 rec.id, "submitted",
-                f"task submitted: {rec.command!r} (mode={rec.launch_mode.value})",
+                message,
+                details={
+                    "message": message,
+                    "user": rec.user,
+                    "cwd": rec.cwd,
+                    "argv": rec.argv,
+                    "command": rec.command,
+                    "launch_mode": rec.launch_mode.value,
+                    "require_vram_mb": rec.require_vram_mb,
+                    "require_gpu_count": rec.require_gpu_count,
+                    "priority": rec.priority,
+                },
+            )
+            log.info(
+                "submitted task %s user=%s mode=%s cwd=%s",
+                rec.id,
+                rec.user,
+                rec.launch_mode.value,
+                rec.cwd,
             )
             return rec
 
@@ -286,6 +440,7 @@ class DaemonService:
                 self.runner.cancel(task_id)
             if task.status in (TaskStatus.queued, TaskStatus.running):
                 db_cancel_task(self.db, task_id)
+                self._clear_queue_reason(task_id)
                 if self.transport:
                     self.transport.send_task_update(TaskUpdate(
                         task_id=task_id,
@@ -332,12 +487,35 @@ class DaemonService:
         with self._lock:
             return list_task_events(self.db, task_id, after_id=after_id)
 
+    def set_task_priority(self, task_id: str, priority: int) -> bool:
+        with self._lock:
+            task = get_task(self.db, task_id)
+            if task is None or task.status != TaskStatus.queued:
+                return False
+            if not update_task_priority(self.db, task_id, priority):
+                return False
+
+            message = f"task priority updated: {task.priority} -> {priority}"
+            self._record_task_message(
+                task_id,
+                "priority_updated",
+                message,
+                details={
+                    "message": message,
+                    "old_priority": task.priority,
+                    "new_priority": priority,
+                },
+            )
+            log.info("task %s priority updated: %d -> %d", task_id, task.priority, priority)
+            return True
+
     def confirm_attached_launch(self, task_id: str, pid: int) -> bool:
         with self._lock:
             task = get_task(self.db, task_id)
             if task is None or task.status != TaskStatus.launching:
                 return False
             db_confirm_attached_launch(self.db, task_id, pid=pid, started_at=time.time())
+            self._clear_queue_reason(task_id)
             self._record_task_message(task_id, "attached_started", f"attached process started pid={pid}")
             if self.transport:
                 self.transport.send_task_update(TaskUpdate(task_id=task_id, status=TaskStatus.running, started_at=time.time(), pid=pid))
@@ -350,6 +528,7 @@ class DaemonService:
                 return False
             finished_at = time.time()
             finish_task(self.db, task_id, exit_code, finished_at)
+            self._clear_queue_reason(task_id)
             self._record_task_message(task_id, "attached_finished", f"attached process finished exit_code={exit_code}")
             if self.transport:
                 self.transport.send_task_update(TaskUpdate(

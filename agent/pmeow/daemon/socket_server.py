@@ -177,6 +177,7 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         gpu_ids=params.get("gpu_ids"),
         priority=params.get("priority", 10),
         argv=params.get("argv"),
+        env_overrides=params.get("env_overrides"),
         launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.daemon_shell,
         report_requested=bool(params.get("report_requested", False)),
     )

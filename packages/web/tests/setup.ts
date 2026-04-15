@@ -1,5 +1,6 @@
 import {
   AGENT_EVENT,
+  type AgentTaskEventRecord,
   SERVER_COMMAND,
   Scheduler,
   closeDatabase,
@@ -8,6 +9,7 @@ import {
   type AgentRegisterPayload,
   type AgentTaskUpdatePayload,
   type ServerCancelTaskPayload,
+  type ServerGetTaskEventsPayload,
   type ServerPauseQueuePayload,
   type ServerResumeQueuePayload,
   type ServerSetPriorityPayload,
@@ -34,6 +36,7 @@ interface WaitForCommandOptions {
 
 interface AgentCommandPayloadMap {
   [SERVER_COMMAND.cancelTask]: ServerCancelTaskPayload;
+  [SERVER_COMMAND.getTaskEvents]: ServerGetTaskEventsPayload;
   [SERVER_COMMAND.pauseQueue]: ServerPauseQueuePayload;
   [SERVER_COMMAND.resumeQueue]: ServerResumeQueuePayload;
   [SERVER_COMMAND.setPriority]: ServerSetPriorityPayload;
@@ -211,6 +214,10 @@ export class AgentTestStub {
 
     return new Promise((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      const untypedClient = client as unknown as {
+        off(eventName: string, listener: (...args: any[]) => void): void;
+        once(eventName: string, listener: (...args: any[]) => void): void;
+      };
       const onCommand = (payload: AgentCommandPayloadMap[EventName]) => {
         cleanup();
         resolve(payload);
@@ -220,7 +227,7 @@ export class AgentTestStub {
           clearTimeout(timer);
         }
 
-        client.off(eventName, onCommand as (payload: unknown) => void);
+        untypedClient.off(eventName, onCommand as (...args: any[]) => void);
       };
 
       timer = setTimeout(() => {
@@ -228,7 +235,7 @@ export class AgentTestStub {
         reject(new Error(`Timed out waiting for ${eventName}`));
       }, timeoutMs);
 
-      client.once(eventName, onCommand as (payload: unknown) => void);
+      untypedClient.once(eventName, onCommand as (...args: any[]) => void);
     });
   }
 
@@ -238,6 +245,13 @@ export class AgentTestStub {
     }
 
     return this.client;
+  }
+
+  respondToTaskEvents(response: AgentTaskEventRecord[]): void {
+    const client = this.requireClient();
+    client.on(SERVER_COMMAND.getTaskEvents, (_payload, callback) => {
+      callback(response);
+    });
   }
 }
 

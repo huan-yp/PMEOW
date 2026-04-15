@@ -35,12 +35,21 @@ class TaskRunner:
         file, and runs the command inside the task's ``cwd``.
         """
         log_fh = open_task_log(task.id, log_dir, append=True)
-        env = os.environ.copy()
+        env = task.env_overrides.copy() if task.env_overrides is not None else os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_ids)
 
+        popen_args: str | list[str]
+        use_shell: bool
+        if task.argv:
+            popen_args = task.argv
+            use_shell = False
+        else:
+            popen_args = task.command
+            use_shell = True
+
         proc = subprocess.Popen(
-            task.command,
-            shell=True,
+            popen_args,
+            shell=use_shell,
             cwd=task.cwd,
             env=env,
             stdout=log_fh,

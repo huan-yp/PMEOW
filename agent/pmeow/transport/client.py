@@ -232,18 +232,20 @@ class AgentTransportClient:
     # Internal: inbound command dispatch
     # ------------------------------------------------------------------
 
-    def _make_command_handler(self, command: str) -> Callable[[Any], None]:
-        def _handle(data: Any) -> None:
-            self._dispatch_command(command, data)
+    def _make_command_handler(self, command: str) -> Callable[[Any], Any]:
+        def _handle(data: Any) -> Any:
+            return self._dispatch_command(command, data)
 
         return _handle
 
-    def _dispatch_command(self, command: str, data: Any) -> None:
+    def _dispatch_command(self, command: str, data: Any) -> Any:
         handler = self._handlers.get(command)
         if handler:
             try:
-                handler(data)
+                return handler(data)
             except Exception:
                 log.exception("handler error for %s", command)
+                raise
         else:
             log.debug("no handler for event %s", command)
+        return None

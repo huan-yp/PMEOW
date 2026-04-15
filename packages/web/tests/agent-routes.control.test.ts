@@ -277,6 +277,67 @@ describe('agent control routes', () => {
     expect(getAgentTask(mirroredTask.taskId)).toEqual(taskBeforeDispatch);
   });
 
+  it('task-events route returns acknowledged structured events from the Agent session', async () => {
+    const { runtime, baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-events',
+      host: 'gpu-events',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-events',
+    });
+    const mirroredTask = mirrorTask({
+      serverId: server.id,
+      taskId: 'task-events',
+      status: 'queued',
+      command: 'python queue.py',
+      priority: 3,
+      createdAt: 500,
+    });
+    const client = await connectAgent(baseUrl);
+
+    await registerAgent(client, runtime, server.id, 'agent-events', 'gpu-events');
+
+    client.on(SERVER_COMMAND.getTaskEvents, (payload, callback) => {
+      callback([
+        {
+          id: 7,
+          taskId: payload.taskId,
+          eventType: 'schedule_blocked',
+          timestamp: 1_710_000_000,
+          details: {
+            message: 'schedule blocked',
+            reason_code: 'blocked_by_higher_priority',
+            blocker_task_ids: ['task-a'],
+          },
+        },
+      ]);
+    });
+
+    const response = await api
+      .get(`/api/servers/${server.id}/tasks/${mirroredTask.taskId}/events?afterId=0`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual([
+      {
+        id: 7,
+        taskId: mirroredTask.taskId,
+        eventType: 'schedule_blocked',
+        timestamp: 1_710_000_000,
+        details: {
+          message: 'schedule blocked',
+          reason_code: 'blocked_by_higher_priority',
+          blocker_task_ids: ['task-a'],
+        },
+      },
+    ]);
+  });
+
   it('offline Agent returns 409', async () => {
     const { baseUrl } = await startRuntime();
     const token = await login(baseUrl);

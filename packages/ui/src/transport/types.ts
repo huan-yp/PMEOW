@@ -5,7 +5,8 @@ import type {
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
-  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse,
+  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
+  MetricsHistoryResponse, GpuUsageHistoryResponse,
 } from '@monitor/core';
 
 export interface SecurityEventQuery {
@@ -48,6 +49,7 @@ export interface TransportAdapter {
   // Metrics
   getLatestMetrics(serverId: string): Promise<MetricsSnapshot | null>;
   getMetricsHistory(serverId: string, from: number, to: number): Promise<MetricsSnapshot[]>;
+  getMetricsHistoryBucketed(serverId: string, from: number, to: number, bucketMs?: number): Promise<MetricsHistoryResponse>;
   getServerStatuses(): Promise<ServerStatus[]>;
 
   // Hooks
@@ -76,6 +78,7 @@ export interface TransportAdapter {
 
   // Operator data
   getTaskQueue(): Promise<AgentTaskQueueGroup[]>;
+  getTaskEvents?(serverId: string, taskId: string, afterId?: number): Promise<AgentTaskEventRecord[]>;
   getProcessAudit(serverId: string): Promise<ProcessAuditRow[]>;
   getSecurityEvents(query?: SecurityEventQuery): Promise<SecurityEventRecord[]>;
   markSecurityEventSafe(id: number, reason?: string): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>;
@@ -83,6 +86,7 @@ export interface TransportAdapter {
   getGpuOverview(): Promise<GpuOverviewResponse>;
   getGpuUsageSummary(hours?: number): Promise<GpuUsageSummaryItem[]>;
   getGpuUsageByUser(user: string, hours?: number): Promise<GpuUsageTimelinePoint[]>;
+  getGpuUsageByUserBucketed(user: string, from: number, to: number, bucketMs?: number): Promise<GpuUsageHistoryResponse>;
   cancelTask(serverId: string, taskId: string): Promise<void>;
   setTaskPriority(serverId: string, taskId: string, priority: number): Promise<void>;
   pauseQueue(serverId: string): Promise<void>;

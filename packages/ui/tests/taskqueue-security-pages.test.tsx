@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  AgentTaskEventRecord,
   AgentTaskQueueGroup,
   AlertEvent,
   AlertRecord,
@@ -104,6 +105,21 @@ function createMockTransport() {
   ];
 
   const securityEvents = [createSecurityEvent()];
+  const taskEvents: AgentTaskEventRecord[] = [
+    {
+      id: 1,
+      taskId: 'task-queued-1',
+      eventType: 'schedule_blocked',
+      timestamp: 1_710_000_000,
+      details: {
+        message: 'schedule blocked (blocked by higher-priority reservations in this scheduling round)',
+        reason_code: 'blocked_by_higher_priority',
+        current_eligible_gpu_ids: [0, 1],
+        sustained_eligible_gpu_ids: [0],
+        blocker_task_ids: ['task-a'],
+      },
+    },
+  ];
 
   return {
     isElectron: true,
@@ -123,6 +139,7 @@ function createMockTransport() {
     testConnection: vi.fn<(input: ServerInput) => Promise<{ success: boolean; error?: string }>>(async (_input) => ({ success: true })),
     getLatestMetrics: vi.fn<(serverId: string) => Promise<MetricsSnapshot | null>>(async (_serverId) => null),
     getMetricsHistory: vi.fn<(serverId: string, from: number, to: number) => Promise<MetricsSnapshot[]>>(async (_serverId, _from, _to) => []),
+    getMetricsHistoryBucketed: vi.fn(async (_serverId, _from, _to, _bucketMs) => ({ serverId: 'server-1', buckets: [], bucketMs: 60_000, from: 0, to: 0, source: 'raw' as const })),
     getServerStatuses: vi.fn<() => Promise<ServerStatus[]>>(async () => []),
     getHooks: vi.fn<() => Promise<HookRule[]>>(async () => []),
     createHook: vi.fn<(input: HookRuleInput) => Promise<HookRule>>(async (_input) => {
@@ -145,6 +162,7 @@ function createMockTransport() {
     batchSuppressAlerts: vi.fn<(ids: string[], days?: number) => Promise<void>>(async (_ids, _days) => undefined),
     batchUnsuppressAlerts: vi.fn<(ids: string[]) => Promise<void>>(async (_ids) => undefined),
     getTaskQueue: vi.fn<() => Promise<AgentTaskQueueGroup[]>>(async () => taskQueueGroups),
+    getTaskEvents: vi.fn<(serverId: string, taskId: string, afterId?: number) => Promise<AgentTaskEventRecord[]>>(async (_serverId, _taskId, _afterId) => taskEvents),
     getProcessAudit: vi.fn<(serverId: string) => Promise<ProcessAuditRow[]>>(async (_serverId) => []),
     getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async (_query) => securityEvents),
     markSecurityEventSafe: vi.fn<(id: number, reason?: string) => Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>>(async (id, _reason) => ({
@@ -157,6 +175,7 @@ function createMockTransport() {
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 1_710_000_000_000, users: [], servers: [] })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
     getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageTimelinePoint[]>>(async (_user, _hours) => []),
+    getGpuUsageByUserBucketed: vi.fn(async (_user, _from, _to, _bucketMs) => ({ buckets: [], bucketMs: 60_000, from: 0, to: 0, source: 'raw' as const })),
     cancelTask: vi.fn<(serverId: string, taskId: string) => Promise<void>>(async (_serverId, _taskId) => undefined),
     setTaskPriority: vi.fn<(serverId: string, taskId: string, priority: number) => Promise<void>>(async (_serverId, _taskId, _priority) => undefined),
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
@@ -282,6 +301,24 @@ describe('task queue and security pages', () => {
     });
 
     expect(screen.queryByRole('button', { name: '查看日志' })).toBeNull();
+  });
+
+  it('loads and displays the latest structured scheduling reason on demand', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    renderApp(transport, '/tasks');
+
+    expect(await screen.findByText('task-queued-1')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '查看调度原因 task-queued-1' }));
+
+    await waitFor(() => {
+      expect(transport.getTaskEvents).toHaveBeenCalledWith('server-1', 'task-queued-1', 0);
+    });
+
+    expect(await screen.findByText('被更高优先级任务占用')).toBeTruthy();
+    expect(screen.getByText('task-a')).toBeTruthy();
   });
 
   it('queries security events with filters and marks events safe', async () => {

@@ -1,4 +1,4 @@
-import type { MetricsSnapshot, ConnectionStatus } from '../types.js';
+import type { AgentTaskEventRecord, MetricsSnapshot, ConnectionStatus } from '../types.js';
 
 export interface NodeDataSource {
   readonly type: 'ssh' | 'agent';
@@ -25,6 +25,7 @@ export interface AgentCommandDataSource extends NodeDataSource {
   pauseQueue(): void;
   resumeQueue(): void;
   setPriority(taskId: string, priority: number): void;
+  getTaskEvents(taskId: string, afterId?: number): Promise<AgentTaskEventRecord[]>;
 }
 
 export function isAgentCommandDataSource(
@@ -36,5 +37,6 @@ export function isAgentCommandDataSource(
     && typeof candidate.cancelTask === 'function'
     && typeof candidate.pauseQueue === 'function'
     && typeof candidate.resumeQueue === 'function'
-    && typeof candidate.setPriority === 'function';
+    && typeof candidate.setPriority === 'function'
+    && typeof candidate.getTaskEvents === 'function';
 }

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from pmeow.models import PerGpuAllocationSummary, TaskRecord, TaskStatus
+from pmeow.queue.scheduler import TaskScheduleEvaluation
 from pmeow.task_reporting import (
     format_gpu_overview,
+    format_history_summary,
     format_launch_report,
+    format_queue_paused_report,
+    format_schedule_block_report,
+    format_submission_report,
     format_waiting_report,
 )
 
@@ -52,6 +57,23 @@ class TestFormatGpuOverview:
         assert "gpu0" in result
         assert "gpu1" in result
         assert "|" in result
+        assert "pending=0.0 GB" in result
+
+
+class TestFormatSubmissionReport:
+    def test_includes_submitter_context(self) -> None:
+        task = _make_task(argv=["python", "train.py", "--epochs", "3"])
+        result = format_submission_report(task)
+        assert "user=tester" in result
+        assert "cwd=/tmp" in result
+        assert "python train.py --epochs 3" in result
+
+
+class TestFormatHistorySummary:
+    def test_includes_min_effective_free(self) -> None:
+        result = format_history_summary({0: 4096.0, 1: 8192.0})
+        assert "gpu0=4.0 GB" in result
+        assert "gpu1=8.0 GB" in result
 
 
 class TestFormatWaitingReport:
@@ -61,6 +83,13 @@ class TestFormatWaitingReport:
         assert "2 gpu(s)" in result
         assert "3.9 GB" in result
         assert "queue probe" in result
+
+
+class TestFormatQueuePausedReport:
+    def test_mentions_queue_paused(self) -> None:
+        task = _make_task()
+        result = format_queue_paused_report(task, [_make_gpu(0)])
+        assert "queue paused" in result
 
 
 class TestFormatLaunchReport:
@@ -74,3 +103,23 @@ class TestFormatLaunchReport:
         task = _make_task()
         result = format_launch_report(task, [], [])
         assert "cpu-only" in result
+
+
+class TestFormatScheduleBlockReport:
+    def test_includes_reason_and_history(self) -> None:
+        task = _make_task(require_gpu_count=1, require_vram_mb=8000)
+        evaluation = TaskScheduleEvaluation(
+            task_id=task.id,
+            can_run=False,
+            reason_code="blocked_by_higher_priority",
+            current_eligible_gpu_ids=[0],
+            sustained_eligible_gpu_ids=[0],
+            current_effective_free_mb={0: 12000.0},
+            history_min_free_mb={0: 10000.0},
+            pending_vram_mb={0: 8192.0},
+            blocker_task_ids=["task-0"],
+        )
+        result = format_schedule_block_report(task, evaluation, [_make_gpu(0, free=12000.0)])
+        assert "higher-priority" in result
+        assert "blockers=task-0" in result
+        assert "history-summary" in result

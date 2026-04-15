@@ -59,7 +59,8 @@ class TestPriorityOrdering:
         tracker.record(now - 10, per_gpu)
 
         scheduler = QueueScheduler(tracker)
-        decisions = scheduler.try_schedule(conn, per_gpu)
+        result = scheduler.try_schedule(conn, per_gpu)
+        decisions = result.decisions
 
         # Both can fit, but high priority should be first
         assert len(decisions) >= 1
@@ -82,7 +83,8 @@ class TestPriorityOrdering:
         tracker.record(now - 10, per_gpu)
 
         scheduler = QueueScheduler(tracker)
-        decisions = scheduler.try_schedule(conn, per_gpu)
+        result = scheduler.try_schedule(conn, per_gpu)
+        decisions = result.decisions
 
         assert len(decisions) >= 1
         assert decisions[0].task_id == first.id
@@ -105,9 +107,11 @@ class TestSustainedAvailability:
         tracker.record(now - 10, bad_sample)
 
         scheduler = QueueScheduler(tracker)
-        decisions = scheduler.try_schedule(conn, good_sample)
+        result = scheduler.try_schedule(conn, good_sample)
+        decisions = result.decisions
 
         assert len(decisions) == 0
+        assert result.evaluations[0].reason_code == "sustained_window_not_satisfied"
 
     def test_all_samples_pass_allows_start(self, conn) -> None:
         """All history samples have enough → task scheduled."""
@@ -124,7 +128,8 @@ class TestSustainedAvailability:
         tracker.record(now - 10, sample)
 
         scheduler = QueueScheduler(tracker)
-        decisions = scheduler.try_schedule(conn, sample)
+        result = scheduler.try_schedule(conn, sample)
+        decisions = result.decisions
 
         assert len(decisions) == 1
         assert decisions[0].task_id == task.id
@@ -150,10 +155,14 @@ class TestReservations:
         tracker.record(now - 10, per_gpu)
 
         scheduler = QueueScheduler(tracker)
-        decisions = scheduler.try_schedule(conn, per_gpu)
+        result = scheduler.try_schedule(conn, per_gpu)
+        decisions = result.decisions
 
         assert len(decisions) == 1
         assert decisions[0].task_id == t1.id
+        blocked = [evaluation for evaluation in result.evaluations if not evaluation.can_run]
+        assert blocked[0].reason_code == "blocked_by_higher_priority"
+        assert blocked[0].blocker_task_ids == [t1.id]
 
 
 class TestMultiGpu:
@@ -171,7 +180,8 @@ class TestMultiGpu:
         tracker.record(now - 10, per_gpu)
 
         scheduler = QueueScheduler(tracker)
-        decisions = scheduler.try_schedule(conn, per_gpu)
+        result = scheduler.try_schedule(conn, per_gpu)
+        decisions = result.decisions
 
         assert len(decisions) == 1
         assert decisions[0].task_id == task.id
