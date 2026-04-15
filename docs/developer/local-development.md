@@ -9,6 +9,7 @@
 - Node.js 20+
 - pnpm 9+
 - Python 3.10+
+- Linux，用于实际运行 Agent 采集与 daemon（依赖 `/proc` 和 Unix socket）
 - 可选：Docker 和 docker compose，用于验证打包与部署路径
 - 可选：Android Studio 和 JDK，用于调试 Capacitor Android 打包
 
@@ -35,6 +36,15 @@ python3 -m venv .venv
 pip install -e ".[dev]"
 ```
 
+如果你在 PowerShell 下工作，可以改用：
+
+```powershell
+Set-Location agent
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+```
+
 ## 推荐的本地运行布局
 
 ### 只调 Web 和 UI
@@ -51,6 +61,7 @@ pnpm dev:ui
 
 - `pnpm dev:web` 会先构建 `core`，再在 `packages/web` 下用 `tsx watch` 运行服务端。
 - `pnpm dev:ui` 会先构建 `core`，再启动 Vite 开发服务器。
+- `packages/ui` 的 Vite 开发服务器固定监听 `0.0.0.0:5129`，并把 `/api` 与 `/socket.io` 代理到 `http://localhost:17200`。
 - 浏览器入口通常是 `http://localhost:5129`。
 
 ### 运行接近生产的 Web 实例
@@ -88,6 +99,14 @@ pmeow-agent stop
 ```bash
 pnpm build:apk
 pnpm --filter @monitor/ui apk:debug
+```
+
+如果你在 Windows 上直接跑 Gradle，等价命令通常是：
+
+```powershell
+pnpm build:apk
+Set-Location packages/ui/android
+.\gradlew.bat assembleDebug
 ```
 
 如果你需要继续打开 Android 工程：
@@ -137,18 +156,28 @@ pmeow-agent status
 pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
 ```
 
+如果你想验证 Python 直达模式，也可以直接试：
+
+```bash
+cd agent
+. .venv/bin/activate
+pmeow -vram=8g -gpus=1 --report examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 30
+```
+
 ## 本地环境变量
 
 ### Web 服务端
 
 开发时最常见的是：
 
+- `HOST`
 - `PORT`
 - `MONITOR_DB_PATH`
 - `JWT_SECRET`
 
 建议：
 
+- 需要让 Web 服务只绑定某个接口时，显式设置 `HOST`
 - 需要隔离数据库时，为当前 shell 显式设置 `MONITOR_DB_PATH`
 - 需要跨重启保留登录态时，为当前 shell 显式设置 `JWT_SECRET`
 
@@ -166,6 +195,8 @@ pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
 
 如果你同时跑多个本地 Agent 实例，一定要给它们分配不同的状态目录、socket 路径、pid 文件和运行日志 `runtime log` 文件，否则很容易互相污染。
 
+如果没有设置 `PMEOW_SERVER_URL`，Agent 会以 local-only 模式运行。这样可以调试本地队列、daemon 和 CLI，但不会向 Web 服务注册，也不会接收远程控制命令。
+
 ## 本地数据位置
 
 ### Web 服务端
@@ -181,6 +212,8 @@ data/monitor.db
 ```text
 data/keys/
 ```
+
+这两个路径都相对于当前启动 Web 进程时的 `process.cwd()`；如果你从不同目录启动 `pnpm start:web` 或 `pmeow-web`，落点会随之变化。
 
 ### Agent
 
@@ -212,7 +245,7 @@ data/keys/
 - `pnpm test:web`
 - `pnpm typecheck:web`
 
-如果改动涉及共享模型或核心逻辑，还需要补跑 `pnpm test:core`。
+如果改动涉及共享模型或核心逻辑，还需要补跑 `pnpm test:core`。如果改动影响静态资源拷贝、打包入口或 `packages/web/dist/public`，再补跑一次 `pnpm build:web`。
 
 ### 改共享模型或调度器
 
@@ -231,6 +264,8 @@ data/keys/
 - `pytest -v`
 - 本地 `pmeow-agent run`
 - 如果涉及协议变化，再联调一份 Web 服务
+
+如果改动的是提交语义、附着式 Python 或 daemon 环境快照，额外关注 `agent/tests/test_cli_runtime.py`、`agent/tests/test_cli_python.py` 和 `agent/tests/store/test_tasks.py`。
 
 ## CI 与发版
 

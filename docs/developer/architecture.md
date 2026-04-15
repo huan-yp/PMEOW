@@ -65,6 +65,7 @@ agent/    Python Agent，独立于 pnpm workspace
 
 - Agent 连接 `/agent` namespace
 - 服务端通过 hostname 解析绑定关系
+- 如果是首次接入且 hostname 尚未匹配到已有记录，服务端会自动创建 `sourceType=agent` 的服务器记录；`name` 使用 hostname，`host` 使用当前 peer ip
 - 指标不是被轮询，而是由 Agent 主动推送
 - 指标进入 `AgentDataSource.pushMetrics()` 后触发统一处理
 
@@ -88,9 +89,9 @@ agent/    Python Agent，独立于 pnpm workspace
 1. Agent 连接 `/agent` namespace
 2. 发送 `agent:register`
 3. 服务端解析 hostname 并决定是否绑定到某个 `serverId`
-4. Agent 后续发送 `agent:metrics`、`agent:taskUpdate` 和 `agent:heartbeat`
+4. Agent 后续发送 `agent:metrics`、`agent:taskUpdate`、`agent:localUsers` 和 `agent:heartbeat`
 5. Web 侧把 payload 规范化成已绑定的 `serverId`
-6. `AgentDataSource` 把 snapshot 推给 `Scheduler.handleMetrics()`，任务更新则进入任务镜像链路
+6. `AgentDataSource` 把 snapshot 推给 `Scheduler.handleMetrics()`，任务更新进入任务镜像链路，`localUsers` 则更新人员绑定候选所需的本地用户库存
 
 ### 人员与移动端链路
 
@@ -111,6 +112,8 @@ agent/    Python Agent，独立于 pnpm workspace
 6. 异步执行钩子规则
 
 这个顺序很重要。调试时如果发现 UI 有数据但数据库没更新，或者 security event 缺失，应该优先沿着这条链路逐段确认。
+
+要注意 `agent:localUsers` 不走这条 `handleMetrics()` 链。它是独立侧带事件，直接更新服务端保存的节点本地用户清单，供人员绑定建议和归属解析使用。
 
 ## 状态与绑定语义
 
@@ -134,6 +137,7 @@ agent/    Python Agent，独立于 pnpm workspace
 - 管理 data source 生命周期
 - 轮询 SSH 节点
 - 接收 Agent 指标事件
+- 向 live Agent session 转发只读控制请求，例如任务事件拉取
 - 统一触发持久化、告警、钩子和安全处理
 
 它不负责：
@@ -143,6 +147,14 @@ agent/    Python Agent，独立于 pnpm workspace
 - 维护任务日志正文
 
 这条边界不能轻易打破。PMEOW 的任务调度主体仍然是节点本地的 Python Agent。
+
+## 本地调度约束
+
+当前调度是严格的节点本地调度，而不是服务端统一调度：
+
+- 每个 Agent daemon 只根据自己的本地 SQLite 队列做排队和出队
+- 准入判断依赖本机 GPU 当前样本和历史窗口，而不是服务端跨节点仲裁
+- `priority` 和 `created_at` 仍然是本地排序基础；服务端只负责下发变更，不负责替 Agent 重新决定 admission
 
 ## Agent 与服务端的关系
 
@@ -155,12 +167,15 @@ Agent 负责本地事实，服务端负责集群视图和最小控制面。
 - 本地任务队列
 - 资源满足时启动子进程
 - 任务状态和心跳上报
+- 本地用户清单上报 `agent:localUsers`
+- 在 `PMEOW_SERVER_URL` 为空时以 local-only 模式继续运行本地调度与 CLI
 
 ### 服务端负责
 
 - 维护跨节点的任务镜像视图
 - 展示 GPU overview、process audit 和人员归属结果
 - 暴露取消、暂停、恢复和调整优先级的控制 API
+- 按需通过 live session 拉取任务事件流 `task events`
 - 记录安全事件和告警历史
 
 ## 持久化模型
@@ -184,7 +199,7 @@ Agent 节点也有自己的本地 SQLite 和日志目录，默认在 `~/.pmeow/`
 
 1. 服务端是观察者和干预点，不是全局调度器。
 2. Agent 任务日志在节点本地，服务端只保存任务镜像和状态更新。
-3. hostname 绑定要求精确匹配，重复服务器记录会导致自动绑定失败。
+3. hostname 绑定要求精确匹配；重复服务器记录会导致自动绑定冲突，而完全未匹配时服务端会自动创建新的 agent 服务器记录。
 4. `MetricsSnapshot.gpuAllocation` 是 Agent 模式下的重要扩展，但不是所有节点都会有。
 5. 用户态看到的任务列表是服务端镜像，和节点本地事实之间通过 task update 保持同步。
 6. 个人移动端和管理员登录是两套不同认证体系，不应混为同一权限面。

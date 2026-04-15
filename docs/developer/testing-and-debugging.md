@@ -68,7 +68,10 @@ Agent 侧测试主要覆盖：
 如果你需要找“当前 main 上到底怎么工作的”证据，下面几类测试最有参考价值：
 
 - `packages/ui/tests/person-create-wizard.test.tsx`：人员创建向导、绑定迁移确认
+- `packages/web/tests/agent-namespace.test.ts`：Agent 注册、自动建档、hostname 绑定、`localUsers` 规范化和心跳超时
+- `packages/web/tests/agent-routes.read.test.ts`：任务镜像读取、任务事件拉取、GPU allocation 读取与归属解析
 - `packages/web/tests/agent-integration.test.ts`：Agent 注册、hostname 绑定、serverId 规范化、命令分发
+- `packages/web/tests/operator-routes.test.ts`：运维视图、GPU 概览、安全事件标记与回滚、按用户查询
 - `agent/tests/` 下的调度与 daemon 用例：Agent 本地队列和执行语义
 - `agent/tests/test_cli_runtime.py`、`agent/tests/test_cli_python.py`、`agent/tests/store/test_tasks.py`：固定 `submit` 的 cwd / 环境快照 / Python 解释器规范化，以及 Python 直达模式的 attached 启动语义
 
@@ -94,6 +97,18 @@ process.env.MONITOR_DB_PATH=':memory:'
 - Agent hostname 绑定会因为重复 host 匹配失败
 - 这种失败表面上像协议问题，实际上只是测试污染
 
+### 依赖 live session 的读写接口要先让 Agent 真正连上
+
+下面这些接口不只是“需要 agent 节点”，而是需要当前确实存在 live session：
+
+- `/api/servers/:id/tasks/:taskId/events`
+- `/api/servers/:id/tasks/:taskId/cancel`
+- `/api/servers/:id/queue/pause`
+- `/api/servers/:id/queue/resume`
+- `/api/servers/:id/tasks/:taskId/priority`
+
+如果测试里只创建了 `sourceType=agent` 的 server 记录，但没有真正完成 `/agent` namespace 注册，这些接口会返回 `409`，不是实现坏了，而是前置条件没满足。
+
 ### Core 测试在写入 `metrics` 或 `gpu_usage_stats` 前要先建 `server` 记录
 
 `metrics` 和 `gpu_usage_stats` 都受到 `servers` 外键约束。直接写这些表之前，如果没有先创建 server 记录，测试会失败。
@@ -118,7 +133,10 @@ process.env.MONITOR_DB_PATH=':memory:'
 默认情况下：
 
 - 数据库在 `data/monitor.db`
+- 上传的 SSH 密钥在 `data/keys/`
 - 如果设置了 `MONITOR_DB_PATH`，则以环境变量为准
+
+这些路径都相对于启动 Web 进程时的当前工作目录。
 
 ### Agent 节点
 
@@ -130,6 +148,8 @@ process.env.MONITOR_DB_PATH=':memory:'
 - daemon 前台输出或 systemd journal
 
 如果问题和任务运行有关，优先看本地日志，而不是服务端 UI。
+
+如果 `PMEOW_SERVER_URL` 没有设置，Agent 会明确提示自己处于 local-only 模式。这时本地 daemon、队列和 CLI 仍然工作，但 Web 服务端不会看到这个节点。
 
 ### 移动端与人员链路
 
@@ -165,6 +185,8 @@ process.env.MONITOR_DB_PATH=':memory:'
 - 是否存在重复 host 的服务器记录
 - 当前测试或本地数据库是否被旧数据污染
 
+还要记住一个当前实现细节：如果 hostname 完全没有匹配到现有记录，服务端会自动创建一条新的 agent 服务器记录，并把 peer ip 记到 `host`。看到“多出一台新节点”不一定是 bug，也可能只是首次接入的正常行为。
+
 ### 任务调度页与节点本地状态不一致
 
 先检查：
@@ -172,6 +194,7 @@ process.env.MONITOR_DB_PATH=':memory:'
 - 最近一次 `agent:taskUpdate` 是否真的发出
 - Web 端是否成功 `ingestAgentTaskUpdate`
 - 目标节点是否还保有 live session 会话
+- 如果你在看任务详情事件流，再确认 `server:getTaskEvents` 是否成功往返，而不是只看镜像状态是否更新
 
 要记住，服务端任务列表是镜像视图，不是节点本地数据库本身。
 
@@ -180,6 +203,7 @@ process.env.MONITOR_DB_PATH=':memory:'
 先检查：
 
 - UI 侧的人员向导测试是否已经覆盖到当前改动
+- Agent 是否仍在发送 `agent:localUsers`，因为绑定候选与部分归属解析依赖它
 - 绑定迁移是否需要额外确认
 - 个人令牌是否已经被轮换或吊销
 
