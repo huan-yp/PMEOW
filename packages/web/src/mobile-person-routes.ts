@@ -9,15 +9,15 @@ import {
   getPersonUnreadNotificationCount,
   markPersonNotificationRead,
   getAgentTask,
-  type Scheduler,
-  type AgentSessionRegistry,
-  isAgentCommandDataSource,
+  isAgentCommandError,
 } from '@monitor/core';
+import type { AgentCommandService, Scheduler, AgentSessionRegistry } from '@monitor/core';
 import type { Express, Request, Response, NextFunction } from 'express';
 
 export interface SetupMobilePersonRoutesOptions {
   scheduler: Scheduler;
   agentRegistry: AgentSessionRegistry;
+  commandService: AgentCommandService;
 }
 
 export function setupMobilePersonRoutes(
@@ -25,7 +25,7 @@ export function setupMobilePersonRoutes(
   personAuth: (req: Request, res: Response, next: NextFunction) => void,
   options: SetupMobilePersonRoutesOptions,
 ): void {
-  const { scheduler, agentRegistry } = options;
+  const { scheduler, agentRegistry, commandService } = options;
 
   app.get('/api/mobile/me/bootstrap', personAuth, (req, res) => {
     const personId = (req as any).personId as string;
@@ -68,13 +68,17 @@ export function setupMobilePersonRoutes(
       return res.status(400).json({ error: 'Task is not cancellable' });
     }
 
-    // Forward cancel to the agent data source
-    const dataSource = scheduler.getDataSource(task.serverId);
-    if (!dataSource || !isAgentCommandDataSource(dataSource)) {
-      return res.status(400).json({ error: 'Cannot cancel task on this server' });
+    // Forward cancel to the agent command service
+    try {
+      commandService.cancelTask(task.serverId, taskId);
+      res.json({ success: true });
+    } catch (error) {
+      if (isAgentCommandError(error)) {
+        const status = error.code === 'offline' ? 409 : error.code === 'invalid_target' ? 400 : 500;
+        return res.status(status).json({ error: error.message });
+      }
+      res.status(500).json({ error: 'Cannot cancel task' });
     }
-    dataSource.cancelTask(taskId);
-    res.json({ success: true });
   });
 
   app.get('/api/mobile/me/servers', personAuth, (req, res) => {

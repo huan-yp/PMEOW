@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
 import express, { type Express } from 'express';
-import { getDatabase, Scheduler, type AgentSessionRegistry, getSettings } from '@monitor/core';
+import { getDatabase, Scheduler, type AgentSessionRegistry, getSettings, AgentCommandService } from '@monitor/core';
 import { loginHandler, authMiddleware, socketAuthMiddleware } from './auth.js';
 import { setupAgentReadRoutes } from './agent-routes.js';
 import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
@@ -81,6 +81,12 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
     },
   });
 
+  const agentCommandService = new AgentCommandService({
+    agentRegistry: agentNamespace.registry,
+    getDataSource: (serverId) => scheduler.getDataSource(serverId),
+    refreshDataSource: (serverId) => scheduler.refreshServerDataSource(serverId),
+  });
+
   let currentPort = options.port ?? DEFAULT_PORT;
   let currentHost = getListenHost();
   let started = false;
@@ -92,14 +98,13 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   app.post('/api/login', loginHandler);
 
   // Person mobile routes use their own token auth (before admin JWT)
-  setupMobilePersonRoutes(app, personMobileAuthMiddleware, { scheduler, agentRegistry: agentNamespace.registry });
+  setupMobilePersonRoutes(app, personMobileAuthMiddleware, { scheduler, agentRegistry: agentNamespace.registry, commandService: agentCommandService });
 
   app.use('/api', authMiddleware);
 
   setupRestRoutes(app, scheduler);
   setupAgentReadRoutes(app, {
-    scheduler,
-    agentRegistry: agentNamespace.registry,
+    commandService: agentCommandService,
   });
   setupOperatorRoutes(app, {
     scheduler,

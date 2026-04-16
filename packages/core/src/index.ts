@@ -24,6 +24,10 @@ export type {
 } from './agent/binding.js';
 export { AgentSessionRegistry } from './agent/registry.js';
 export type { AgentLiveSession } from './agent/registry.js';
+export { AgentCommandError, isAgentCommandError } from './agent/errors.js';
+export type { AgentCommandErrorCode } from './agent/errors.js';
+export { AgentCommandService } from './agent/command-service.js';
+export type { AgentCommandServiceOptions } from './agent/command-service.js';
 export { ingestAgentMetrics, ingestAgentTaskUpdate, ingestAgentLocalUsers, flattenGpuAllocation } from './agent/ingest.js';
 export { SSHManager } from './ssh/manager.js';
 export * as collectors from './ssh/collectors/index.js';

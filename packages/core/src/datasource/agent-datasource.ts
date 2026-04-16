@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import type { AgentTaskAuditDetail, AgentTaskEventRecord, MetricsSnapshot, ConnectionStatus } from '../types.js';
 import { SERVER_COMMAND, type ServerCommandEnvelope } from '../agent/protocol.js';
+import { AgentCommandError } from '../agent/errors.js';
 import type { AgentLiveSession } from '../agent/registry.js';
 import type { AgentCommandDataSource, NodeDataSource } from './types.js';
 
@@ -125,7 +126,7 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource, Age
 
   private requireLiveSession(): AgentLiveSession {
     if (this.liveSession === null) {
-      throw new Error(`Agent server ${this.serverId} is offline`);
+      throw new AgentCommandError('offline');
     }
 
     return this.liveSession;

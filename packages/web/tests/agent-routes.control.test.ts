@@ -404,4 +404,176 @@ describe('agent control routes', () => {
     expect(cancelResponse.status).toBe(404);
     expect(priorityResponse.status).toBe(404);
   });
+
+  it('audit detail returns data from Agent session', async () => {
+    const { runtime, baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-audit',
+      host: 'gpu-audit',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-audit',
+    });
+    const mirroredTask = mirrorTask({
+      serverId: server.id,
+      taskId: 'task-audit',
+      status: 'completed',
+      command: 'python train.py',
+      priority: 5,
+      createdAt: 100,
+      startedAt: 200,
+      finishedAt: 300,
+      exitCode: 0,
+    });
+    const client = await connectAgent(baseUrl);
+
+    await registerAgent(client, runtime, server.id, 'agent-audit', 'gpu-audit');
+
+    const auditResponse = {
+      task: { id: mirroredTask.taskId, command: 'python train.py', status: 'completed' },
+      events: [],
+      runtime: null,
+    };
+
+    client.on(SERVER_COMMAND.getTaskAuditDetail, (_payload, callback) => {
+      callback(auditResponse);
+    });
+
+    const response = await api
+      .get(`/api/servers/${server.id}/tasks/${mirroredTask.taskId}/audit`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(auditResponse);
+  });
+
+  it('audit detail returns 409 when Agent is offline', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-audit-offline',
+      host: 'gpu-audit-offline',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-audit-offline',
+    });
+    mirrorTask({
+      serverId: server.id,
+      taskId: 'task-audit-offline',
+      status: 'completed',
+      command: 'python train.py',
+      priority: 5,
+      createdAt: 100,
+    });
+
+    const response = await api
+      .get(`/api/servers/${server.id}/tasks/task-audit-offline/audit`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toContain('Agent');
+  });
+
+  it('audit detail returns 504 when Agent times out', async () => {
+    const { runtime, baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-audit-timeout',
+      host: 'gpu-audit-timeout',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-audit-timeout',
+    });
+    mirrorTask({
+      serverId: server.id,
+      taskId: 'task-audit-timeout',
+      status: 'running',
+      command: 'python train.py',
+      priority: 5,
+      createdAt: 100,
+    });
+    const client = await connectAgent(baseUrl);
+
+    await registerAgent(client, runtime, server.id, 'agent-audit-timeout', 'gpu-audit-timeout');
+
+    // Do not respond to the audit request, causing Socket.IO timeout
+    client.on(SERVER_COMMAND.getTaskAuditDetail, () => {
+      // intentionally no callback — will trigger timeout
+    });
+
+    const response = await api
+      .get(`/api/servers/${server.id}/tasks/task-audit-timeout/audit`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(504);
+    expect(response.body.error).toContain('超时');
+  }, 10_000);
+
+  it('task-events returns 504 when Agent times out', async () => {
+    const { runtime, baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'gpu-events-timeout',
+      host: 'gpu-events-timeout',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'agent',
+      agentId: 'agent-events-timeout',
+    });
+    mirrorTask({
+      serverId: server.id,
+      taskId: 'task-events-timeout',
+      status: 'running',
+      command: 'python train.py',
+      priority: 5,
+      createdAt: 100,
+    });
+    const client = await connectAgent(baseUrl);
+
+    await registerAgent(client, runtime, server.id, 'agent-events-timeout', 'gpu-events-timeout');
+
+    client.on(SERVER_COMMAND.getTaskEvents, () => {
+      // intentionally no callback — will trigger timeout
+    });
+
+    const response = await api
+      .get(`/api/servers/${server.id}/tasks/task-events-timeout/events`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(504);
+    expect(response.body.error).toContain('超时');
+  }, 10_000);
+
+  it('SSH node returns 409 for agent command routes', async () => {
+    const { baseUrl } = await startRuntime();
+    const token = await login(baseUrl);
+    const api = request(baseUrl);
+    const server = createServer({
+      name: 'ssh-node',
+      host: 'ssh-node',
+      port: 22,
+      username: 'root',
+      privateKeyPath: '/tmp/key',
+      sourceType: 'ssh',
+    });
+
+    const pauseResponse = await api
+      .post(`/api/servers/${server.id}/queue/pause`)
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(pauseResponse.status).toBe(409);
+    expect(pauseResponse.body.error).toContain('不支持');
+  });
 });

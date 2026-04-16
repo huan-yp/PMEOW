@@ -1,18 +1,18 @@
 import {
-  AgentDataSource,
   getAgentTask,
   getAgentTasksByServerId,
   getLatestMetrics,
   getResolvedGpuAllocation,
   getServerById,
   isServerSetPriorityPayload,
+  AgentCommandError,
+  isAgentCommandError,
 } from '@monitor/core';
-import type { AgentSessionRegistry, Scheduler } from '@monitor/core';
+import type { AgentCommandService } from '@monitor/core';
 import type { Express, Request, Response } from 'express';
 
 interface AgentRouteOptions {
-  scheduler: Scheduler;
-  agentRegistry: AgentSessionRegistry;
+  commandService: AgentCommandService;
 }
 
 function getRouteParam(req: Request, name: string): string | undefined {
@@ -50,39 +50,36 @@ function requireTaskForServer(
   return taskId;
 }
 
-function resolveCommandDataSource(
-  serverId: string,
-  options: AgentRouteOptions,
-  res: Response,
-): AgentDataSource | undefined {
-  options.scheduler.refreshServerDataSource(serverId);
+function resolveServerId(req: Request, res: Response): string | undefined {
+  const serverId = requireServer(req, res);
+  if (!serverId) return undefined;
 
-  const dataSource = options.scheduler.getDataSource(serverId);
-  if (!(dataSource instanceof AgentDataSource)) {
-    res.status(409).json({ error: 'Agent 未在线' });
+  const server = getServerById(serverId);
+  if (server && server.sourceType !== 'agent') {
+    res.status(409).json({ error: '目标节点不支持该命令' });
     return undefined;
   }
 
-  if (!options.agentRegistry.hasSessionByServerId(serverId) || !dataSource.hasLiveSession()) {
-    res.status(409).json({ error: 'Agent 未在线' });
-    return undefined;
-  }
-
-  return dataSource;
+  return serverId;
 }
 
-function dispatchCommand(res: Response, action: () => void): void {
-  try {
-    action();
-    res.json({ ok: true });
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('is offline')) {
-      res.status(409).json({ error: 'Agent 未在线' });
-      return;
-    }
-
-    res.status(500).json({ error: error instanceof Error ? error.message : '命令派发失败' });
+function mapCommandError(error: unknown, res: Response, fallbackMessage: string): void {
+  if (isAgentCommandError(error)) {
+    const statusMap: Record<string, number> = {
+      offline: 409,
+      timeout: 504,
+      not_supported: 501,
+      not_found: 404,
+      invalid_target: 409,
+      invalid_input: 400,
+      internal: 500,
+    };
+    const status = statusMap[error.code] ?? 500;
+    res.status(status).json({ error: error.message });
+    return;
   }
+
+  res.status(500).json({ error: error instanceof Error ? error.message : fallbackMessage });
 }
 
 function requirePriority(req: Request, taskId: string, res: Response): number | undefined {
@@ -126,7 +123,7 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
   });
 
   app.get('/api/servers/:id/tasks/:taskId/events', async (req: Request, res: Response) => {
-    const serverId = requireServer(req, res);
+    const serverId = resolveServerId(req, res);
     if (!serverId) {
       return;
     }
@@ -146,25 +143,15 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
       return;
     }
 
-    const dataSource = resolveCommandDataSource(serverId, options, res);
-    if (!dataSource) {
-      return;
-    }
-
     try {
-      res.json(await dataSource.getTaskEvents(taskId, afterId));
+      res.json(await options.commandService.getTaskEvents(serverId, taskId, afterId));
     } catch (error) {
-      if (error instanceof Error && error.message.includes('is offline')) {
-        res.status(409).json({ error: 'Agent 未在线' });
-        return;
-      }
-
-      res.status(500).json({ error: error instanceof Error ? error.message : '获取任务事件失败' });
+      mapCommandError(error, res, '获取任务事件失败');
     }
   });
 
   app.get('/api/servers/:id/tasks/:taskId/audit', async (req: Request, res: Response) => {
-    const serverId = requireServer(req, res);
+    const serverId = resolveServerId(req, res);
     if (!serverId) {
       return;
     }
@@ -174,21 +161,11 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
       return;
     }
 
-    const dataSource = resolveCommandDataSource(serverId, options, res);
-    if (!dataSource) {
-      return;
-    }
-
     try {
-      const detail = await dataSource.getTaskAuditDetail(taskId);
+      const detail = await options.commandService.getTaskAuditDetail(serverId, taskId);
       res.json(detail);
     } catch (error) {
-      if (error instanceof Error && error.message.includes('is offline')) {
-        res.status(409).json({ error: 'Agent 未在线' });
-        return;
-      }
-
-      res.status(500).json({ error: error instanceof Error ? error.message : '获取审计详情失败' });
+      mapCommandError(error, res, '获取审计详情失败');
     }
   });
 
@@ -211,7 +188,7 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
   });
 
   app.post('/api/servers/:id/tasks/:taskId/cancel', (req: Request, res: Response) => {
-    const serverId = requireServer(req, res);
+    const serverId = resolveServerId(req, res);
     if (!serverId) {
       return;
     }
@@ -221,50 +198,44 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
       return;
     }
 
-    const dataSource = resolveCommandDataSource(serverId, options, res);
-    if (!dataSource) {
-      return;
+    try {
+      options.commandService.cancelTask(serverId, taskId);
+      res.json({ ok: true });
+    } catch (error) {
+      mapCommandError(error, res, '命令派发失败');
     }
-
-    dispatchCommand(res, () => {
-      dataSource.cancelTask(taskId);
-    });
   });
 
   app.post('/api/servers/:id/queue/pause', (req: Request, res: Response) => {
-    const serverId = requireServer(req, res);
+    const serverId = resolveServerId(req, res);
     if (!serverId) {
       return;
     }
 
-    const dataSource = resolveCommandDataSource(serverId, options, res);
-    if (!dataSource) {
-      return;
+    try {
+      options.commandService.pauseQueue(serverId);
+      res.json({ ok: true });
+    } catch (error) {
+      mapCommandError(error, res, '命令派发失败');
     }
-
-    dispatchCommand(res, () => {
-      dataSource.pauseQueue();
-    });
   });
 
   app.post('/api/servers/:id/queue/resume', (req: Request, res: Response) => {
-    const serverId = requireServer(req, res);
+    const serverId = resolveServerId(req, res);
     if (!serverId) {
       return;
     }
 
-    const dataSource = resolveCommandDataSource(serverId, options, res);
-    if (!dataSource) {
-      return;
+    try {
+      options.commandService.resumeQueue(serverId);
+      res.json({ ok: true });
+    } catch (error) {
+      mapCommandError(error, res, '命令派发失败');
     }
-
-    dispatchCommand(res, () => {
-      dataSource.resumeQueue();
-    });
   });
 
   app.post('/api/servers/:id/tasks/:taskId/priority', (req: Request, res: Response) => {
-    const serverId = requireServer(req, res);
+    const serverId = resolveServerId(req, res);
     if (!serverId) {
       return;
     }
@@ -279,13 +250,11 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
       return;
     }
 
-    const dataSource = resolveCommandDataSource(serverId, options, res);
-    if (!dataSource) {
-      return;
+    try {
+      options.commandService.setPriority(serverId, taskId, priority);
+      res.json({ ok: true });
+    } catch (error) {
+      mapCommandError(error, res, '命令派发失败');
     }
-
-    dispatchCommand(res, () => {
-      dataSource.setPriority(taskId, priority);
-    });
   });
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentLiveSession } from '../../src/agent/registry.js';
 import { SERVER_COMMAND, isServerCommandEnvelope } from '../../src/agent/protocol.js';
+import { AgentCommandError } from '../../src/agent/errors.js';
 import { AgentDataSource } from '../../src/datasource/agent-datasource.js';
 import type { MetricsSnapshot } from '../../src/types.js';
 
@@ -81,10 +82,10 @@ describe('AgentDataSource', () => {
   it('offline datasource rejects command dispatch cleanly', () => {
     const ds = new AgentDataSource('srv-1', 'agent-1');
 
-    expect(() => ds.cancelTask('task-1')).toThrowError('Agent server srv-1 is offline');
-    expect(() => ds.pauseQueue()).toThrowError('Agent server srv-1 is offline');
-    expect(() => ds.resumeQueue()).toThrowError('Agent server srv-1 is offline');
-    expect(() => ds.setPriority('task-1', 10)).toThrowError('Agent server srv-1 is offline');
+    expect(() => ds.cancelTask('task-1')).toThrow(AgentCommandError);
+    expect(() => ds.pauseQueue()).toThrow(AgentCommandError);
+    expect(() => ds.resumeQueue()).toThrow(AgentCommandError);
+    expect(() => ds.setPriority('task-1', 10)).toThrow(AgentCommandError);
   });
 
   it('emits command payloads with correct event names and shapes', () => {

@@ -28,6 +28,7 @@ import {
   type MetricsSnapshot,
   resolveAgentBinding,
   autoCreateAgentServer,
+  AgentCommandError,
 } from '@monitor/core';
 import type { Namespace, Server as SocketServer, Socket } from 'socket.io';
 
@@ -189,7 +190,7 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
           payload,
           (error: Error | null, response: AgentTaskEventsResponse) => {
             if (error) {
-              reject(error);
+              reject(new AgentCommandError('timeout'));
               return;
             }
             resolve(response);
@@ -204,7 +205,7 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
           payload,
           (error: Error | null, response: AgentTaskAuditDetailResponse) => {
             if (error) {
-              reject(error);
+              reject(new AgentCommandError('timeout'));
               return;
             }
             resolve(response);
