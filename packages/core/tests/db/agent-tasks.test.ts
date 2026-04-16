@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getDatabase } from '../../src/db/database.js';
+import { closeDatabase, getDatabase } from '../../src/db/database.js';
 import {
   deleteAgentTasksByServerId,
   getAgentTask,
@@ -85,6 +85,7 @@ describe('agent_tasks schema', () => {
       expect(columns.has('taskId')).toBe(true);
       expect(columns.has('updatedAt')).toBe(true);
     } finally {
+      closeDatabase();
       process.env.MONITOR_DB_PATH = previousDbPath;
       fs.rmSync(dbPath, { force: true });
     }

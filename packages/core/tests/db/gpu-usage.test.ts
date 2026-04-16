@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getDatabase } from '../../src/db/database.js';
+import { closeDatabase, getDatabase } from '../../src/db/database.js';
 import {
   cleanOldGpuUsage,
   getLatestGpuUsageByServerId,
@@ -84,6 +84,7 @@ describe('gpu_usage_stats schema', () => {
       expect(columns.has('ownerType')).toBe(true);
       expect(columns.has('usedMemoryMB')).toBe(true);
     } finally {
+      closeDatabase();
       process.env.MONITOR_DB_PATH = previousDbPath;
       fs.rmSync(dbPath, { force: true });
     }
