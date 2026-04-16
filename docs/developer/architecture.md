@@ -207,3 +207,8 @@ Agent 节点也有自己的本地 SQLite 和日志目录，默认在 `~/.pmeow/`
 ## 文档与设计档案的关系
 
 如果你需要理解“为什么是现在这个结构”，应再去看 `docs/superpowers/` 下的设计档案。那部分解释的是设计背景；本页解释的是当前真实实现。
+## Runtime Monitor Loop
+
+Daemon 通过 `task_runtime` 和 `task_processes` 两张表持有任务进程的活跃状态。`collect_cycle()` 仍负责指标采集和调度决策，但本地任务的终态收敛由 `RuntimeMonitorLoop` 驱动——它以独立间隔刷新当前进程树，检测孤儿进程，并将 `runner_exit`、`cli_finish`、`cancel` 和 orphan detection 统一通过 `guarded_finalize_task()` 完成终结。
+
+所有终结写入共享同一个 guard：只有第一次成功转换会生效，后续重复请求会被记录为 `runtime_finalize_ignored_late_source` 事件但不改变任务状态，从而避免竞态导致的状态覆盖。

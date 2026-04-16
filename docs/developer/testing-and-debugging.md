@@ -217,3 +217,9 @@ process.env.MONITOR_DB_PATH=':memory:'
 4. 最后才怀疑 UI 渲染、调度策略、归属规则或安全规则本身。
 
 这个顺序的好处是可以尽快判断问题属于“没跑起来”“没连上”“没持久化”还是“业务逻辑不对”。
+## Runtime Monitor 调试
+
+- `pytest tests/daemon/test_runtime_monitor.py -v`
+- `pytest tests/store/test_tasks.py -k guarded_finalize -v`
+- 检查 `task_events` 表中的 `runtime_orphan_detected`、`runtime_finalized` 和 `runtime_finalize_ignored_late_source` 事件
+- 在 Windows 上，验证行为依赖 psutil 的进程存活检查而非信号假设

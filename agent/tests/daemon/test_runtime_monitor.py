@@ -650,5 +650,33 @@ def test_run_forever_logs_tick_errors_and_continues(conn, monkeypatch, caplog):
     assert "tick boom" in caplog.text
 
 
+def test_explicit_cancel_beats_runner_exit(conn):
+    task = create_task(conn, _spec())
+    now = time.time()
+    attach_runtime(conn, task.id, pid=3131, gpu_ids=[0], started_at=now)
+
+    cancel = guarded_finalize_task(
+        conn,
+        task.id,
+        status=TaskStatus.cancelled,
+        finished_at=now + 1,
+        exit_code=None,
+        finalize_source="cancel",
+        finalize_reason_code="explicit_cancel",
+    )
+    runner = guarded_finalize_task(
+        conn,
+        task.id,
+        status=TaskStatus.failed,
+        finished_at=now + 2,
+        exit_code=1,
+        finalize_source="runner_exit",
+    )
+
+    assert cancel.transitioned is True
+    assert runner.transitioned is False
+    assert get_task(conn, task.id).status == TaskStatus.cancelled
+
+
 def _assert_locked(lock) -> None:
     assert lock.depth > 0

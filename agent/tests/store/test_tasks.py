@@ -418,6 +418,34 @@ class TestGuardedFinalize:
             (record.id,),
         ).fetchone()[0] == 0
 
+    def test_late_cli_finish_does_not_override_monitor_orphan_finalize(self, conn):
+        record = create_task(conn, _spec(launch_mode=TaskLaunchMode.attached_python))
+        now = time.time()
+        attach_runtime(conn, record.id, pid=7777, gpu_ids=[0], started_at=now)
+
+        orphan = guarded_finalize_task(
+            conn,
+            record.id,
+            status=TaskStatus.failed,
+            finished_at=now + 1,
+            exit_code=None,
+            finalize_source="monitor_orphan",
+            finalize_reason_code="orphaned",
+        )
+        late = guarded_finalize_task(
+            conn,
+            record.id,
+            status=TaskStatus.failed,
+            finished_at=now + 2,
+            exit_code=130,
+            finalize_source="cli_finish",
+            finalize_reason_code="ctrl_c",
+        )
+
+        assert orphan.transitioned is True
+        assert late.transitioned is False
+        assert _require_task(conn, record.id).exit_code is None
+
 
 class TestCancelRunningTask:
     def test_cancel_running_task_clears_runtime_tracking(self, conn):
