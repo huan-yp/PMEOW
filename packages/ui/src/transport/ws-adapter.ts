@@ -7,7 +7,7 @@ import type {
   AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
-  PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
+  PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity, AutoAddUnassignedPersonsReport,
   MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
   MetricsHistoryResponse, GpuUsageHistoryResponse,
 } from '@monitor/core';
@@ -403,6 +403,10 @@ export class WebSocketAdapter implements TransportAdapter {
 
   async getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]> {
     return this.fetch('/api/person-binding-suggestions');
+  }
+
+  async autoAddUnassignedPersons(): Promise<AutoAddUnassignedPersonsReport> {
+    return this.fetch('/api/persons/auto-add-unassigned', { method: 'POST', body: JSON.stringify({}) });
   }
 
   async getPersonSummary(hours = 168): Promise<PersonSummaryItem[]> {

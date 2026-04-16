@@ -602,6 +602,47 @@ export interface PersonBindingCandidate {
   lastSeenAt: number;
   activeBinding: PersonBindingCandidateActiveBinding | null;
 }
+export type AutoAddUnassignedPersonsItemResult =
+  | 'created-person'
+  | 'reused-person'
+  | 'skipped-root'
+  | 'skipped-ambiguous'
+  | 'skipped-already-bound'
+  | 'failed';
+
+export interface AutoAddUnassignedPersonsReportBinding {
+  serverId: string;
+  serverName: string;
+  systemUser: string;
+}
+
+export interface AutoAddUnassignedPersonsReportItem {
+  username: string;
+  normalizedUsername: string;
+  result: AutoAddUnassignedPersonsItemResult;
+  personId: string | null;
+  personDisplayName: string | null;
+  bindingCount: number;
+  bindings: AutoAddUnassignedPersonsReportBinding[];
+  message: string;
+}
+
+export interface AutoAddUnassignedPersonsSummary {
+  candidateUserCount: number;
+  createdPersonCount: number;
+  reusedPersonCount: number;
+  createdBindingCount: number;
+  skippedRootCount: number;
+  skippedAmbiguousCount: number;
+  skippedAlreadyBoundCount: number;
+  failedCount: number;
+}
+
+export interface AutoAddUnassignedPersonsReport {
+  generatedAt: number;
+  summary: AutoAddUnassignedPersonsSummary;
+  items: AutoAddUnassignedPersonsReportItem[];
+}
 
 export interface ServerPersonActivity {
   serverId: string;

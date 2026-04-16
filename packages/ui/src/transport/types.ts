@@ -5,6 +5,7 @@ import type {
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
+  AutoAddUnassignedPersonsReport,
   MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
   MetricsHistoryResponse, GpuUsageHistoryResponse,
 } from '@monitor/core';
@@ -104,6 +105,7 @@ export interface TransportAdapter {
   updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord>;
   getPersonBindingCandidates(): Promise<PersonBindingCandidate[]>;
   getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]>;
+  autoAddUnassignedPersons?(): Promise<AutoAddUnassignedPersonsReport>;
   getPersonSummary(hours?: number): Promise<PersonSummaryItem[]>;
   getPersonTimeline(personId: string, hours?: number): Promise<PersonTimelinePoint[]>;
   getPersonTasks(personId: string, hours?: number): Promise<MirroredAgentTaskRecord[]>;

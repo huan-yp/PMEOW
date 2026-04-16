@@ -107,6 +107,7 @@ export {
   createPerson,
   getPersonById,
   listPersons,
+  autoAddUnassignedPersons,
   updatePerson,
   archivePerson,
   createPersonBinding,
