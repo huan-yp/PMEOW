@@ -474,7 +474,7 @@ def list_task_events(
             "task_id": r[1],
             "event_type": r[2],
             "timestamp": r[3],
-            "details": None if r[4] is None else json.loads(r[4]),
+            "details": None if not r[4] else json.loads(r[4]),
         }
         for r in rows
     ]
