@@ -177,3 +177,23 @@ def collect_per_gpu_total_memory() -> dict[int, float]:
 def collect_per_gpu_used_memory() -> dict[int, float]:
     """Return a mapping of gpu_index → actual used memory in MB."""
     return _collect_per_gpu_memory_field("memory.used")
+
+
+def collect_per_gpu_utilization() -> dict[int, float]:
+    """Return a mapping of gpu_index → GPU utilization percent."""
+    output = _run_smi([
+        "--query-gpu=index,utilization.gpu",
+        "--format=csv,noheader,nounits",
+    ])
+    if not output:
+        return {}
+
+    result: dict[int, float] = {}
+    for line in output.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= 2:
+            try:
+                result[int(parts[0])] = float(parts[1])
+            except ValueError:
+                continue
+    return result

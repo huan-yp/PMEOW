@@ -224,6 +224,7 @@ class PerGpuAllocationSummary:
     user_processes: list[GpuUserProcess] = field(default_factory=list)
     unknown_processes: list[GpuUnknownProcess] = field(default_factory=list)
     effective_free_mb: float = 0.0
+    utilization_percent: float = 0.0
 
 
 @dataclass

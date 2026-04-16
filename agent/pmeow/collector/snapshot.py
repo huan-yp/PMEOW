@@ -16,6 +16,7 @@ from pmeow.collector.gpu import (
     collect_gpu_processes,
     collect_per_gpu_total_memory,
     collect_per_gpu_used_memory,
+    collect_per_gpu_utilization,
 )
 from pmeow.collector.gpu_attribution import attribute_gpu_processes
 from pmeow.collector.internet import InternetProbe
@@ -48,12 +49,14 @@ def collect_snapshot(
         running_tasks = list_tasks(task_store, TaskStatus.running)
         per_gpu_mem = collect_per_gpu_total_memory()
         per_gpu_used = collect_per_gpu_used_memory()
+        per_gpu_util = collect_per_gpu_utilization()
         gpu_pids = [p.pid for p in gpu_procs]
         task_process_pids = list_task_process_owners_by_pid(task_store, gpu_pids)
         gpu_allocation = attribute_gpu_processes(
             gpu_procs, running_tasks, per_gpu_mem, redundancy_coefficient,
             per_gpu_used_memory=per_gpu_used,
             task_process_pids=task_process_pids,
+            per_gpu_utilization=per_gpu_util,
         )
 
     network = collect_network()

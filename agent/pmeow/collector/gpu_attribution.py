@@ -114,6 +114,7 @@ def attribute_gpu_processes(
     redundancy_coefficient: float = 0.1,
     per_gpu_used_memory: Optional[dict[int, float]] = None,
     task_process_pids: Optional[dict[int, str]] = None,
+    per_gpu_utilization: Optional[dict[int, float]] = None,
 ) -> GpuAllocationSummary:
     """Classify each GPU process and build an allocation summary."""
 
@@ -215,6 +216,11 @@ def attribute_gpu_processes(
             user_processes=users,
             unknown_processes=unknowns,
             effective_free_mb=eff_free,
+            utilization_percent=(
+                per_gpu_utilization.get(idx, 0.0)
+                if per_gpu_utilization is not None
+                else 0.0
+            ),
         ))
 
     # Build by-user summary
