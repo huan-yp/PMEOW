@@ -150,7 +150,7 @@ export function Overview() {
       <section>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-sky-400/20 bg-sky-500/[0.07] p-4 backdrop-blur-sm md:col-span-2">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-slate-500">节点状态</p>
                 <p className="mt-3 text-2xl font-semibold text-sky-100">{servers.length}</p>
@@ -162,7 +162,7 @@ export function Overview() {
                       : '当前节点尚未上报外网探测数据。'}
                 </p>
               </div>
-              <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">在线状态</p>
                   <div className="mt-3 flex flex-wrap gap-2">
