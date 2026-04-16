@@ -29,9 +29,10 @@ from pmeow.models import (
     TaskUpdate,
 )
 from pmeow.queue.history import GpuHistoryTracker
-from pmeow.queue.scheduler import QueueScheduler
+from pmeow.queue.scheduler import QueueScheduler, validate_request_possible
 from pmeow.store.database import close_database, open_database
 from pmeow.store.runtime import is_queue_paused, set_queue_paused
+from pmeow.store.task_runtime import get_task_runtime
 from pmeow.store.tasks import (
     append_task_event,
     attach_runtime,
@@ -94,6 +95,7 @@ class DaemonService:
             )
         self._last_local_users_signature: tuple[tuple[str, int, int, str, str, str], ...] | None = None
         self._last_queue_reason_signatures: dict[str, tuple] = {}
+        self._last_per_gpu: list | None = None
 
     def _task_update_from_record(
         self,
@@ -242,6 +244,10 @@ class DaemonService:
                 after_id=int(data.get("afterId", 0)),
             ),
         )
+        self.transport.on_command(
+            "server:getTaskAuditDetail",
+            lambda data: self._handle_get_task_audit_detail(data),
+        )
 
     def _clear_queue_reason(self, task_id: str) -> None:
         self._last_queue_reason_signatures.pop(task_id, None)
@@ -323,6 +329,7 @@ class DaemonService:
         )
 
         with self._lock:
+            self._last_per_gpu = per_gpu
             # Record GPU history
             self.history.record(snapshot.timestamp, per_gpu)
 
@@ -416,6 +423,7 @@ class DaemonService:
                             "history_min_free_mb": evaluation.history_min_free_mb,
                             "pending_vram_mb": evaluation.pending_vram_mb,
                             "blocker_task_ids": evaluation.blocker_task_ids,
+                            "gpu_ledgers": evaluation.gpu_ledgers,
                         },
                     )
 
@@ -424,6 +432,28 @@ class DaemonService:
                     if task is None:
                         continue
                     self._clear_queue_reason(task.id)
+
+                    # Find the matching evaluation for audit snapshot
+                    eval_for_task = next(
+                        (e for e in evaluations if e.task_id == dec.task_id and e.can_run),
+                        None,
+                    )
+                    schedule_details: dict = {
+                        "gpu_ids": dec.gpu_ids,
+                        "require_vram_mb": task.require_vram_mb,
+                        "require_gpu_count": task.require_gpu_count,
+                        "priority": task.priority,
+                        "launch_mode": task.launch_mode.value,
+                    }
+                    if eval_for_task is not None:
+                        schedule_details["gpu_ledgers"] = eval_for_task.gpu_ledgers
+                        schedule_details["blocker_task_ids"] = eval_for_task.blocker_task_ids
+
+                    self._record_task_message(
+                        task.id, "schedule_started",
+                        f"scheduled on GPUs {dec.gpu_ids}",
+                        details=schedule_details,
+                    )
 
                     if task.launch_mode == TaskLaunchMode.attached_python:
                         # Reserve GPUs for attached launch instead of spawning
@@ -444,6 +474,15 @@ class DaemonService:
                     started_at = time.time()
                     attach_runtime(
                         self.db, task.id, proc.pid, dec.gpu_ids, started_at
+                    )
+                    self._record_task_message(
+                        task.id, "process_started",
+                        f"process started (pid={proc.pid}, gpus={dec.gpu_ids})",
+                        details={
+                            "pid": proc.pid,
+                            "gpu_ids": dec.gpu_ids,
+                            "launch_mode": task.launch_mode.value,
+                        },
                     )
                     log.info(
                         "started task %s (pid=%d, gpus=%s)",
@@ -469,6 +508,14 @@ class DaemonService:
 
     def submit_task(self, spec: TaskSpec) -> TaskRecord:
         with self._lock:
+            if self._last_per_gpu:
+                err = validate_request_possible(
+                    self._last_per_gpu,
+                    spec.require_gpu_count,
+                    spec.require_vram_mb,
+                )
+                if err is not None:
+                    raise ValueError(err)
             rec = create_task(self.db, spec)
             ensure_task_log(rec.id, self.config.log_dir)
             message = format_submission_report(rec)
@@ -570,6 +617,58 @@ class DaemonService:
         with self._lock:
             return list_task_events(self.db, task_id, after_id=after_id)
 
+    def get_task_audit_detail(self, task_id: str) -> tuple | None:
+        """Return (task, events, runtime) for the audit detail command.
+
+        Returns None if the task doesn't exist.
+        """
+        with self._lock:
+            task = get_task(self.db, task_id)
+            if task is None:
+                return None
+            events = list_task_events(self.db, task_id)
+            runtime = get_task_runtime(self.db, task_id)
+            return task, events, runtime
+
+    def _handle_get_task_audit_detail(self, data: dict) -> dict | None:
+        result = self.get_task_audit_detail(str(data["taskId"]))
+        if result is None:
+            return None
+        task, events, runtime = result
+        audit: dict = {
+            "task": {
+                "id": task.id,
+                "command": task.command,
+                "cwd": task.cwd,
+                "user": task.user,
+                "require_vram_mb": task.require_vram_mb,
+                "require_gpu_count": task.require_gpu_count,
+                "priority": task.priority,
+                "launch_mode": task.launch_mode.value,
+                "status": task.status.value,
+                "gpu_ids": task.gpu_ids,
+                "created_at": task.created_at,
+                "started_at": task.started_at,
+                "finished_at": task.finished_at,
+                "exit_code": task.exit_code,
+                "pid": task.pid,
+            },
+            "events": events,
+        }
+        if runtime is not None:
+            audit["runtime"] = {
+                "launch_mode": runtime.launch_mode.value,
+                "root_pid": runtime.root_pid,
+                "root_created_at": runtime.root_created_at,
+                "runtime_phase": runtime.runtime_phase.value,
+                "first_started_at": runtime.first_started_at,
+                "last_seen_at": runtime.last_seen_at,
+                "finalize_source": runtime.finalize_source,
+                "finalize_reason_code": runtime.finalize_reason_code,
+                "last_observed_exit_code": runtime.last_observed_exit_code,
+            }
+        return audit
+
     def set_task_priority(self, task_id: str, priority: int) -> bool:
         with self._lock:
             task = get_task(self.db, task_id)
@@ -599,7 +698,15 @@ class DaemonService:
                 return False
             db_confirm_attached_launch(self.db, task_id, pid=pid, started_at=time.time())
             self._clear_queue_reason(task_id)
-            self._record_task_message(task_id, "attached_started", f"attached process started pid={pid}")
+            self._record_task_message(
+                task_id, "process_started",
+                f"attached process started pid={pid}",
+                details={
+                    "pid": pid,
+                    "gpu_ids": task.gpu_ids,
+                    "launch_mode": task.launch_mode.value,
+                },
+            )
             if self.transport:
                 started_at = time.time()
                 self.transport.send_task_update(self._task_update_from_record(

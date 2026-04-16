@@ -498,15 +498,14 @@ class TestCancelRunningTask:
         finalized_events = [
             event
             for event in list_task_events(conn, record.id)
-            if event["event_type"] == "runtime_finalized"
+            if event["event_type"] == "finalized"
         ]
         assert len(finalized_events) == 1
-        assert finalized_events[0]["details"] == {
-            "exit_code": None,
-            "finalize_reason_code": None,
-            "finalize_source": "cancel_request",
-            "status": "cancelled",
-        }
+        details = finalized_events[0]["details"]
+        assert details["exit_code"] is None
+        assert details["finalize_reason_code"] is None
+        assert details["finalize_source"] == "cancel_request"
+        assert details["status"] == "cancelled"
 
 
 class TestRestartRecovery:

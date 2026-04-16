@@ -345,12 +345,18 @@ def test_set_task_priority_updates_queued_task_and_records_event(svc: DaemonServ
 
 
 def test_collect_cycle_writes_schedule_block_reason_once_per_change(svc, monkeypatch):
-    from pmeow.models import PerGpuAllocationSummary
+    from pmeow.models import GpuUserProcess, PerGpuAllocationSummary
 
+    # Unmanaged user process occupies 12000 MB; with UNMANAGED_MULTIPLIER=1.05,
+    # effective_free = 16000*0.98 - 12000*1.05 = 15680 - 12600 = 3080 < 8000
     gpu = PerGpuAllocationSummary(
         gpu_index=0,
         total_memory_mb=16000.0,
-        effective_free_mb=4000.0,
+        used_memory_mb=12000.0,
+        user_processes=[
+            GpuUserProcess(pid=9999, user="other", gpu_index=0,
+                           used_memory_mb=12000.0, command="train.py"),
+        ],
     )
 
     monkeypatch.setattr(
@@ -561,7 +567,7 @@ def test_socket_roundtrip_for_attached_methods(tmp_state):
         assert events["ok"] is True
         event_types = [e["event_type"] for e in events["result"]]
         assert "submitted" in event_types
-        assert "attached_started" in event_types
+        assert "process_started" in event_types
         assert "attached_finished" in event_types
         submitted = next(event for event in events["result"] if event["event_type"] == "submitted")
         assert submitted["details"]["user"] == "tester"
@@ -782,7 +788,7 @@ def test_finish_attached_task_uses_cli_finish_finalize_source(tmp_state):
     svc.finish_attached_task(record.id, exit_code=0)
 
     events = list_task_events(svc.db, record.id)
-    finalized = [e for e in events if e["event_type"] == "runtime_finalized"]
+    finalized = [e for e in events if e["event_type"] == "finalized"]
     assert len(finalized) == 1
     assert finalized[0]["details"]["finalize_source"] == "cli_finish"
     close_database(svc.db)
@@ -803,6 +809,6 @@ def test_collect_cycle_runner_exit_uses_runner_exit_finalize_source(svc, monkeyp
     svc.collect_cycle()
 
     events = list_task_events(svc.db, record.id)
-    finalized = [e for e in events if e["event_type"] == "runtime_finalized"]
+    finalized = [e for e in events if e["event_type"] == "finalized"]
     assert len(finalized) == 1
     assert finalized[0]["details"]["finalize_source"] == "runner_exit"

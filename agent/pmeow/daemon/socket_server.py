@@ -239,11 +239,36 @@ def _finish_attached_task(svc: DaemonService, params: dict) -> bool:
     return svc.finish_attached_task(params["task_id"], exit_code=params["exit_code"])
 
 
+def _get_task_audit_detail(svc: DaemonService, params: dict) -> dict | None:
+    result = svc.get_task_audit_detail(params["task_id"])
+    if result is None:
+        return None
+    task, events, runtime = result
+    audit: dict = {
+        "task": _to_task_dict(task, log_dir=svc.config.log_dir),
+        "events": events,
+    }
+    if runtime is not None:
+        audit["runtime"] = {
+            "launch_mode": runtime.launch_mode.value,
+            "root_pid": runtime.root_pid,
+            "root_created_at": runtime.root_created_at,
+            "runtime_phase": runtime.runtime_phase.value,
+            "first_started_at": runtime.first_started_at,
+            "last_seen_at": runtime.last_seen_at,
+            "finalize_source": runtime.finalize_source,
+            "finalize_reason_code": runtime.finalize_reason_code,
+            "last_observed_exit_code": runtime.last_observed_exit_code,
+        }
+    return audit
+
+
 _METHODS: dict[str, Any] = {
     "submit_task": _submit_task,
     "list_tasks": _list_tasks,
     "get_task": _get_task,
     "get_task_events": _get_task_events,
+    "get_task_audit_detail": _get_task_audit_detail,
     "cancel_task": _cancel_task,
     "get_logs": _get_logs,
     "confirm_attached_launch": _confirm_attached_launch,

@@ -299,16 +299,25 @@ def guarded_finalize_task(
 
     conn.execute("DELETE FROM resource_reservations WHERE task_id = ?", (task_id,))
     clear_task_runtime_tracking(conn, task_id, commit=False)
+
+    # Retrieve last known runtime info for the finalized event
+    task = get_task(conn, task_id)
+    last_pid = task.pid if task else None
+    last_gpu_ids = task.gpu_ids if task else None
+
     _insert_task_event_row(
         conn,
         task_id,
-        "runtime_finalized",
+        "finalized",
         finished_at,
         {
             "status": status.value,
             "finalize_source": finalize_source,
             "finalize_reason_code": finalize_reason_code,
             "exit_code": exit_code,
+            "last_pid": last_pid,
+            "last_gpu_ids": last_gpu_ids,
+            "finished_at": finished_at,
         },
     )
     conn.commit()
@@ -422,7 +431,7 @@ def requeue_expired_attached_launches(
         )
         conn.execute(
             "INSERT INTO task_events (task_id, event_type, timestamp, details) "
-            "VALUES (?, 'launch_deadline_expired', ?, NULL)",
+            "VALUES (?, 'launch_reservation_expired', ?, NULL)",
             (task_id, now),
         )
     if requeued_ids:

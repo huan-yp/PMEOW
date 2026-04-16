@@ -96,6 +96,7 @@ def open_database(directory: str | Path) -> sqlite3.Connection:
 
     _ensure_task_columns(conn)
     _ensure_runtime_tracking_columns(conn)
+    _migrate_event_types(conn)
     recover_interrupted_tasks(conn)
     return conn
 
@@ -135,6 +136,19 @@ def _ensure_runtime_tracking_columns(conn: sqlite3.Connection) -> None:
     process_names = {row[1] for row in process_cols}
     if "create_time" not in process_names:
         conn.execute("ALTER TABLE task_processes ADD COLUMN create_time REAL")
+    conn.commit()
+
+
+def _migrate_event_types(conn: sqlite3.Connection) -> None:
+    """Rename legacy event types to their canonical names."""
+    conn.execute(
+        "UPDATE task_events SET event_type = 'finalized' "
+        "WHERE event_type = 'runtime_finalized'"
+    )
+    conn.execute(
+        "UPDATE task_events SET event_type = 'launch_reservation_expired' "
+        "WHERE event_type = 'launch_deadline_expired'"
+    )
     conn.commit()
 
 
