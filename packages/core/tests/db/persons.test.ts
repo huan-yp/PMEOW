@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { getDatabase } from '../../src/db/database.js';
+import { createServer } from '../../src/db/servers.js';
+import { replaceServerLocalUsers } from '../../src/db/server-local-users.js';
 import {
+  autoAddUnassignedPersons,
   archivePerson,
   createPerson,
   createPersonBinding,
@@ -169,5 +172,71 @@ describe('person schema', () => {
     expect(override!.personId).toBe(person.id);
 
     expect(getActiveTaskOwnerOverride('task-nope', Date.now())).toBeUndefined();
+  });
+
+  it('autoAddUnassignedPersons reuses a unique same-name person and skips root', () => {
+    const now = Date.now();
+    const serverA = createServer({ name: 'gpu-a', host: 'gpu-a', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-a' });
+    const serverB = createServer({ name: 'gpu-b', host: 'gpu-b', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-b' });
+    const existing = createPerson({ displayName: 'alice', customFields: {} });
+
+    replaceServerLocalUsers(serverA.id, now, [
+      { username: 'alice', uid: 1000, gid: 1000, gecos: 'Alice', home: '/home/alice', shell: '/bin/bash' },
+      { username: 'root', uid: 0, gid: 0, gecos: 'root', home: '/root', shell: '/bin/bash' },
+    ]);
+    replaceServerLocalUsers(serverB.id, now, [
+      { username: 'alice', uid: 1000, gid: 1000, gecos: 'Alice', home: '/home/alice', shell: '/bin/bash' },
+    ]);
+
+    const report = autoAddUnassignedPersons();
+    const aliceItem = report.items.find((item) => item.normalizedUsername === 'alice');
+    const rootItem = report.items.find((item) => item.normalizedUsername === 'root');
+
+    expect(aliceItem).toEqual(expect.objectContaining({
+      result: 'reused-person',
+      personId: existing.id,
+      bindingCount: 2,
+    }));
+    expect(rootItem).toEqual(expect.objectContaining({
+      result: 'skipped-root',
+      bindingCount: 1,
+    }));
+    expect(report.summary.reusedPersonCount).toBe(1);
+    expect(report.summary.skippedRootCount).toBe(1);
+    expect(report.summary.createdBindingCount).toBe(2);
+    expect(listPersonBindings(existing.id)).toHaveLength(2);
+  });
+
+  it('autoAddUnassignedPersons creates a new person and skips ambiguous same-name matches', () => {
+    const now = Date.now();
+    const server = createServer({ name: 'gpu-c', host: 'gpu-c', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-c' });
+
+    createPerson({ displayName: 'bob', customFields: {} });
+    createPerson({ displayName: 'Bob', customFields: {} });
+
+    replaceServerLocalUsers(server.id, now, [
+      { username: 'bob', uid: 1001, gid: 1001, gecos: 'Bob', home: '/home/bob', shell: '/bin/bash' },
+      { username: 'carol', uid: 1002, gid: 1002, gecos: 'Carol', home: '/home/carol', shell: '/bin/bash' },
+    ]);
+
+    const report = autoAddUnassignedPersons();
+    const bobItem = report.items.find((item) => item.normalizedUsername === 'bob');
+    const carolItem = report.items.find((item) => item.normalizedUsername === 'carol');
+    const createdCarol = listPersons({ includeArchived: false }).find((person) => person.displayName === 'carol');
+
+    expect(bobItem).toEqual(expect.objectContaining({
+      result: 'skipped-ambiguous',
+      personId: null,
+      bindingCount: 1,
+    }));
+    expect(carolItem).toEqual(expect.objectContaining({
+      result: 'created-person',
+      personDisplayName: 'carol',
+      bindingCount: 1,
+    }));
+    expect(report.summary.createdPersonCount).toBe(1);
+    expect(report.summary.skippedAmbiguousCount).toBe(1);
+    expect(createdCarol).toBeDefined();
+    expect(listPersonBindings(createdCarol!.id)).toHaveLength(1);
   });
 });

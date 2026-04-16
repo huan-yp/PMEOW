@@ -1,5 +1,6 @@
 import {
   createPerson,
+  autoAddUnassignedPersons,
   createPersonBinding,
   getPersonById,
   listPersonBindingCandidates,
@@ -31,6 +32,8 @@ export function setupPersonRoutes(app: Express): void {
   app.get('/api/person-binding-suggestions', (_req, res) => res.json(listPersonBindingSuggestions()));
 
   app.post('/api/persons', (req, res) => res.json(createPerson(req.body)));
+
+  app.post('/api/persons/auto-add-unassigned', (_req, res) => res.json(autoAddUnassignedPersons()));
 
   app.get('/api/persons/:id', (req, res) => {
     const person = getPersonById(req.params.id);
