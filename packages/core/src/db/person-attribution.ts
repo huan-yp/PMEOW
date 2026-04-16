@@ -5,6 +5,9 @@ export { listPersonBindingCandidates, listPersonBindingSuggestions } from './per
 import { resolveTaskPerson, resolveRawUserPerson } from '../person/resolve.js';
 import type {
   PersonAttributionFact,
+  PersonNodeDistribution,
+  PersonNodeDistributionGpu,
+  PersonPeakPeriod,
   PersonSummaryItem,
   PersonTimelinePoint,
   ServerPersonActivity,
@@ -440,42 +443,67 @@ export function getServerPersonActivity(serverId: string): ServerPersonActivity 
   };
 }
 
-export interface PersonNodeDistribution {
-  serverId: string;
-  serverName: string;
-  avgVramMB: number;
-  maxVramMB: number;
-  sampleCount: number;
-}
-
-export interface PersonPeakPeriod {
-  bucketStart: number;
-  totalVramMB: number;
-}
-
 export function getPersonNodeDistribution(personId: string, hours = 168): PersonNodeDistribution[] {
   const db = getDatabase();
   const from = Date.now() - hours * 60 * 60 * 1000;
 
   const rows = db.prepare(`
-    SELECT serverId, AVG(vramMB) as avgVram, MAX(vramMB) as maxVram, COUNT(*) as cnt
-    FROM person_attribution_facts
-    WHERE personId = ? AND sourceType LIKE 'gpu_%' AND timestamp >= ?
-    GROUP BY serverId
-    ORDER BY avgVram DESC
-  `).all(personId, from) as Array<{ serverId: string; avgVram: number; maxVram: number; cnt: number }>;
+    WITH per_gpu_snapshot AS (
+      SELECT serverId, gpuIndex, timestamp, SUM(vramMB) as totalVramMB
+      FROM person_attribution_facts
+      WHERE personId = ?
+        AND sourceType LIKE 'gpu_%'
+        AND timestamp >= ?
+        AND gpuIndex IS NOT NULL
+      GROUP BY serverId, gpuIndex, timestamp
+    )
+    SELECT serverId, gpuIndex, AVG(totalVramMB) as avgVram, MAX(totalVramMB) as maxVram, COUNT(*) as cnt
+    FROM per_gpu_snapshot
+    GROUP BY serverId, gpuIndex
+  `).all(personId, from) as Array<{
+    serverId: string;
+    gpuIndex: number;
+    avgVram: number;
+    maxVram: number;
+    cnt: number;
+  }>;
 
   const serverNames = new Map(
     (db.prepare('SELECT id, name FROM servers').all() as Array<{ id: string; name: string }>).map(r => [r.id, r.name]),
   );
 
-  return rows.map(r => ({
-    serverId: r.serverId,
-    serverName: serverNames.get(r.serverId) ?? r.serverId,
-    avgVramMB: Math.round(r.avgVram),
-    maxVramMB: Math.round(r.maxVram),
-    sampleCount: r.cnt,
-  }));
+  const nodeMap = new Map<string, PersonNodeDistribution>();
+
+  for (const row of rows) {
+    const node = nodeMap.get(row.serverId) ?? {
+      serverId: row.serverId,
+      serverName: serverNames.get(row.serverId) ?? row.serverId,
+      avgVramMB: 0,
+      maxVramMB: 0,
+      sampleCount: 0,
+      gpus: [],
+    };
+
+    const gpu: PersonNodeDistributionGpu = {
+      gpuIndex: row.gpuIndex,
+      avgVramMB: Math.round(row.avgVram),
+      maxVramMB: Math.round(row.maxVram),
+      sampleCount: row.cnt,
+    };
+
+    node.gpus.push(gpu);
+    node.avgVramMB += gpu.avgVramMB;
+    node.maxVramMB += gpu.maxVramMB;
+    node.sampleCount += gpu.sampleCount;
+    nodeMap.set(row.serverId, node);
+  }
+
+  return Array.from(nodeMap.values())
+    .map((node) => ({
+      ...node,
+      gpus: [...node.gpus].sort((left, right) => left.gpuIndex - right.gpuIndex),
+    }))
+    .sort((left, right) => left.serverName.localeCompare(right.serverName));
 }
 
 export function getPersonPeakPeriods(personId: string, hours = 168, topN = 3): PersonPeakPeriod[] {

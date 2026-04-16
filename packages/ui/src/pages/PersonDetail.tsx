@@ -1,21 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
-import type { PersonRecord, PersonTimelinePoint, MirroredAgentTaskRecord, PersonBindingRecord, PersonSummaryItem } from '@monitor/core';
+import type {
+  PersonBindingRecord,
+  PersonNodeDistribution,
+  PersonPeakPeriod,
+  PersonRecord,
+  PersonSummaryItem,
+  PersonTimelinePoint,
+  MirroredAgentTaskRecord,
+} from '@monitor/core';
 import { formatVramGB } from '../utils/vram.js';
-
-type NodeDistributionItem = {
-  serverId: string;
-  serverName: string;
-  avgVramMB: number;
-  maxVramMB: number;
-  sampleCount: number;
-};
-
-type PeakPeriodItem = {
-  bucketStart: number;
-  totalVramMB: number;
-};
 
 async function adminFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('auth_token');
@@ -156,11 +151,12 @@ export function PersonDetail() {
   const [bindings, setBindings] = useState<PersonBindingRecord[]>([]);
   const [summary, setSummary] = useState<PersonSummaryItem | null>(null);
   const [period, setPeriod] = useState<24 | 168 | 720>(168);
-  const [nodeDistribution, setNodeDistribution] = useState<NodeDistributionItem[]>([]);
-  const [peakPeriods, setPeakPeriods] = useState<PeakPeriodItem[]>([]);
+  const [nodeDistribution, setNodeDistribution] = useState<PersonNodeDistribution[]>([]);
+  const [peakPeriods, setPeakPeriods] = useState<PersonPeakPeriod[]>([]);
   const [tokenStatus, setTokenStatus] = useState<{ hasToken: boolean; createdAt?: number; lastUsedAt?: number | null } | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(false);
+  const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!id) return;
@@ -173,18 +169,36 @@ export function PersonDetail() {
     void transport.getPersonSummary(period).then(all => setSummary(all.find(s => s.personId === id) ?? null)).catch(() => setSummary(null));
     void transport.getPersonTimeline(id, period).then(setTimeline).catch(() => setTimeline([]));
     void transport.getPersonTasks(id, period).then(setTasks).catch(() => setTasks([]));
-    void adminFetch<NodeDistributionItem[]>(
+    setExpandedServers({});
+    void adminFetch<PersonNodeDistribution[]>(
       `/api/persons/${encodeURIComponent(id)}/node-distribution?hours=${period}`,
-    ).then(data => setNodeDistribution(asArray<NodeDistributionItem>(data))).catch(() => setNodeDistribution([]));
-    void adminFetch<PeakPeriodItem[]>(
+    ).then(data => setNodeDistribution(asArray<PersonNodeDistribution>(data))).catch(() => setNodeDistribution([]));
+    void adminFetch<PersonPeakPeriod[]>(
       `/api/persons/${encodeURIComponent(id)}/peak-periods?hours=${period}`,
-    ).then(data => setPeakPeriods(asArray<PeakPeriodItem>(data))).catch(() => setPeakPeriods([]));
+    ).then(data => setPeakPeriods(asArray<PersonPeakPeriod>(data))).catch(() => setPeakPeriods([]));
   }, [id, transport, period]);
 
-  const maxNodeDistributionVram = useMemo(
-    () => Math.max(...nodeDistribution.map((item) => item.maxVramMB), 1),
+  const sortedNodeDistribution = useMemo(
+    () => [...nodeDistribution]
+      .map((node) => ({
+        ...node,
+        gpus: [...node.gpus].sort((left, right) => left.gpuIndex - right.gpuIndex),
+      }))
+      .sort((left, right) => left.serverName.localeCompare(right.serverName)),
     [nodeDistribution],
   );
+
+  const maxNodeDistributionVram = useMemo(
+    () => Math.max(...sortedNodeDistribution.map((item) => item.maxVramMB), 1),
+    [sortedNodeDistribution],
+  );
+
+  const toggleServer = useCallback((serverId: string) => {
+    setExpandedServers((current) => ({
+      ...current,
+      [serverId]: !current[serverId],
+    }));
+  }, []);
 
   const refreshTokenStatus = useCallback(() => {
     if (!id) return;
@@ -314,25 +328,48 @@ export function PersonDetail() {
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-2xl border border-dark-border bg-dark-card p-5">
           <h2 className="text-sm text-slate-400 mb-3">节点 VRAM 分布</h2>
-          {nodeDistribution.length === 0 ? (
+          {sortedNodeDistribution.length === 0 ? (
             <p className="text-sm text-slate-500">暂无数据</p>
           ) : (
             <div className="space-y-2">
-              {nodeDistribution.map(n => {
+              {sortedNodeDistribution.map((node) => {
+                const isExpanded = !!expandedServers[node.serverId];
                 return (
-                  <div key={n.serverId} className="text-sm">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-slate-300 truncate" title={n.serverId}>{n.serverName}</span>
-                      <span className="text-slate-400 ml-2 shrink-0">
-                        均 {formatVramGB(n.avgVramMB)} / 峰 {formatVramGB(n.maxVramMB)}
+                  <div key={node.serverId} className="rounded-xl border border-dark-border/70 bg-dark-bg/30 p-3 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => toggleServer(node.serverId)}
+                      aria-expanded={isExpanded}
+                      className="flex w-full items-center justify-between gap-3 text-left"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-slate-300" title={node.serverId}>{node.serverName}</span>
+                        <span className="mt-1 block text-xs text-slate-500">
+                          {isExpanded ? '收起 GPU 明细' : '展开 GPU 明细'}
+                        </span>
                       </span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-dark-border overflow-hidden">
+                      <span className="shrink-0 text-slate-400">
+                        均 {formatVramGB(node.avgVramMB)} / 峰 {formatVramGB(node.maxVramMB)}
+                      </span>
+                    </button>
+                    <div className="mt-2 h-1.5 rounded-full bg-dark-border overflow-hidden">
                       <div
                         className="h-full rounded-full bg-accent-blue"
-                        style={{ width: `${(n.maxVramMB / maxNodeDistributionVram) * 100}%` }}
+                        style={{ width: `${(node.maxVramMB / maxNodeDistributionVram) * 100}%` }}
                       />
                     </div>
+                    {isExpanded ? (
+                      <div className="mt-3 space-y-2 border-t border-dark-border/70 pt-3">
+                        {node.gpus.map((gpu) => (
+                          <div key={`${node.serverId}-${gpu.gpuIndex}`} className="flex items-center justify-between gap-3 text-xs">
+                            <span className="text-slate-300">GPU {gpu.gpuIndex}</span>
+                            <span className="text-slate-500">
+                              均 {formatVramGB(gpu.avgVramMB)} / 峰 {formatVramGB(gpu.maxVramMB)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}

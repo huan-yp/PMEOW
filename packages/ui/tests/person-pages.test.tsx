@@ -1,5 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type {
   AgentTaskQueueGroup,
@@ -11,8 +11,11 @@ import type {
   HookLog,
   HookRule,
   HookRuleInput,
+  MetricsHistoryResponse,
   MetricsSnapshot,
   ProcessAuditRow,
+  ProcessHistoryFrame,
+  ProcessReplayIndexPoint,
   SecurityEventRecord,
   ServerConfig,
   ServerInput,
@@ -33,6 +36,8 @@ import type { SecurityEventQuery, TransportAdapter } from '../src/transport/type
 import { PeopleOverview } from '../src/pages/PeopleOverview.js';
 import { PeopleManage } from '../src/pages/PeopleManage.js';
 import { PersonDetail } from '../src/pages/PersonDetail.js';
+
+const originalFetch = globalThis.fetch;
 
 const basePerson: PersonRecord = {
   id: 'person-1',
@@ -77,6 +82,7 @@ function createMockTransport(overrides: Partial<TransportAdapter> = {}): Transpo
     testConnection: vi.fn<(input: ServerInput) => Promise<{ success: boolean; error?: string }>>(async (_input) => ({ success: true })),
     getLatestMetrics: vi.fn<(serverId: string) => Promise<MetricsSnapshot | null>>(async (_serverId) => null),
     getMetricsHistory: vi.fn<(serverId: string, from: number, to: number) => Promise<MetricsSnapshot[]>>(async () => []),
+    getMetricsHistoryBucketed: vi.fn<(serverId: string, from: number, to: number, bucketMs?: number) => Promise<MetricsHistoryResponse>>(async (serverId, from, to) => ({ serverId, from, to, source: 'raw', bucketMs: 60_000, buckets: [] })),
     getServerStatuses: vi.fn<() => Promise<ServerStatus[]>>(async () => []),
     getHooks: vi.fn<() => Promise<HookRule[]>>(async () => []),
     createHook: vi.fn<(input: HookRuleInput) => Promise<HookRule>>(async (_input) => { throw new Error('not implemented'); }),
@@ -96,11 +102,15 @@ function createMockTransport(overrides: Partial<TransportAdapter> = {}): Transpo
     batchUnsuppressAlerts: vi.fn<(ids: string[]) => Promise<void>>(async () => undefined),
     getTaskQueue: vi.fn<() => Promise<AgentTaskQueueGroup[]>>(async () => []),
     getProcessAudit: vi.fn<(serverId: string) => Promise<ProcessAuditRow[]>>(async () => []),
+    getProcessHistoryIndex: vi.fn<(serverId: string, from: number, to: number) => Promise<ProcessReplayIndexPoint[]>>(async () => []),
+    getProcessHistoryFrame: vi.fn<(serverId: string, timestamp: number) => Promise<ProcessHistoryFrame>>(async (serverId, timestamp) => ({ serverId, timestamp, processes: [] })),
     getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async () => []),
     markSecurityEventSafe: vi.fn<(id: number, reason?: string) => Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>>(async () => { throw new Error('not implemented'); }),
+    unresolveSecurityEvent: vi.fn<(id: number, reason?: string) => Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>>(async () => { throw new Error('not implemented'); }),
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 1, users: [], servers: [] })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async () => []),
     getGpuUsageByUser: vi.fn(async () => []),
+    getGpuUsageByUserBucketed: vi.fn(async (_userName?: string, from = 0, to = 0) => ({ from, to, source: 'raw', bucketMs: 60_000, buckets: [] })),
     cancelTask: vi.fn<(serverId: string, taskId: string) => Promise<void>>(async () => undefined),
     setTaskPriority: vi.fn<(serverId: string, taskId: string, priority: number) => Promise<void>>(async () => undefined),
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async () => undefined),
@@ -132,6 +142,7 @@ function renderApp(transport: TransportAdapter, route: string) {
 
 describe('person pages', () => {
   beforeEach(() => {
+    globalThis.fetch = originalFetch;
     useStore.setState({
       servers: [],
       statuses: new Map(),
@@ -143,6 +154,10 @@ describe('person pages', () => {
       toasts: [],
       authenticated: false,
     });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   it('renders a browse-first people landing page from the person directory and merged summary data', async () => {
@@ -306,6 +321,48 @@ describe('person pages', () => {
   });
 
   it('renders person detail page', async () => {
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      const requestUrl = String(url);
+
+      if (requestUrl.includes('/node-distribution')) {
+        return new Response(JSON.stringify([
+          {
+            serverId: 'server-2',
+            serverName: 'Beta Node',
+            avgVramMB: 3072,
+            maxVramMB: 4096,
+            sampleCount: 1,
+            gpus: [
+              { gpuIndex: 0, avgVramMB: 3072, maxVramMB: 4096, sampleCount: 1 },
+            ],
+          },
+          {
+            serverId: 'server-1',
+            serverName: 'Alpha Node',
+            avgVramMB: 6144,
+            maxVramMB: 10240,
+            sampleCount: 2,
+            gpus: [
+              { gpuIndex: 0, avgVramMB: 2048, maxVramMB: 4096, sampleCount: 1 },
+              { gpuIndex: 1, avgVramMB: 4096, maxVramMB: 6144, sampleCount: 1 },
+            ],
+          },
+        ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (requestUrl.includes('/peak-periods')) {
+        return new Response(JSON.stringify([
+          { bucketStart: 1_710_000_000_000, totalVramMB: 8192 },
+        ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      if (requestUrl.includes('/mobile-token/status')) {
+        return new Response(JSON.stringify({ hasToken: false }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+
     const transport = createMockTransport({
       getPersonTimeline: vi.fn(async () => [{
         bucketStart: 1_710_000_000_000,
@@ -327,6 +384,15 @@ describe('person pages', () => {
     );
     expect(await screen.findByText('Alice')).toBeTruthy();
     expect(await screen.findByText('3.5 GB')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /Alpha Node/ })).toBeTruthy();
+    expect(screen.queryByText('GPU 0')).toBeNull();
+
+    await act(async () => {
+      screen.getByRole('button', { name: /Alpha Node/ }).click();
+    });
+
+    expect(await screen.findByText('GPU 0')).toBeTruthy();
+    expect(screen.getByText('GPU 1')).toBeTruthy();
   });
 
   describe('active filter', () => {

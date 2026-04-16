@@ -684,6 +684,27 @@ export interface ServerPersonActivity {
   unassignedUsers: string[];
 }
 
+export interface PersonNodeDistributionGpu {
+  gpuIndex: number;
+  avgVramMB: number;
+  maxVramMB: number;
+  sampleCount: number;
+}
+
+export interface PersonNodeDistribution {
+  serverId: string;
+  serverName: string;
+  avgVramMB: number;
+  maxVramMB: number;
+  sampleCount: number;
+  gpus: PersonNodeDistributionGpu[];
+}
+
+export interface PersonPeakPeriod {
+  bucketStart: number;
+  totalVramMB: number;
+}
+
 // ========================
 // Person Mobile
 // ========================

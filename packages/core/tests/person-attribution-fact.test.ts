@@ -4,7 +4,13 @@ import { createServer } from '../src/db/servers.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../src/db/persons.js';
 import { upsertAgentTask } from '../src/db/agent-tasks.js';
 import { writeAttributionFacts } from '../src/person/attribution.js';
-import { insertPersonAttributionFact, insertPersonAttributionFacts, getPersonTimeline, getPersonSummaries } from '../src/db/person-attribution.js';
+import {
+  insertPersonAttributionFact,
+  insertPersonAttributionFacts,
+  getPersonTimeline,
+  getPersonSummaries,
+  getPersonNodeDistribution,
+} from '../src/db/person-attribution.js';
 import { ingestAgentMetrics } from '../src/agent/ingest.js';
 import type { MetricsSnapshot, PersonAttributionFact } from '../src/types.js';
 
@@ -387,6 +393,52 @@ describe('person attribution fact persistence', () => {
     const lastBucket = timeline[timeline.length - 1];
     expect(lastBucket.bucketStart).toBeGreaterThanOrEqual(now - 5 * 60_000);
     expect(lastBucket.totalVramMB).toBe(0); // no data at current time
+  });
+
+  it('returns node distribution grouped by server with per-gpu stats', () => {
+    const alpha = createServer({ name: 'Alpha Node', host: 'alpha', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-alpha' });
+    const beta = createServer({ name: 'Beta Node', host: 'beta', port: 22, username: 'root', privateKeyPath: '/tmp/key', sourceType: 'agent', agentId: 'agent-beta' });
+    const alice = createPerson({ displayName: 'Alice', customFields: {} });
+    const now = Date.now();
+
+    createPersonBinding({ personId: alice.id, serverId: alpha.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+    createPersonBinding({ personId: alice.id, serverId: beta.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
+
+    insertPersonAttributionFacts([
+      { personId: alice.id, rawUser: 'alice', taskId: 'task-a0-1', serverId: alpha.id, gpuIndex: 0, vramMB: 4096, timestamp: now - 120_000, sourceType: 'gpu_task', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: 'task-a0-2', serverId: alpha.id, gpuIndex: 0, vramMB: 2048, timestamp: now - 120_000, sourceType: 'gpu_task', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: 'task-a1-1', serverId: alpha.id, gpuIndex: 1, vramMB: 8192, timestamp: now - 120_000, sourceType: 'gpu_task', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: 'task-a0-3', serverId: alpha.id, gpuIndex: 0, vramMB: 6144, timestamp: now - 60_000, sourceType: 'gpu_task', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: 'task-a1-2', serverId: alpha.id, gpuIndex: 1, vramMB: 4096, timestamp: now - 60_000, sourceType: 'gpu_task', resolutionSource: 'binding' },
+      { personId: alice.id, rawUser: 'alice', taskId: 'task-b0-1', serverId: beta.id, gpuIndex: 0, vramMB: 2048, timestamp: now - 60_000, sourceType: 'gpu_task', resolutionSource: 'binding' },
+    ]);
+
+    const distribution = getPersonNodeDistribution(alice.id, 24);
+
+    expect(distribution.map((item) => item.serverName)).toEqual(['Alpha Node', 'Beta Node']);
+
+    expect(distribution[0]).toEqual({
+      serverId: alpha.id,
+      serverName: 'Alpha Node',
+      avgVramMB: 12288,
+      maxVramMB: 14336,
+      sampleCount: 4,
+      gpus: [
+        { gpuIndex: 0, avgVramMB: 6144, maxVramMB: 6144, sampleCount: 2 },
+        { gpuIndex: 1, avgVramMB: 6144, maxVramMB: 8192, sampleCount: 2 },
+      ],
+    });
+
+    expect(distribution[1]).toEqual({
+      serverId: beta.id,
+      serverName: 'Beta Node',
+      avgVramMB: 2048,
+      maxVramMB: 2048,
+      sampleCount: 1,
+      gpus: [
+        { gpuIndex: 0, avgVramMB: 2048, maxVramMB: 2048, sampleCount: 1 },
+      ],
+    });
   });
 
   it('batch inserts via insertPersonAttributionFacts correctly', () => {
