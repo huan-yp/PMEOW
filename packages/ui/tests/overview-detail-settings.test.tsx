@@ -342,8 +342,8 @@ describe('overview detail settings', () => {
 
     const statusCard = screen.getByText('节点状态').closest('.rounded-2xl') as HTMLElement;
     expect(statusCard).toBeTruthy();
-    expect(within(statusCard).getByText('可达 1')).toBeTruthy();
-    expect(within(statusCard).getByText('不可达 0')).toBeTruthy();
+    expect(within(statusCard).getByText('有外网 1')).toBeTruthy();
+    expect(within(statusCard).getByText('无外网 0')).toBeTruthy();
     expect(within(statusCard).getByText('未探测 0')).toBeTruthy();
     expect(within(statusCard).getByText('在线 1')).toBeTruthy();
   });
@@ -379,8 +379,8 @@ describe('overview detail settings', () => {
 
     const statusCard = screen.getByText('节点状态').closest('.rounded-2xl') as HTMLElement;
     expect(statusCard).toBeTruthy();
-    expect(within(statusCard).getByText('可达 1')).toBeTruthy();
-    expect(within(statusCard).getByText('不可达 1')).toBeTruthy();
+    expect(within(statusCard).getByText('有外网 1')).toBeTruthy();
+    expect(within(statusCard).getByText('无外网 1')).toBeTruthy();
     expect(within(statusCard).getByText('未探测 0')).toBeTruthy();
   });
 

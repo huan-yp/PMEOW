@@ -162,8 +162,8 @@ export function Overview() {
                       : '当前节点尚未上报外网探测数据。'}
                 </p>
               </div>
-              <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:max-w-xl">
-                <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-4">
+              <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2">
+                <div className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">在线状态</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="node-badge-base node-badge-status-online">在线 {connectionSummary.online}</span>
@@ -176,11 +176,11 @@ export function Overview() {
                     )}
                   </div>
                 </div>
-                <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-4">
+                <div className="min-w-0 rounded-2xl border border-white/10 bg-slate-950/30 p-4">
                   <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">外网状态</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="node-badge-base node-badge-status-online">可达 {internetSummary.reachable}</span>
-                    <span className="node-badge-base node-badge-status-offline">不可达 {internetSummary.unreachable}</span>
+                    <span className="node-badge-base node-badge-status-online">有外网 {internetSummary.reachable}</span>
+                    <span className="node-badge-base node-badge-status-offline">无外网 {internetSummary.unreachable}</span>
                     <span className="node-badge-base node-badge-status-neutral">未探测 {internetSummary.unprobed}</span>
                   </div>
                 </div>

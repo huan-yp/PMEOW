@@ -50,13 +50,13 @@ export function getInternetStatusVisual(state: InternetReachabilityState) {
   switch (state) {
     case 'reachable':
       return {
-        label: '可达',
+        label: '有外网',
         badgeClassName: 'node-badge-status-online',
         dotClassName: 'bg-emerald-300',
       };
     case 'unreachable':
       return {
-        label: '不可达',
+        label: '无外网',
         badgeClassName: 'node-badge-status-offline',
         dotClassName: 'bg-rose-300',
       };
