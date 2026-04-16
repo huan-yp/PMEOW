@@ -22,6 +22,7 @@ export type {
   AgentLocalUsersPayload,
   AgentRegisterPayload,
   AgentTaskUpdatePayload,
+  AgentTaskQueueResponse,
   MirroredAgentTaskRecord,
 } from '../types.js';
 
@@ -29,6 +30,7 @@ export const AGENT_EVENT = {
   register: 'agent:register',
   metrics: 'agent:metrics',
   taskUpdate: 'agent:taskUpdate',
+  taskChanged: 'agent:taskChanged',
   localUsers: 'agent:localUsers',
   heartbeat: 'agent:heartbeat',
 } as const;
@@ -40,6 +42,7 @@ export const SERVER_COMMAND = {
   setPriority: 'server:setPriority',
   getTaskEvents: 'server:getTaskEvents',
   getTaskAuditDetail: 'server:getTaskAuditDetail',
+  getTaskQueue: 'server:getTaskQueue',
 } as const;
 
 export const AGENT_TASK_STATUSES = [
@@ -136,13 +139,21 @@ export interface ServerGetTaskAuditDetailEnvelope {
   data: ServerGetTaskAuditDetailPayload;
 }
 
+export type ServerGetTaskQueuePayload = Record<string, never>;
+
+export interface ServerGetTaskQueueEnvelope {
+  event: typeof SERVER_COMMAND.getTaskQueue;
+  data: ServerGetTaskQueuePayload;
+}
+
 export type ServerCommandEnvelope =
   | ServerCancelTaskEnvelope
   | ServerPauseQueueEnvelope
   | ServerResumeQueueEnvelope
   | ServerSetPriorityEnvelope
   | ServerGetTaskEventsEnvelope
-  | ServerGetTaskAuditDetailEnvelope;
+  | ServerGetTaskAuditDetailEnvelope
+  | ServerGetTaskQueueEnvelope;
 
 export type AgentTaskEventsResponse = AgentTaskEventRecord[];
 export type AgentTaskAuditDetailResponse = AgentTaskAuditDetail | null;

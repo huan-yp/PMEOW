@@ -7,11 +7,11 @@ import {
   buildNodeStatusNotificationEvent,
   shouldNotifyForTask,
   resolveTaskPerson,
-  type AgentTaskUpdatePayload,
+  type MirroredAgentTaskRecord,
   type ServerStatus,
 } from '@monitor/core';
 
-export function handleTaskUpdateForNotifications(update: AgentTaskUpdatePayload): void {
+export function handleTaskUpdateForNotifications(update: MirroredAgentTaskRecord): void {
   const { serverId, taskId, status, user, command } = update;
   if (status === 'queued') return;
 

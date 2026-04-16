@@ -65,7 +65,7 @@ function createMockTransport(): TransportAdapter {
     onAlert: vi.fn((_cb: (alert: AlertEvent) => void) => () => undefined),
     onHookTriggered: vi.fn((_cb: (log: HookLog) => void) => () => undefined),
     onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
-    onTaskUpdate: vi.fn(() => () => undefined),
+    onTaskChanged: vi.fn(() => () => undefined),
     onSecurityEvent: vi.fn(() => () => undefined),
     onServersChanged: vi.fn(() => () => undefined),
     getServers: vi.fn(async () => []),

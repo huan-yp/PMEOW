@@ -4,13 +4,13 @@ import {
   type AgentHeartbeatPayload,
   type AgentTaskAuditDetailResponse,
   type AgentTaskEventsResponse,
+  type AgentTaskQueueResponse,
   type AgentLocalUsersPayload,
   type AgentRegisterPayload,
   AgentSessionRegistry,
   type AgentLiveSession,
-  type AgentTaskUpdatePayload,
+  type MirroredAgentTaskRecord,
   ingestAgentLocalUsers,
-  ingestAgentTaskUpdate,
   isAgentLocalUsersPayload,
   isAgentMetricsPayload,
   type Scheduler,
@@ -19,16 +19,20 @@ import {
   type ServerCommandEnvelope,
   type ServerGetTaskAuditDetailPayload,
   type ServerGetTaskEventsPayload,
+  type ServerGetTaskQueuePayload,
   type ServerPauseQueuePayload,
   type ServerResumeQueuePayload,
   type ServerSetPriorityPayload,
   isAgentHeartbeatPayload,
   isAgentRegisterPayload,
-  isAgentTaskUpdatePayload,
   type MetricsSnapshot,
   resolveAgentBinding,
   autoCreateAgentServer,
   AgentCommandError,
+  diffTaskQueue,
+  setTaskQueueCache,
+  clearTaskQueueCache,
+  recordTaskAttributionFact,
 } from '@monitor/core';
 import type { Namespace, Server as SocketServer, Socket } from 'socket.io';
 
@@ -55,7 +59,7 @@ interface AgentSocketData {
 interface AgentNamespaceClientEvents {
   [AGENT_EVENT.register]: (payload: AgentRegisterPayload) => void;
   [AGENT_EVENT.metrics]: (payload: unknown) => void;
-  [AGENT_EVENT.taskUpdate]: (payload: unknown) => void;
+  [AGENT_EVENT.taskChanged]: () => void;
   [AGENT_EVENT.localUsers]: (payload: unknown) => void;
   [AGENT_EVENT.heartbeat]: (payload: AgentHeartbeatPayload) => void;
 }
@@ -69,6 +73,10 @@ interface AgentNamespaceServerEvents {
   [SERVER_COMMAND.getTaskAuditDetail]: (
     payload: ServerGetTaskAuditDetailPayload,
     callback: (response: AgentTaskAuditDetailResponse) => void,
+  ) => void;
+  [SERVER_COMMAND.getTaskQueue]: (
+    payload: ServerGetTaskQueuePayload,
+    callback: (response: AgentTaskQueueResponse) => void,
   ) => void;
   [SERVER_COMMAND.pauseQueue]: (payload: ServerPauseQueuePayload) => void;
   [SERVER_COMMAND.resumeQueue]: (payload: ServerResumeQueuePayload) => void;
@@ -92,7 +100,7 @@ export interface CreateAgentNamespaceOptions {
   heartbeatTimeoutMs?: number;
   sweepIntervalMs?: number;
   now?: () => number;
-  onTaskUpdate?: (payload: AgentTaskUpdatePayload) => void;
+  onTaskChanged?: (serverId: string, changedTasks: MirroredAgentTaskRecord[]) => void;
   onServerChanged?: () => void;
   getMetricsTimeoutMs?: () => number;
 }
@@ -182,6 +190,9 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
         case SERVER_COMMAND.setPriority:
           socket.emit(SERVER_COMMAND.setPriority, command.data);
           break;
+        case SERVER_COMMAND.getTaskQueue:
+          socket.emit(SERVER_COMMAND.getTaskQueue, command.data, () => undefined);
+          break;
       }
     },
     requestTaskEvents(payload: ServerGetTaskEventsPayload): Promise<AgentTaskEventsResponse> {
@@ -205,6 +216,21 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
           SERVER_COMMAND.getTaskAuditDetail,
           payload,
           (error: Error | null, response: AgentTaskAuditDetailResponse) => {
+            if (error) {
+              reject(new AgentCommandError('timeout'));
+              return;
+            }
+            resolve(response);
+          },
+        );
+      });
+    },
+    requestTaskQueue(): Promise<AgentTaskQueueResponse> {
+      return new Promise((resolve, reject) => {
+        socket.timeout(5_000).emit(
+          SERVER_COMMAND.getTaskQueue,
+          {},
+          (error: Error | null, response: AgentTaskQueueResponse) => {
             if (error) {
               reject(new AgentCommandError('timeout'));
               return;
@@ -255,50 +281,6 @@ function normalizeMetricsPayload(
   };
 }
 
-function normalizeTaskUpdatePayload(
-  payload: unknown,
-  serverId: string | undefined,
-): AgentTaskUpdatePayload | undefined {
-  if (!serverId) {
-    return undefined;
-  }
-
-  if (isAgentTaskUpdatePayload(payload)) {
-    const normalizedPayload = payload.serverId === serverId
-      ? payload
-      : {
-        ...payload,
-        serverId,
-      };
-
-    return {
-      ...normalizedPayload,
-      createdAt: normalizeOptionalTimestamp(normalizedPayload.createdAt),
-      startedAt: normalizeOptionalTimestamp(normalizedPayload.startedAt),
-      finishedAt: normalizeOptionalTimestamp(normalizedPayload.finishedAt),
-    };
-  }
-
-  if (!isRecord(payload)) {
-    return undefined;
-  }
-
-  const normalizedPayload = {
-    ...payload,
-    serverId,
-  };
-
-  if (!isAgentTaskUpdatePayload(normalizedPayload)) {
-    return undefined;
-  }
-
-  return {
-    ...normalizedPayload,
-    createdAt: normalizeOptionalTimestamp(normalizedPayload.createdAt),
-    startedAt: normalizeOptionalTimestamp(normalizedPayload.startedAt),
-    finishedAt: normalizeOptionalTimestamp(normalizedPayload.finishedAt),
-  };
-}
 
 function normalizeLocalUsersPayload(
   payload: unknown,
@@ -353,7 +335,7 @@ export function createAgentNamespace(
   const now = options.now ?? (() => Date.now());
   const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
   const sweepIntervalMs = options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
-  const onTaskUpdate = options.onTaskUpdate;
+  const onTaskChanged = options.onTaskChanged;
   const onServerChanged = options.onServerChanged;
 
   const detachServerSession = (serverId: string | undefined, session?: AgentLiveSession, reason?: string): void => {
@@ -384,6 +366,9 @@ export function createAgentNamespace(
     states.delete(state.agentId);
     registry.detachSession(state.agentId, state.session);
     detachServerSession(state.serverId, state.session, 'socket_disconnect');
+    if (state.serverId) {
+      clearTaskQueueCache(state.serverId);
+    }
     clearSocketState(state.socket, state);
   };
 
@@ -445,6 +430,16 @@ export function createAgentNamespace(
       if (nextState.serverId) {
         attachServerSession(nextState.serverId, session, payload.version);
         onServerChanged?.();
+
+        // Initial pull of task queue on registration
+        session.requestTaskQueue().then((data) => {
+          if (!isCurrentState(states, nextState) || !nextState.serverId) return;
+          const changed = diffTaskQueue(nextState.serverId, data);
+          setTaskQueueCache(nextState.serverId, data);
+          for (const task of changed) {
+            recordTaskAttributionFact(task);
+          }
+        }).catch(() => { /* agent may not support getTaskQueue yet */ });
       }
 
       if (previous && previous.socket.id !== socket.id) {
@@ -482,19 +477,24 @@ export function createAgentNamespace(
       state.lastMetricsAt = now();
     });
 
-    socket.on(AGENT_EVENT.taskUpdate, (payload: unknown) => {
+    socket.on(AGENT_EVENT.taskChanged, () => {
       const state = socket.data.agentState;
-      if (!state || !isCurrentState(states, state)) {
+      if (!state || !state.serverId || !isCurrentState(states, state)) {
         return;
       }
 
-      const update = normalizeTaskUpdatePayload(payload, state.serverId);
-      if (!update) {
-        return;
-      }
-
-      ingestAgentTaskUpdate(update);
-      onTaskUpdate?.(update);
+      const serverId = state.serverId;
+      state.session.requestTaskQueue().then((data) => {
+        if (!isCurrentState(states, state)) return;
+        const changed = diffTaskQueue(serverId, data);
+        setTaskQueueCache(serverId, data);
+        for (const task of changed) {
+          recordTaskAttributionFact(task);
+        }
+        if (changed.length > 0) {
+          onTaskChanged?.(serverId, changed);
+        }
+      }).catch(() => { /* pull failed, stale cache remains */ });
     });
 
     socket.on(AGENT_EVENT.localUsers, (payload: unknown) => {

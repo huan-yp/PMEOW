@@ -25,9 +25,7 @@ from pmeow.models import (
     TaskLaunchMode,
     TaskRecord,
     TaskSpec,
-    TaskStatus,
-    TaskUpdate,
-)
+    TaskStatus)
 from pmeow.queue.history import GpuHistoryTracker
 from pmeow.queue.scheduler import QueueScheduler, validate_request_possible
 from pmeow.store.database import close_database, open_database
@@ -42,18 +40,17 @@ from pmeow.store.tasks import (
     get_task,
     guarded_finalize_task,
     list_task_events,
+    list_recent_terminal_tasks,
     list_tasks as db_list_tasks,
     requeue_expired_attached_launches,
     reserve_attached_launch,
-    update_task_priority,
-)
+    update_task_priority)
 from pmeow.task_reporting import (
     format_launch_report,
     format_queue_paused_report,
     format_schedule_block_report,
     format_schedule_block_summary,
-    format_submission_report,
-)
+    format_submission_report)
 from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
@@ -65,8 +62,7 @@ class DaemonService:
     def __init__(
         self,
         config: AgentConfig,
-        internet_probe: InternetProbe | None = None,
-    ) -> None:
+        internet_probe: InternetProbe | None = None) -> None:
         self.config = config
         self._lock = threading.Lock()
         self._shutdown = threading.Event()
@@ -77,8 +73,7 @@ class DaemonService:
             self.db,
             poll_interval=1.0,
             db_lock=self._lock,
-            on_terminal_transition=self._emit_runtime_monitor_terminal_update,
-        )
+            on_terminal_transition=self._emit_runtime_monitor_terminal_update)
         self.history = GpuHistoryTracker(window_seconds=config.history_window_seconds)
         self.scheduler = QueueScheduler(self.history)
         # The probe carries its own cache state across collection cycles, so
@@ -91,39 +86,41 @@ class DaemonService:
             self.transport = AgentTransportClient(
                 server_url=config.server_url,
                 agent_id=config.agent_id or socket.gethostname(),
-                heartbeat_interval=config.heartbeat_interval,
-            )
+                heartbeat_interval=config.heartbeat_interval)
         self._last_local_users_signature: tuple[tuple[str, int, int, str, str, str], ...] | None = None
         self._last_queue_reason_signatures: dict[str, tuple] = {}
         self._last_per_gpu: list | None = None
 
-    def _task_update_from_record(
-        self,
-        task: TaskRecord,
-        *,
-        status: TaskStatus | None = None,
-        gpu_ids: list[int] | None = None,
-        started_at: float | None = None,
-        finished_at: float | None = None,
-        exit_code: int | None = None,
-        pid: int | None = None,
-    ) -> TaskUpdate:
-        return TaskUpdate(
-            task_id=task.id,
-            status=status or task.status,
-            command=task.command,
-            cwd=task.cwd,
-            user=task.user,
-            require_vram_mb=task.require_vram_mb,
-            require_gpu_count=task.require_gpu_count,
-            gpu_ids=task.gpu_ids if gpu_ids is None else gpu_ids,
-            priority=task.priority,
-            created_at=task.created_at,
-            started_at=started_at if started_at is not None else task.started_at,
-            finished_at=finished_at if finished_at is not None else task.finished_at,
-            exit_code=exit_code if exit_code is not None else task.exit_code,
-            pid=pid if pid is not None else task.pid,
-        )
+    def _serialize_task(self, task: TaskRecord) -> dict:
+        """Convert a TaskRecord to a camelCase dict for the web server."""
+        return {
+            "taskId": task.id,
+            "status": task.status.value,
+            "command": task.command,
+            "cwd": task.cwd,
+            "user": task.user,
+            "requireVramMB": task.require_vram_mb,
+            "requireGpuCount": task.require_gpu_count,
+            "gpuIds": task.gpu_ids,
+            "priority": task.priority,
+            "createdAt": task.created_at,
+            "startedAt": task.started_at,
+            "finishedAt": task.finished_at,
+            "exitCode": task.exit_code,
+            "pid": task.pid,
+        }
+
+    def get_task_queue(self) -> dict:
+        """Return current task queue snapshot for web server pull requests."""
+        with self._lock:
+            queued = db_list_tasks(self.db, TaskStatus.queued)
+            running = db_list_tasks(self.db, TaskStatus.running)
+            recent = list_recent_terminal_tasks(self.db, limit=20)
+            return {
+                "queued": [self._serialize_task(t) for t in queued],
+                "running": [self._serialize_task(t) for t in running],
+                "recent": [self._serialize_task(t) for t in recent],
+            }
 
     def _emit_runtime_monitor_terminal_update(self, task_id: str) -> None:
         if not self.transport:
@@ -137,7 +134,7 @@ class DaemonService:
                 TaskStatus.cancelled,
             }:
                 return
-            self.transport.send_task_update(self._task_update_from_record(task))
+            self.transport.send_task_changed()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -162,13 +159,11 @@ class DaemonService:
             self.transport.connect()
             self.transport.send_register(
                 hostname=socket.gethostname(),
-                version=__version__,
-            )
+                version=__version__)
             log.info(
                 "transport connecting to %s (agent_id=%s)",
                 self.config.server_url,
-                self.config.agent_id,
-            )
+                self.config.agent_id)
 
         log.info("daemon started (interval=%ds)", self.config.collection_interval)
         try:
@@ -205,8 +200,7 @@ class DaemonService:
         event_type: str,
         message: str,
         *,
-        details: dict | None = None,
-    ) -> None:
+        details: dict | None = None) -> None:
         """Write *message* to both the task log file and the task_events table."""
         append_task_log_line(task_id, self.config.log_dir, message)
         append_task_event(
@@ -214,8 +208,7 @@ class DaemonService:
             task_id,
             event_type,
             time.time(),
-            details if details is not None else {"message": message},
-        )
+            details if details is not None else {"message": message})
 
     def _register_transport_commands(self) -> None:
         if not self.transport:
@@ -223,30 +216,27 @@ class DaemonService:
 
         self.transport.on_command(
             "server:cancelTask",
-            lambda data: self.cancel_task(str(data["taskId"])),
-        )
+            lambda data: self.cancel_task(str(data["taskId"])))
         self.transport.on_command(
             "server:pauseQueue",
-            lambda _data: self.pause_queue(),
-        )
+            lambda _data: self.pause_queue())
         self.transport.on_command(
             "server:resumeQueue",
-            lambda _data: self.resume_queue(),
-        )
+            lambda _data: self.resume_queue())
         self.transport.on_command(
             "server:setPriority",
-            lambda data: self.set_task_priority(str(data["taskId"]), int(data["priority"])),
-        )
+            lambda data: self.set_task_priority(str(data["taskId"]), int(data["priority"])))
         self.transport.on_command(
             "server:getTaskEvents",
             lambda data: self.get_task_events(
                 str(data["taskId"]),
-                after_id=int(data.get("afterId", 0)),
-            ),
-        )
+                after_id=int(data.get("afterId", 0))))
         self.transport.on_command(
             "server:getTaskAuditDetail",
-            lambda data: self._handle_get_task_audit_detail(data),
+            lambda data: self._handle_get_task_audit_detail(data))
+        self.transport.on_command(
+            "server:getTaskQueue",
+            lambda _data: self.get_task_queue(),
         )
 
     def _clear_queue_reason(self, task_id: str) -> None:
@@ -257,14 +247,12 @@ class DaemonService:
         reason_code: str,
         current_eligible_gpu_ids: Sequence[int] = (),
         sustained_eligible_gpu_ids: Sequence[int] = (),
-        blocker_task_ids: Sequence[str] = (),
-    ) -> tuple:
+        blocker_task_ids: Sequence[str] = ()) -> tuple:
         return (
             reason_code,
             tuple(current_eligible_gpu_ids),
             tuple(sustained_eligible_gpu_ids),
-            tuple(blocker_task_ids),
-        )
+            tuple(blocker_task_ids))
 
     def _record_queue_waiting(
         self,
@@ -274,8 +262,7 @@ class DaemonService:
         signature: tuple,
         daemon_summary: str,
         message: str,
-        details: dict,
-    ) -> None:
+        details: dict) -> None:
         if self._last_queue_reason_signatures.get(task.id) == signature:
             return
 
@@ -288,8 +275,7 @@ class DaemonService:
     # ------------------------------------------------------------------
 
     def _local_user_signature(
-        self, users: Iterable[LocalUserRecord],
-    ) -> tuple[tuple[str, int, int, str, str, str], ...]:
+        self, users: Iterable[LocalUserRecord]) -> tuple[tuple[str, int, int, str, str, str], ...]:
         return tuple(
             (user.username, user.uid, user.gid, user.gecos, user.home, user.shell)
             for user in users
@@ -312,8 +298,7 @@ class DaemonService:
         self._last_local_users_signature = signature
         self.transport.send_local_users(LocalUsersInventory(
             timestamp=timestamp,
-            users=users,
-        ))
+            users=users))
 
     def collect_cycle(self) -> None:
         """Run one collection ⟶ schedule ⟶ launch iteration."""
@@ -321,8 +306,7 @@ class DaemonService:
             server_id=self.config.agent_id or "local",
             task_store=self.db,
             redundancy_coefficient=self.config.vram_redundancy_coefficient,
-            internet_probe=self.internet_probe,
-        )
+            internet_probe=self.internet_probe)
 
         per_gpu = (
             snapshot.gpu_allocation.per_gpu if snapshot.gpu_allocation else []
@@ -339,8 +323,7 @@ class DaemonService:
                 self._clear_queue_reason(task_id)
                 self._record_task_message(
                     task_id, "launch_reservation_expired",
-                    "launch reservation expired — task requeued",
-                )
+                    "launch reservation expired — task requeued")
                 log.info("task %s: launch reservation expired, requeued", task_id)
 
             # Reap completed tasks
@@ -353,19 +336,13 @@ class DaemonService:
                 outcome = guarded_finalize_task(
                     self.db, task_id,
                     status=status, finished_at=finished_at, exit_code=exit_code,
-                    finalize_source="runner_exit",
-                )
+                    finalize_source="runner_exit")
                 if not outcome.transitioned:
                     continue
                 self._clear_queue_reason(task_id)
                 log.info("task %s finished (exit=%d)", task_id, exit_code)
                 if self.transport:
-                    self.transport.send_task_update(self._task_update_from_record(
-                        task,
-                        status=status,
-                        finished_at=finished_at,
-                        exit_code=exit_code,
-                    ))
+                    self.transport.send_task_changed()
 
             queued_tasks = db_list_tasks(self.db, TaskStatus.queued)
             queued_by_id = {task.id: task for task in queued_tasks}
@@ -383,8 +360,7 @@ class DaemonService:
                         details={
                             "message": message,
                             "reason_code": "queue_paused",
-                        },
-                    )
+                        })
             else:
                 schedule_result = self.scheduler.try_schedule(self.db, per_gpu)
                 if isinstance(schedule_result, list):
@@ -410,8 +386,7 @@ class DaemonService:
                             evaluation.reason_code,
                             evaluation.current_eligible_gpu_ids,
                             evaluation.sustained_eligible_gpu_ids,
-                            evaluation.blocker_task_ids,
-                        ),
+                            evaluation.blocker_task_ids),
                         daemon_summary=format_schedule_block_summary(task, evaluation),
                         message=message,
                         details={
@@ -424,8 +399,7 @@ class DaemonService:
                             "pending_vram_mb": evaluation.pending_vram_mb,
                             "blocker_task_ids": evaluation.blocker_task_ids,
                             "gpu_ledgers": evaluation.gpu_ledgers,
-                        },
-                    )
+                        })
 
                 for dec in decisions:
                     task = get_task(self.db, dec.task_id)
@@ -436,8 +410,7 @@ class DaemonService:
                     # Find the matching evaluation for audit snapshot
                     eval_for_task = next(
                         (e for e in evaluations if e.task_id == dec.task_id and e.can_run),
-                        None,
-                    )
+                        None)
                     schedule_details: dict = {
                         "gpu_ids": dec.gpu_ids,
                         "require_vram_mb": task.require_vram_mb,
@@ -452,22 +425,19 @@ class DaemonService:
                     self._record_task_message(
                         task.id, "schedule_started",
                         f"scheduled on GPUs {dec.gpu_ids}",
-                        details=schedule_details,
-                    )
+                        details=schedule_details)
 
                     if task.launch_mode == TaskLaunchMode.attached_python:
                         # Reserve GPUs for attached launch instead of spawning
                         launch_deadline = time.time() + 30.0
                         reserve_attached_launch(
                             self.db, task.id, dec.gpu_ids,
-                            launch_deadline, time.time(),
-                        )
+                            launch_deadline, time.time())
                         msg = format_launch_report(task, dec.gpu_ids, per_gpu)
                         self._record_task_message(task.id, "launch_reserved", msg)
                         log.info(
                             "reserved attached launch %s (gpus=%s)",
-                            task.id, dec.gpu_ids,
-                        )
+                            task.id, dec.gpu_ids)
                         continue
 
                     proc = self.runner.start(task, dec.gpu_ids, self.config.log_dir)
@@ -482,20 +452,12 @@ class DaemonService:
                             "pid": proc.pid,
                             "gpu_ids": dec.gpu_ids,
                             "launch_mode": task.launch_mode.value,
-                        },
-                    )
+                        })
                     log.info(
                         "started task %s (pid=%d, gpus=%s)",
-                        task.id, proc.pid, dec.gpu_ids,
-                    )
+                        task.id, proc.pid, dec.gpu_ids)
                     if self.transport:
-                        self.transport.send_task_update(self._task_update_from_record(
-                            task,
-                            status=TaskStatus.running,
-                            gpu_ids=dec.gpu_ids,
-                            started_at=started_at,
-                            pid=proc.pid,
-                        ))
+                        self.transport.send_task_changed()
 
         if self.transport:
             self._send_local_users_if_changed(snapshot.timestamp)
@@ -512,8 +474,7 @@ class DaemonService:
                 err = validate_request_possible(
                     self._last_per_gpu,
                     spec.require_gpu_count,
-                    spec.require_vram_mb,
-                )
+                    spec.require_vram_mb)
                 if err is not None:
                     raise ValueError(err)
             rec = create_task(self.db, spec)
@@ -532,17 +493,15 @@ class DaemonService:
                     "require_vram_mb": rec.require_vram_mb,
                     "require_gpu_count": rec.require_gpu_count,
                     "priority": rec.priority,
-                },
-            )
+                })
             log.info(
                 "submitted task %s user=%s mode=%s cwd=%s",
                 rec.id,
                 rec.user,
                 rec.launch_mode.value,
-                rec.cwd,
-            )
+                rec.cwd)
             if self.transport:
-                self.transport.send_task_update(self._task_update_from_record(rec))
+                self.transport.send_task_changed()
             return rec
 
     def cancel_task(self, task_id: str) -> bool:
@@ -558,24 +517,17 @@ class DaemonService:
                     finished_at=time.time(),
                     exit_code=None,
                     finalize_source="cancel",
-                    finalize_reason_code="explicit_cancel",
-                )
+                    finalize_reason_code="explicit_cancel")
                 if outcome.transitioned:
                     self._clear_queue_reason(task_id)
                     if self.transport:
-                        self.transport.send_task_update(self._task_update_from_record(
-                            task,
-                            status=TaskStatus.cancelled,
-                        ))
+                        self.transport.send_task_changed()
                 return outcome.transitioned
             if task.status == TaskStatus.queued:
                 db_cancel_task(self.db, task_id)
                 self._clear_queue_reason(task_id)
                 if self.transport:
-                    self.transport.send_task_update(self._task_update_from_record(
-                        task,
-                        status=TaskStatus.cancelled,
-                    ))
+                    self.transport.send_task_changed()
                 return True
             return False
 
@@ -610,8 +562,7 @@ class DaemonService:
                 running=counts["running"],
                 completed=counts["completed"],
                 failed=counts["failed"],
-                cancelled=counts["cancelled"],
-            )
+                cancelled=counts["cancelled"])
 
     def get_task_events(self, task_id: str, after_id: int = 0) -> list[dict]:
         with self._lock:
@@ -686,8 +637,7 @@ class DaemonService:
                     "message": message,
                     "old_priority": task.priority,
                     "new_priority": priority,
-                },
-            )
+                })
             log.info("task %s priority updated: %d -> %d", task_id, task.priority, priority)
             return True
 
@@ -705,16 +655,10 @@ class DaemonService:
                     "pid": pid,
                     "gpu_ids": task.gpu_ids,
                     "launch_mode": task.launch_mode.value,
-                },
-            )
+                })
             if self.transport:
                 started_at = time.time()
-                self.transport.send_task_update(self._task_update_from_record(
-                    task,
-                    status=TaskStatus.running,
-                    started_at=started_at,
-                    pid=pid,
-                ))
+                self.transport.send_task_changed()
             return True
 
     def finish_attached_task(self, task_id: str, exit_code: int) -> bool:
@@ -728,17 +672,11 @@ class DaemonService:
                 self.db, task_id,
                 status=status, finished_at=finished_at, exit_code=exit_code,
                 finalize_source="cli_finish",
-                finalize_reason_code="ctrl_c" if exit_code == 130 else None,
-            )
+                finalize_reason_code="ctrl_c" if exit_code == 130 else None)
             if not outcome.transitioned:
                 return False
             self._clear_queue_reason(task_id)
             self._record_task_message(task_id, "attached_finished", f"attached process finished exit_code={exit_code}")
             if self.transport:
-                self.transport.send_task_update(self._task_update_from_record(
-                    task,
-                    status=status,
-                    finished_at=finished_at,
-                    exit_code=exit_code,
-                ))
+                self.transport.send_task_changed()
             return True

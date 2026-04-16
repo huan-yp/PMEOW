@@ -173,7 +173,7 @@ describe('desktop person detail token controls', () => {
       onAlert: vi.fn(() => () => undefined),
       onHookTriggered: vi.fn(() => () => undefined),
       onNotify: vi.fn(() => () => undefined),
-      onTaskUpdate: vi.fn(() => () => undefined),
+      onTaskChanged: vi.fn(() => () => undefined),
       onSecurityEvent: vi.fn(() => () => undefined),
       getServers: vi.fn(async () => []),
       addServer: vi.fn(async () => ({} as any)),

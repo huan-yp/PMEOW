@@ -6,6 +6,7 @@ import {
   createServer,
   getLatestGpuUsageByServerId,
   getLatestMetrics,
+  setTaskQueueCache,
   type GpuAllocationSummary,
   type MetricsSnapshot,
 } from '@monitor/core';
@@ -389,17 +390,22 @@ describe('agent read routes', () => {
     expect(emptyListResponse.status).toBe(200);
     expect(emptyListResponse.body).toEqual([]);
 
-    client.emit('agent:taskUpdate', {
-      taskId: 'task-1',
-      status: 'queued',
-      command: 'python train.py',
-      cwd: '/srv/jobs/train',
-      user: 'alice',
-      requireVramMB: 8_192,
-      requireGpuCount: 1,
-      gpuIds: [0],
-      priority: 7,
-      createdAt: DEFAULT_TIMESTAMP_MS + 900,
+    setTaskQueueCache(server.id, {
+      queued: [{
+        taskId: 'task-1',
+        serverId: server.id,
+        status: 'queued',
+        command: 'python train.py',
+        cwd: '/srv/jobs/train',
+        user: 'alice',
+        requireVramMB: 8_192,
+        requireGpuCount: 1,
+        gpuIds: [0],
+        priority: 7,
+        createdAt: DEFAULT_TIMESTAMP_MS + 900,
+      }],
+      running: [],
+      recent: [],
     });
 
     await waitForCondition(async () => {
@@ -421,10 +427,6 @@ describe('agent read routes', () => {
           gpuIds: [0],
           priority: 7,
           createdAt: DEFAULT_TIMESTAMP_MS + 900,
-          startedAt: null,
-          finishedAt: null,
-          exitCode: null,
-          pid: null,
         },
       ]);
 
@@ -470,16 +472,21 @@ describe('agent read routes', () => {
       hostname: 'gpu-task-seconds',
       version: '1.0.0',
     });
-    client.emit('agent:taskUpdate', {
-      taskId: 'task-seconds',
-      status: 'completed',
-      command: 'python eval.py',
-      cwd: '/srv/jobs/eval',
-      user: 'bob',
-      createdAt: createdAtSeconds,
-      startedAt: startedAtSeconds,
-      finishedAt: finishedAtSeconds,
-      exitCode: 0,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [],
+      recent: [{
+        taskId: 'task-seconds',
+        serverId: server.id,
+        status: 'completed',
+        command: 'python eval.py',
+        cwd: '/srv/jobs/eval',
+        user: 'bob',
+        createdAt: Math.round(createdAtSeconds * 1000),
+        startedAt: Math.round(startedAtSeconds * 1000),
+        finishedAt: Math.round(finishedAtSeconds * 1000),
+        exitCode: 0,
+      }],
     });
 
     await waitForCondition(async () => {
@@ -499,8 +506,6 @@ describe('agent read routes', () => {
         startedAt: Math.round(startedAtSeconds * 1000),
         finishedAt: Math.round(finishedAtSeconds * 1000),
         exitCode: 0,
-        gpuIds: null,
-        pid: null,
       });
     });
   });
@@ -577,11 +582,16 @@ describe('agent read routes', () => {
       timestamp: DEFAULT_TIMESTAMP_MS + 3_000,
       gpuAllocation,
     }));
-    client.emit('agent:taskUpdate', {
-      taskId: 'task-disconnect',
-      status: 'running',
-      startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
-      pid: 4_321,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{
+        taskId: 'task-disconnect',
+        serverId: server.id,
+        status: 'running',
+        startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
+        pid: 4_321,
+      }],
+      recent: [],
     });
 
     await waitForCondition(async () => {
@@ -598,10 +608,7 @@ describe('agent read routes', () => {
           serverId: server.id,
           taskId: 'task-disconnect',
           status: 'running',
-          gpuIds: null,
           startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
-          finishedAt: null,
-          exitCode: null,
           pid: 4_321,
         },
       ]);
@@ -623,18 +630,7 @@ describe('agent read routes', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(tasksAfterDisconnect.status).toBe(200);
-    expect(tasksAfterDisconnect.body).toEqual([
-      {
-        serverId: server.id,
-        taskId: 'task-disconnect',
-        status: 'running',
-        gpuIds: null,
-        startedAt: DEFAULT_TIMESTAMP_MS + 3_100,
-        finishedAt: null,
-        exitCode: null,
-        pid: 4_321,
-      },
-    ]);
+    expect(tasksAfterDisconnect.body).toEqual([]);
     expect(gpuAfterDisconnect.status).toBe(200);
     expect(gpuAfterDisconnect.body).toEqual(gpuAllocation);
   });
@@ -707,12 +703,16 @@ describe('agent read routes', () => {
       hostname: 'gpu-allocation-resolved',
       version: '1.0.0',
     });
-    client.emit('agent:taskUpdate', {
-      serverId: server.id,
-      taskId: 'task-new',
-      status: 'running',
-      user: 'alice',
-      startedAt: DEFAULT_TIMESTAMP_MS + 1_500,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{
+        taskId: 'task-new',
+        serverId: server.id,
+        status: 'running',
+        user: 'alice',
+        startedAt: DEFAULT_TIMESTAMP_MS + 1_500,
+      }],
+      recent: [],
     });
     client.emit('agent:metrics', createSnapshot(server.id, {
       timestamp: DEFAULT_TIMESTAMP_MS + 2_000,

@@ -6,6 +6,7 @@ import {
   getLatestGpuUsageByServerId,
   getLatestMetrics,
   getServerById,
+  setTaskQueueCache,
   type GpuAllocationSummary,
   type MetricsSnapshot,
 } from '@monitor/core';
@@ -260,19 +261,24 @@ describe('agent integration', () => {
       );
     });
 
-    agent.sendTaskUpdate({
-      taskId,
-      status: 'running',
-      command: 'python train.py',
-      cwd: '/srv/jobs/train',
-      user: 'alice',
-      requireVramMB: 8_192,
-      requireGpuCount: 1,
-      gpuIds: [0],
-      priority: 9,
-      createdAt: DEFAULT_TIMESTAMP_MS + 900,
-      startedAt: DEFAULT_TIMESTAMP_MS + 1_000,
-      pid: 4_321,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{
+        taskId,
+        serverId: server.id,
+        status: 'running',
+        command: 'python train.py',
+        cwd: '/srv/jobs/train',
+        user: 'alice',
+        requireVramMB: 8_192,
+        requireGpuCount: 1,
+        gpuIds: [0],
+        priority: 9,
+        createdAt: DEFAULT_TIMESTAMP_MS + 900,
+        startedAt: DEFAULT_TIMESTAMP_MS + 1_000,
+        pid: 4_321,
+      }],
+      recent: [],
     });
 
     await waitForCondition(async () => {
@@ -298,8 +304,6 @@ describe('agent integration', () => {
           priority: 9,
           createdAt: DEFAULT_TIMESTAMP_MS + 900,
           startedAt: DEFAULT_TIMESTAMP_MS + 1_000,
-          finishedAt: null,
-          exitCode: null,
           pid: 4_321,
         },
       ]);
@@ -378,19 +382,24 @@ describe('agent integration', () => {
 
     initialAgent.heartbeat();
     initialAgent.sendMetrics(initialSnapshot);
-    initialAgent.sendTaskUpdate({
-      taskId,
-      status: 'running',
-      command: 'python recover.py',
-      cwd: '/srv/jobs/recover',
-      user: 'alice',
-      requireVramMB: 8_192,
-      requireGpuCount: 1,
-      gpuIds: [0],
-      priority: 5,
-      createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
-      startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
-      pid: 6_001,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{
+        taskId,
+        serverId: server.id,
+        status: 'running',
+        command: 'python recover.py',
+        cwd: '/srv/jobs/recover',
+        user: 'alice',
+        requireVramMB: 8_192,
+        requireGpuCount: 1,
+        gpuIds: [0],
+        priority: 5,
+        createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
+        startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
+        pid: 6_001,
+      }],
+      recent: [],
     });
 
     await waitForCondition(async () => {
@@ -416,8 +425,6 @@ describe('agent integration', () => {
           priority: 5,
           createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
           startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
-          finishedAt: null,
-          exitCode: null,
           pid: 6_001,
         },
       ]);
@@ -462,8 +469,6 @@ describe('agent integration', () => {
         priority: 5,
         createdAt: DEFAULT_TIMESTAMP_MS + 1_500,
         startedAt: DEFAULT_TIMESTAMP_MS + 2_100,
-        finishedAt: null,
-        exitCode: null,
         pid: 6_001,
       },
     ]);

@@ -7,7 +7,6 @@ import {
   type AgentHeartbeatPayload,
   type AgentMetricsPayload,
   type AgentRegisterPayload,
-  type AgentTaskUpdatePayload,
   type ServerCancelTaskPayload,
   type ServerGetTaskEventsPayload,
   type ServerPauseQueuePayload,
@@ -199,10 +198,8 @@ export class AgentTestStub {
     this.requireClient().emit(AGENT_EVENT.metrics, snapshot);
   }
 
-  sendTaskUpdate(
-    update: Omit<AgentTaskUpdatePayload, 'serverId'> & Partial<Pick<AgentTaskUpdatePayload, 'serverId'>>,
-  ): void {
-    this.requireClient().emit(AGENT_EVENT.taskUpdate, update);
+  sendTaskChanged(): void {
+    this.requireClient().emit(AGENT_EVENT.taskChanged);
   }
 
   waitForCommand<EventName extends keyof AgentCommandPayloadMap>(

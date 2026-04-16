@@ -77,7 +77,7 @@ export function useOperatorBootstrap() {
 
     void load();
 
-    const unsubscribeTaskUpdate = transport.onTaskUpdate(() => {
+    const unsubscribeTaskChanged = transport.onTaskChanged(() => {
       scheduleTaskQueueRefresh();
     });
     const unsubscribeSecurityEvent = transport.onSecurityEvent(() => {
@@ -94,7 +94,7 @@ export function useOperatorBootstrap() {
         window.clearTimeout(securityEventsRefreshTimerRef.current);
         securityEventsRefreshTimerRef.current = null;
       }
-      unsubscribeTaskUpdate();
+      unsubscribeTaskChanged();
       unsubscribeSecurityEvent();
     };
   }, [transport, setOpenSecurityEvents, setTaskQueueGroups]);

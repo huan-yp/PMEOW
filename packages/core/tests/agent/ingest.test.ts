@@ -3,9 +3,7 @@ import {
   flattenGpuAllocation,
   ingestAgentLocalUsers,
   ingestAgentMetrics,
-  ingestAgentTaskUpdate,
 } from '../../src/agent/ingest.js';
-import { getAgentTask, getAgentTasksByServerId } from '../../src/db/agent-tasks.js';
 import { getDatabase } from '../../src/db/database.js';
 import { getLatestGpuUsageByServerId } from '../../src/db/gpu-usage.js';
 import { getLatestMetrics } from '../../src/db/metrics.js';
@@ -386,98 +384,5 @@ describe('agent ingest', () => {
     ]);
     expect(metricsCount.count).toBe(0);
     expect(gpuUsageCount.count).toBe(0);
-  });
-
-  it('does not create duplicate mirrored tasks for repeated task updates', () => {
-    const server = createAgentServer();
-    vi.spyOn(Date, 'now').mockReturnValueOnce(1_000).mockReturnValueOnce(2_000);
-
-    const update = {
-      serverId: server.id,
-      taskId: 'task-1',
-      status: 'queued' as const,
-      command: 'python train.py',
-      cwd: '/srv/jobs/train',
-      user: 'alice',
-      requireVramMB: 8192,
-      requireGpuCount: 1,
-      gpuIds: [0],
-      priority: 7,
-      createdAt: 900,
-    };
-
-    ingestAgentTaskUpdate(update);
-
-    const db = getDatabase();
-    const firstWrite = db.prepare(
-      'SELECT updatedAt FROM agent_tasks WHERE taskId = ?'
-    ).get(update.taskId) as { updatedAt: number };
-
-    ingestAgentTaskUpdate({ ...update });
-
-    const row = db.prepare(
-      'SELECT COUNT(*) AS count, updatedAt FROM agent_tasks WHERE taskId = ?'
-    ).get(update.taskId) as { count: number; updatedAt: number };
-
-    expect(row.count).toBe(1);
-    expect(row.updatedAt).toBe(firstWrite.updatedAt);
-    expect(getAgentTasksByServerId(server.id)).toHaveLength(1);
-  });
-
-  it('preserves prior fields across task status progression updates', () => {
-    const server = createAgentServer();
-    vi.spyOn(Date, 'now')
-      .mockReturnValueOnce(1_000)
-      .mockReturnValueOnce(2_000)
-      .mockReturnValueOnce(3_000);
-
-    ingestAgentTaskUpdate({
-      serverId: server.id,
-      taskId: 'task-1',
-      status: 'queued',
-      command: 'python train.py',
-      cwd: '/srv/jobs/train',
-      user: 'alice',
-      requireVramMB: 8192,
-      requireGpuCount: 1,
-      gpuIds: [0],
-      priority: 7,
-      createdAt: 900,
-    });
-
-    ingestAgentTaskUpdate({
-      serverId: server.id,
-      taskId: 'task-1',
-      status: 'running',
-      startedAt: 1_500,
-      pid: 4321,
-    });
-
-    ingestAgentTaskUpdate({
-      serverId: server.id,
-      taskId: 'task-1',
-      status: 'completed',
-      finishedAt: 2_500,
-      exitCode: 0,
-    });
-
-    expect(getAgentTask('task-1')).toEqual({
-      serverId: server.id,
-      taskId: 'task-1',
-      status: 'completed',
-      command: 'python train.py',
-      cwd: '/srv/jobs/train',
-      user: 'alice',
-      requireVramMB: 8192,
-      requireGpuCount: 1,
-      gpuIds: [0],
-      priority: 7,
-      createdAt: 900,
-      startedAt: 1_500,
-      finishedAt: 2_500,
-      exitCode: 0,
-      pid: 4321,
-    });
-    expect(getAgentTasksByServerId(server.id)).toHaveLength(1);
   });
 });

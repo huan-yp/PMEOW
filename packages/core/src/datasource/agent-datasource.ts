@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import type { AgentTaskAuditDetail, AgentTaskEventRecord, MetricsSnapshot, ConnectionStatus } from '../types.js';
+import type { AgentTaskAuditDetail, AgentTaskEventRecord, AgentTaskQueueResponse, MetricsSnapshot, ConnectionStatus } from '../types.js';
 import { SERVER_COMMAND, type ServerCommandEnvelope } from '../agent/protocol.js';
 import { AgentCommandError } from '../agent/errors.js';
 import type { AgentLiveSession } from '../agent/registry.js';
@@ -126,6 +126,10 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource, Age
 
   async getTaskAuditDetail(taskId: string): Promise<AgentTaskAuditDetail | null> {
     return this.requireLiveSession().requestTaskAuditDetail({ taskId });
+  }
+
+  async getTaskQueue(): Promise<AgentTaskQueueResponse> {
+    return this.requireLiveSession().requestTaskQueue();
   }
 
   private emitCommand(command: ServerCommandEnvelope): void {

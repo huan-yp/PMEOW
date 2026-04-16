@@ -73,7 +73,7 @@ function createMockTransport(overrides: Partial<TransportAdapter> = {}): Transpo
     onAlert: vi.fn((_cb: (alert: AlertEvent) => void) => () => undefined),
     onHookTriggered: vi.fn((_cb: (log: HookLog) => void) => () => undefined),
     onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
-    onTaskUpdate: vi.fn(() => () => undefined),
+    onTaskChanged: vi.fn(() => () => undefined),
     onSecurityEvent: vi.fn(() => () => undefined),
     getServers: vi.fn<() => Promise<ServerConfig[]>>(async () => []),
     addServer: vi.fn<(input: ServerInput) => Promise<ServerConfig>>(async (_input) => ({ id: 's1', name: 's', host: 'h', port: 22, username: 'u', privateKeyPath: '', sourceType: 'ssh', createdAt: 1, updatedAt: 1 }) as ServerConfig),

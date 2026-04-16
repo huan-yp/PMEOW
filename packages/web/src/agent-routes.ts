@@ -1,6 +1,5 @@
 import {
-  getAgentTask,
-  getAgentTasksByServerId,
+  getTaskQueueCache,
   getLatestMetrics,
   getResolvedGpuAllocation,
   getServerById,
@@ -41,8 +40,15 @@ function requireTaskForServer(
     return undefined;
   }
 
-  const task = getAgentTask(taskId);
-  if (!task || task.serverId !== serverId) {
+  const cached = getTaskQueueCache(serverId);
+  if (!cached) {
+    res.status(404).json({ error: '任务不存在' });
+    return undefined;
+  }
+
+  const allTasks = [...cached.queued, ...cached.running, ...cached.recent];
+  const task = allTasks.find((t) => t.taskId === taskId);
+  if (!task) {
     res.status(404).json({ error: '任务不存在' });
     return undefined;
   }
@@ -103,7 +109,13 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
       return;
     }
 
-    res.json(getAgentTasksByServerId(serverId));
+    const cached = getTaskQueueCache(serverId);
+    if (!cached) {
+      res.json([]);
+      return;
+    }
+
+    res.json([...cached.queued, ...cached.running, ...cached.recent]);
   });
 
   app.get('/api/servers/:id/tasks/:taskId', (req: Request, res: Response) => {
@@ -113,8 +125,15 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
       return;
     }
 
-    const task = getAgentTask(taskId);
-    if (!task || task.serverId !== serverId) {
+    const cached = getTaskQueueCache(serverId);
+    if (!cached) {
+      res.status(404).json({ error: '任务不存在' });
+      return;
+    }
+
+    const allTasks = [...cached.queued, ...cached.running, ...cached.recent];
+    const task = allTasks.find((t) => t.taskId === taskId);
+    if (!task) {
       res.status(404).json({ error: '任务不存在' });
       return;
     }

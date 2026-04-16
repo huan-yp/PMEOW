@@ -11,7 +11,6 @@ import type {
   PersonSummaryItem,
   PersonTimelinePoint,
   ServerPersonActivity,
-  AgentTaskUpdatePayload,
   MirroredAgentTaskRecord,
 } from '../types.js';
 
@@ -77,7 +76,7 @@ export function recordGpuAttributionFacts(serverId: string, timestamp: number): 
   }
 }
 
-export function recordTaskAttributionFact(update: AgentTaskUpdatePayload): void {
+export function recordTaskAttributionFact(update: MirroredAgentTaskRecord): void {
   const resolution = resolveTaskPerson(
     update.serverId, update.taskId, update.user,
     update.finishedAt ?? update.startedAt ?? update.createdAt ?? Date.now(),

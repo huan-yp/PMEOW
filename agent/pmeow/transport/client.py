@@ -11,7 +11,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 import socketio
 
-from pmeow.models import LocalUsersInventory, MetricsSnapshot, TaskUpdate
+from pmeow.models import LocalUsersInventory, MetricsSnapshot
 
 log = logging.getLogger(__name__)
 
@@ -132,23 +132,9 @@ class AgentTransportClient:
     def send_metrics(self, snapshot: MetricsSnapshot) -> None:
         self._send_event("agent:metrics", snapshot.to_dict())
 
-    def send_task_update(self, update: TaskUpdate) -> None:
-        self._send_event("agent:taskUpdate", {
-            "taskId": update.task_id,
-            "status": update.status.value,
-            "command": update.command,
-            "cwd": update.cwd,
-            "user": update.user,
-            "requireVramMB": update.require_vram_mb,
-            "requireGpuCount": update.require_gpu_count,
-            "gpuIds": update.gpu_ids,
-            "priority": update.priority,
-            "createdAt": update.created_at,
-            "startedAt": update.started_at,
-            "finishedAt": update.finished_at,
-            "exitCode": update.exit_code,
-            "pid": update.pid,
-        })
+    def send_task_changed(self) -> None:
+        """Notify web server that task state has changed; it should re-fetch."""
+        self._send_event("agent:taskChanged", {})
 
     def send_local_users(self, inventory: LocalUsersInventory) -> None:
         payload = inventory.to_dict()
@@ -234,6 +220,17 @@ class AgentTransportClient:
         self._buffer.append((event, data))
 
     def _flush_buffer_locked(self) -> None:
+        # Deduplicate consecutive taskChanged signals before flushing
+        deduped: deque[tuple[str, Any]] = deque()
+        seen_task_changed = False
+        for event, data in self._buffer:
+            if event == "agent:taskChanged":
+                if seen_task_changed:
+                    continue
+                seen_task_changed = True
+            deduped.append((event, data))
+        self._buffer = deque(deduped, maxlen=_MAX_BUFFER)
+
         while self._buffer and self._connected:
             event, data = self._buffer.popleft()
             if self._emit_locked(event, data):

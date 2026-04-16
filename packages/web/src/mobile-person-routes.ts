@@ -8,7 +8,7 @@ import {
   getPersonMobileNotifications,
   getPersonUnreadNotificationCount,
   markPersonNotificationRead,
-  getAgentTask,
+  getTaskQueueCache,
   isAgentCommandError,
 } from '@monitor/core';
 import type { AgentCommandService, Scheduler, AgentSessionRegistry } from '@monitor/core';
@@ -56,13 +56,15 @@ export function setupMobilePersonRoutes(
     const taskId = req.params.taskId as string;
 
     // Re-check ownership server-side
-    const task = getAgentTask(taskId);
-    if (!task) return res.status(404).json({ error: 'Task not found' });
-
-    // Verify this task belongs to this person
     const tasks = getPersonTasks(personId, 168);
     const owned = tasks.find(t => t.taskId === taskId);
     if (!owned) return res.status(403).json({ error: 'Task not attributed to you' });
+
+    // Find task in cache to check status
+    const cached = owned.serverId ? getTaskQueueCache(owned.serverId) : undefined;
+    const allCachedTasks = cached ? [...cached.queued, ...cached.running, ...cached.recent] : [];
+    const task = allCachedTasks.find(t => t.taskId === taskId);
+    if (!task) return res.status(404).json({ error: 'Task not found' });
 
     if (task.status !== 'queued' && task.status !== 'running') {
       return res.status(400).json({ error: 'Task is not cancellable' });

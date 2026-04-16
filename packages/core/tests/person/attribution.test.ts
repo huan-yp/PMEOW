@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createServer } from '../../src/db/servers.js';
 import { saveGpuUsageRows } from '../../src/db/gpu-usage.js';
-import { upsertAgentTask } from '../../src/db/agent-tasks.js';
+import { setTaskQueueCache } from '../../src/agent/task-queue-cache.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../../src/db/persons.js';
 import { resolveTaskPerson } from '../../src/person/resolve.js';
 import { saveMetrics } from '../../src/db/metrics.js';
@@ -26,7 +26,11 @@ describe('person attribution', () => {
     createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'train', source: 'manual', effectiveFrom: 1_700_000_000_000 });
     setTaskOwnerOverride({ taskId: 'task-1', serverId: server.id, personId: bob.id, source: 'manual', effectiveFrom: 1_700_000_000_100 });
 
-    upsertAgentTask({ serverId: server.id, taskId: 'task-1', status: 'running', user: 'train', startedAt: 1_700_000_000_200 });
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ serverId: server.id, taskId: 'task-1', status: 'running', user: 'train', startedAt: 1_700_000_000_200 }],
+      recent: [],
+    });
 
     expect(resolveTaskPerson(server.id, 'task-1', 'train', 1_700_000_000_200)?.person.id).toBe(bob.id);
   });
@@ -204,12 +208,16 @@ describe('person attribution', () => {
       effectiveFrom: now - 10_000,
     });
 
-    upsertAgentTask({
-      serverId: server.id,
-      taskId: 'task-run-1',
-      status: 'running',
-      user: 'alice',
-      startedAt: now - 5_000,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{
+        serverId: server.id,
+        taskId: 'task-run-1',
+        status: 'running',
+        user: 'alice',
+        startedAt: now - 5_000,
+      }],
+      recent: [],
     });
 
     saveMetrics({

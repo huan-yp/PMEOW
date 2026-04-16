@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createServer } from '../../src/db/servers.js';
-import { upsertAgentTask } from '../../src/db/agent-tasks.js';
+import { setTaskQueueCache } from '../../src/agent/task-queue-cache.js';
 import { createPerson, createPersonBinding } from '../../src/db/persons.js';
 import { saveMetrics } from '../../src/db/metrics.js';
 import { getResolvedGpuAllocation } from '../../src/agent/gpu-allocation-resolver.js';
@@ -44,12 +44,10 @@ describe('gpu-allocation-resolver', () => {
       effectiveFrom: now - 10_000,
     });
 
-    upsertAgentTask({
-      serverId: server.id,
-      taskId: 'task-resolve-1',
-      status: 'running',
-      user: 'alice',
-      startedAt: now - 5_000,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-resolve-1', serverId: server.id, status: 'running', user: 'alice', startedAt: now - 5_000 }],
+      recent: [],
     });
 
     saveMetrics(stubMetrics(server.id, now, {
@@ -89,12 +87,10 @@ describe('gpu-allocation-resolver', () => {
       agentId: 'agent-resolver-2',
     });
 
-    upsertAgentTask({
-      serverId: server.id,
-      taskId: 'task-unbound-1',
-      status: 'running',
-      user: 'bob',
-      startedAt: now - 5_000,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-unbound-1', serverId: server.id, status: 'running', user: 'bob', startedAt: now - 5_000 }],
+      recent: [],
     });
 
     saveMetrics(stubMetrics(server.id, now, {
@@ -142,12 +138,10 @@ describe('gpu-allocation-resolver', () => {
       effectiveFrom: now - 10_000,
     });
 
-    upsertAgentTask({
-      serverId: server.id,
-      taskId: 'task-merge-1',
-      status: 'running',
-      user: 'alice',
-      startedAt: now - 5_000,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-merge-1', serverId: server.id, status: 'running', user: 'alice', startedAt: now - 5_000 }],
+      recent: [],
     });
 
     saveMetrics(stubMetrics(server.id, now, {
@@ -220,11 +214,10 @@ describe('gpu-allocation-resolver', () => {
       agentId: 'agent-resolver-5',
     });
 
-    upsertAgentTask({
-      serverId: server.id,
-      taskId: 'task-no-user',
-      status: 'running',
-      startedAt: now - 5_000,
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-no-user', serverId: server.id, status: 'running', startedAt: now - 5_000 }],
+      recent: [],
     });
 
     saveMetrics(stubMetrics(server.id, now, {

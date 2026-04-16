@@ -1,5 +1,5 @@
 import { resolveTaskPerson, resolveRawUserPerson } from './resolve.js';
-import { getAgentTask } from '../db/agent-tasks.js';
+import { getTaskQueueCache } from '../agent/task-queue-cache.js';
 import { insertPersonAttributionFacts } from '../db/person-attribution.js';
 import type { MetricsSnapshot, MirroredAgentTaskRecord, PersonAttributionFact } from '../types.js';
 
@@ -13,7 +13,9 @@ export function writeAttributionFacts(snapshot: MetricsSnapshot, _mirroredTasks:
 
   for (const gpu of allocation.perGpu) {
     for (const taskAlloc of gpu.pmeowTasks) {
-      const task = getAgentTask(taskAlloc.taskId);
+      const cached = getTaskQueueCache(snapshot.serverId);
+      const allTasks = cached ? [...cached.queued, ...cached.running, ...cached.recent] : [];
+      const task = allTasks.find(t => t.taskId === taskAlloc.taskId);
       const rawUser = task?.user ?? undefined;
       const resolution = resolveTaskPerson(serverId, taskAlloc.taskId, rawUser, ts);
 

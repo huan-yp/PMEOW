@@ -191,6 +191,17 @@ def list_queued_tasks(conn: sqlite3.Connection) -> list[TaskRecord]:
     ).fetchall()
     return [_row_to_record(r) for r in rows]
 
+def list_recent_terminal_tasks(
+    conn: sqlite3.Connection, limit: int = 20
+) -> list[TaskRecord]:
+    """Return recently finished tasks (completed, failed, cancelled) ordered by finished_at DESC."""
+    rows = conn.execute(
+        f"SELECT {_SELECT_COLS} FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') "
+        "ORDER BY finished_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [_row_to_record(r) for r in rows]
+
 
 def update_task_status(
     conn: sqlite3.Connection, task_id: str, status: TaskStatus

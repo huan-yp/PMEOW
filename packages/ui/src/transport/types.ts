@@ -1,7 +1,7 @@
 import type {
   ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
-  AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
+  AgentTaskQueueGroup, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
@@ -36,7 +36,7 @@ export interface TransportAdapter {
   onAlert(cb: (alert: AlertEvent) => void): () => void;
   onHookTriggered(cb: (log: HookLog) => void): () => void;
   onNotify(cb: (title: string, body: string) => void): () => void;
-  onTaskUpdate(cb: (update: AgentTaskUpdatePayload) => void): () => void;
+  onTaskChanged(cb: () => void): () => void;
   onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void;
   onServersChanged?(cb: () => void): () => void;
 

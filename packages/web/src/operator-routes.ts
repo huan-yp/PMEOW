@@ -1,6 +1,7 @@
 import {
   buildProcessAuditRows,
-  getAgentTaskQueueGroups,
+  getAllCachedTaskQueueGroups,
+  getTaskQueueCache,
   getGpuUsageByServerIdAndTimestamp,
   getGpuOverview,
   getGpuUsageSummary,
@@ -81,7 +82,7 @@ function resolveProcessRows(serverId: string, snapshot: MetricsSnapshot, mode: '
     : getGpuUsageByServerIdAndTimestamp(serverId, snapshot.timestamp);
   const settings = getSettings();
   const taskGroup = mode === 'live'
-    ? getAgentTaskQueueGroups().find((group) => group.serverId === serverId)
+    ? getTaskQueueCache(serverId)
     : undefined;
   const hasRunningPmeowTasks = mode === 'live' ? (taskGroup?.running.length ?? 0) > 0 : false;
   const unownedGpuMinutes = mode === 'live' ? getLatestUnownedGpuDurationMinutes(serverId) : 0;
@@ -157,7 +158,11 @@ function getRouteParam(req: Request, name: string): string | undefined {
 
 export function setupOperatorRoutes(app: Express, options: OperatorRouteOptions): void {
   app.get('/api/task-queue', (_req: Request, res: Response) => {
-    res.json(getAgentTaskQueueGroups());
+    const getServerName = (serverId: string): string => {
+      const server = getServerById(serverId);
+      return server?.name ?? serverId;
+    };
+    res.json(getAllCachedTaskQueueGroups(getServerName));
   });
 
   app.get('/api/gpu-overview', (_req: Request, res: Response) => {

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from unittest.mock import MagicMock, patch
 
-from pmeow.models import LocalUserRecord, LocalUsersInventory, TaskStatus, TaskUpdate
+from pmeow.models import LocalUserRecord, LocalUsersInventory, TaskStatus
 from pmeow.transport.client import AgentTransportClient, _normalize_server_url
 
 
@@ -107,44 +107,18 @@ class TestSendRegister:
         )
 
 
-class TestSendTaskUpdate:
-    def test_task_update_serializes_correctly(self):
+class TestSendTaskChanged:
+    def test_task_changed_emits_signal(self):
         mock_sio = MagicMock()
         client = _make_client(mock_sio)
         _force_connected(client, mock_sio)
 
-        update = TaskUpdate(
-            task_id="t-123",
-            status=TaskStatus.running,
-            command="python train.py",
-            cwd="/srv/jobs/train",
-            user="alice",
-            require_vram_mb=8192,
-            require_gpu_count=2,
-            gpu_ids=[0, 1],
-            priority=7,
-            created_at=900.0,
-            started_at=1000.0,
-            pid=42,
-        )
-        client.send_task_update(update)
+        client.send_task_changed()
 
+        mock_sio.emit.assert_called_once()
         event, d = _emit_payload(mock_sio)
-        assert event == "agent:taskUpdate"
-        assert d["taskId"] == "t-123"
-        assert d["status"] == "running"
-        assert d["command"] == "python train.py"
-        assert d["cwd"] == "/srv/jobs/train"
-        assert d["user"] == "alice"
-        assert d["requireVramMB"] == 8192
-        assert d["requireGpuCount"] == 2
-        assert d["gpuIds"] == [0, 1]
-        assert d["priority"] == 7
-        assert d["createdAt"] == 900.0
-        assert d["startedAt"] == 1000.0
-        assert d["pid"] == 42
-        assert d["finishedAt"] is None
-        assert d["exitCode"] is None
+        assert event == "agent:taskChanged"
+        assert d == {}
 
 
 class TestSendLocalUsers:
@@ -230,14 +204,14 @@ class TestReconnect:
         assert event == "agent:register"
         assert data["hostname"] == "mybox"
 
-    def test_reconnect_registers_before_flushing_buffered_task_updates(self):
+    def test_reconnect_registers_before_flushing_buffered_task_changed(self):
         mock_sio = MagicMock()
         client = _make_client(mock_sio)
 
         client.send_register("mybox", "0.1.0")
-        client.send_task_update(TaskUpdate(task_id="task-1", status=TaskStatus.failed))
+        client.send_task_changed()
 
-        assert [event for event, _payload in client._buffer] == ["agent:taskUpdate"]
+        assert [event for event, _payload in client._buffer] == ["agent:taskChanged"]
 
         mock_sio.emit.reset_mock()
         client._on_connect()
@@ -245,7 +219,7 @@ class TestReconnect:
         emitted_events = [call.args[0] for call in mock_sio.emit.call_args_list]
         assert emitted_events == [
             "agent:register",
-            "agent:taskUpdate",
+            "agent:taskChanged",
         ]
 
 

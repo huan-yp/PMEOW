@@ -1,6 +1,6 @@
 import {
   getAllServers,
-  getAgentTasksByServerId,
+  getTaskQueueCache,
   getAlerts,
   type Scheduler,
 } from '@monitor/core';
@@ -21,10 +21,10 @@ export function setupMobileAdminRoutes(app: Express, options: SetupMobileAdminRo
     let totalRunning = 0;
     let totalQueued = 0;
     for (const server of servers) {
-      const tasks = getAgentTasksByServerId(server.id);
-      for (const t of tasks) {
-        if (t.status === 'running') totalRunning++;
-        else if (t.status === 'queued') totalQueued++;
+      const cached = getTaskQueueCache(server.id);
+      if (cached) {
+        totalRunning += cached.running.length;
+        totalQueued += cached.queued.length;
       }
     }
 
@@ -40,9 +40,11 @@ export function setupMobileAdminRoutes(app: Express, options: SetupMobileAdminRo
     const servers = getAllServers();
     const result: any[] = [];
     for (const server of servers) {
-      const tasks = getAgentTasksByServerId(server.id);
-      for (const t of tasks) {
-        result.push({ ...t, serverName: server.name });
+      const cached = getTaskQueueCache(server.id);
+      if (cached) {
+        for (const t of [...cached.queued, ...cached.running, ...cached.recent]) {
+          result.push({ ...t, serverName: server.name });
+        }
       }
     }
     result.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));

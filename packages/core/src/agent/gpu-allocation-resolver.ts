@@ -1,5 +1,5 @@
 import { getLatestMetrics } from '../db/metrics.js';
-import { getAgentTask } from '../db/agent-tasks.js';
+import { getTaskQueueCache } from './task-queue-cache.js';
 import { resolveTaskPerson, resolveRawUserPerson } from '../person/resolve.js';
 import type {
   ResolvedGpuAllocationResponse,
@@ -54,7 +54,9 @@ export function getResolvedGpuAllocation(serverId: string): ResolvedGpuAllocatio
 
     // Resolve PMEOW task allocations
     for (const taskAllocation of gpu.pmeowTasks) {
-      const task = getAgentTask(taskAllocation.taskId);
+      const cached = getTaskQueueCache(serverId);
+      const allTasks = cached ? [...cached.queued, ...cached.running, ...cached.recent] : [];
+      const task = allTasks.find(t => t.taskId === taskAllocation.taskId);
       const rawUser = task?.user;
       const resolved = resolveTaskPerson(serverId, taskAllocation.taskId, rawUser, timestamp);
 

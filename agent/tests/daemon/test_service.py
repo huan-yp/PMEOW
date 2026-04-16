@@ -67,22 +67,12 @@ def test_submit_enqueues_task(svc: DaemonService):
     assert "cwd=/tmp" in content
 
 
-def test_submit_sends_queued_task_update_with_metadata(svc: DaemonService):
+def test_submit_sends_task_changed_on_submit(svc: DaemonService):
     svc.transport = MagicMock()
 
     rec = svc.submit_task(_make_spec(require_vram_mb=4096, require_gpu_count=2, priority=3))
 
-    svc.transport.send_task_update.assert_called_once()
-    update = svc.transport.send_task_update.call_args.args[0]
-    assert update.task_id == rec.id
-    assert update.status == TaskStatus.queued
-    assert update.command == "echo hello"
-    assert update.cwd == "/tmp"
-    assert update.user == "tester"
-    assert update.require_vram_mb == 4096
-    assert update.require_gpu_count == 2
-    assert update.priority == 3
-    assert update.created_at == rec.created_at
+    svc.transport.send_task_changed.assert_called_once()
 
 
 def test_list_returns_tasks(svc: DaemonService):
@@ -451,11 +441,11 @@ def test_finish_attached_task_duplicate_exit_skips_fresh_completion_side_effects
 
     first_events = svc.get_task_events(record.id)
     assert [event["event_type"] for event in first_events].count("attached_finished") == 1
-    svc.transport.send_task_update.assert_called_once()
+    svc.transport.send_task_changed.assert_called_once()
 
     svc.transport.reset_mock()
     assert svc.finish_attached_task(record.id, exit_code=1) is False
-    svc.transport.send_task_update.assert_not_called()
+    svc.transport.send_task_changed.assert_not_called()
 
     finished = svc.get_task(record.id)
     assert finished is not None
@@ -506,7 +496,7 @@ def test_finish_attached_task_finalizes_non_running_attached_task(tmp_state, set
     assert fetched.exit_code == 0
 
     assert [event["event_type"] for event in svc.get_task_events(record.id)].count("attached_finished") == 1
-    svc.transport.send_task_update.assert_called_once()
+    svc.transport.send_task_changed.assert_called_once()
     close_database(svc.db)
 
 
@@ -686,7 +676,7 @@ def test_start_completes_restart_recovery_before_socket_server_becomes_available
 
 
 @pytest.mark.parametrize("trigger", ["recover", "monitor"])
-def test_start_sends_terminal_task_update_for_runtime_monitor_transitions(tmp_state, monkeypatch, trigger):
+def test_start_sends_task_changed_for_runtime_monitor_transitions(tmp_state, monkeypatch, trigger):
     from pmeow.store.tasks import attach_runtime
 
     started: list[str] = []
@@ -762,11 +752,7 @@ def test_start_sends_terminal_task_update_for_runtime_monitor_transitions(tmp_st
 
     service.start()
 
-    service.transport.send_task_update.assert_called_once()
-    update = service.transport.send_task_update.call_args.args[0]
-    assert update.task_id == task.id
-    assert update.status == TaskStatus.failed
-    assert update.finished_at is not None
+    service.transport.send_task_changed.assert_called_once()
 
 
 def test_finish_attached_task_uses_cli_finish_finalize_source(tmp_state):

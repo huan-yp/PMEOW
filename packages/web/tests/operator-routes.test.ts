@@ -5,7 +5,8 @@ import {
   createPersonBinding,
   getSettings,
   getGpuOverview,
-  getAgentTaskQueueGroups,
+  getAllCachedTaskQueueGroups,
+  getServerById,
   markSecurityEventSafe,
   saveMetrics,
   saveGpuUsageRows,
@@ -163,7 +164,7 @@ describe('operator routes', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(queueResponse.status).toBe(200);
-    expect(queueResponse.body).toEqual(getAgentTaskQueueGroups());
+    expect(queueResponse.body).toEqual(getAllCachedTaskQueueGroups((id) => getServerById(id)?.name ?? id));
 
     expect(overviewResponse.status).toBe(200);
     expect(overviewResponse.body).toEqual(getGpuOverview());

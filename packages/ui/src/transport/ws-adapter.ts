@@ -4,7 +4,7 @@ import type { TransportAdapter } from './types.js';
 import type {
   ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
   HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
-  AgentTaskQueueGroup, AgentTaskUpdatePayload, GpuOverviewResponse,
+  AgentTaskQueueGroup, GpuOverviewResponse,
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity, AutoAddUnassignedPersonsReport,
@@ -64,9 +64,9 @@ export class WebSocketAdapter implements TransportAdapter {
     return () => { this.socket?.off('notify'); };
   }
 
-  onTaskUpdate(cb: (update: AgentTaskUpdatePayload) => void): () => void {
-    this.socket?.on('taskUpdate', cb);
-    return () => { this.socket?.off('taskUpdate', cb); };
+  onTaskChanged(cb: () => void): () => void {
+    this.socket?.on('taskChanged', cb);
+    return () => { this.socket?.off('taskChanged', cb); };
   }
 
   onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void {

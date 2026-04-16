@@ -44,10 +44,10 @@ async function flushMicrotasks() {
 }
 
 function createMockTransport(): TransportAdapter & {
-  emitTaskUpdate: () => void;
+  emitTaskChanged: () => void;
   emitSecurityEvent: () => void;
 } {
-  let onTaskUpdateCb: (() => void) | undefined;
+  let onTaskChangedCb: (() => void) | undefined;
   let onSecurityEventCb: (() => void) | undefined;
 
   return {
@@ -59,10 +59,10 @@ function createMockTransport(): TransportAdapter & {
     onAlert: vi.fn((_cb: (alert: AlertEvent) => void) => () => undefined),
     onHookTriggered: vi.fn((_cb: (log: HookLog) => void) => () => undefined),
     onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
-    onTaskUpdate: vi.fn((cb) => {
-      onTaskUpdateCb = () => cb({ serverId: 'server-1', taskId: 'queued-1', status: 'running' });
+    onTaskChanged: vi.fn((cb) => {
+      onTaskChangedCb = () => cb();
       return () => {
-        onTaskUpdateCb = undefined;
+        onTaskChangedCb = undefined;
       };
     }),
     onSecurityEvent: vi.fn((cb) => {
@@ -157,8 +157,8 @@ function createMockTransport(): TransportAdapter & {
     getTask: vi.fn<(serverId: string, taskId: string) => Promise<unknown>>(async (_serverId, _taskId) => null),
     getResolvedGpuAllocation: vi.fn(async () => null),
     getPersonBindingCandidates: vi.fn(async () => []),
-    emitTaskUpdate: () => {
-      onTaskUpdateCb?.();
+    emitTaskChanged: () => {
+      onTaskChangedCb?.();
     },
     emitSecurityEvent: () => {
       onSecurityEventCb?.();
@@ -220,7 +220,7 @@ describe('useOperatorBootstrap', () => {
     vi.useFakeTimers();
 
     await act(async () => {
-      transport.emitTaskUpdate();
+      transport.emitTaskChanged();
 
       expect(transport.getTaskQueue).toHaveBeenCalledTimes(1);
       expect(transport.getSecurityEvents).toHaveBeenCalledTimes(1);
@@ -274,7 +274,7 @@ describe('useOperatorBootstrap', () => {
     expect(transport.getSecurityEvents).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      transport.emitTaskUpdate();
+      transport.emitTaskChanged();
       transport.emitSecurityEvent();
       await vi.advanceTimersByTimeAsync(200);
     });
@@ -396,7 +396,7 @@ describe('useOperatorBootstrap', () => {
     });
 
     await act(async () => {
-      transport.emitTaskUpdate();
+      transport.emitTaskChanged();
       await vi.advanceTimersByTimeAsync(200);
     });
 

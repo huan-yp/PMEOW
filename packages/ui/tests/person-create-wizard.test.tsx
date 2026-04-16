@@ -42,7 +42,7 @@ function createWizardTransport(overrides: Partial<TransportAdapter> = {}): Trans
     onAlert: vi.fn((_cb: (alert: AlertEvent) => void) => () => undefined),
     onHookTriggered: vi.fn((_cb: (log: HookLog) => void) => () => undefined),
     onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
-    onTaskUpdate: vi.fn(() => () => undefined),
+    onTaskChanged: vi.fn(() => () => undefined),
     onSecurityEvent: vi.fn(() => () => undefined),
     getServers: vi.fn<() => Promise<ServerConfig[]>>(async () => []),
     addServer: vi.fn<(input: ServerInput) => Promise<ServerConfig>>(async () => ({ id: 'server-0', name: 'seed', host: 'host', port: 22, username: 'root', privateKeyPath: '', sourceType: 'ssh', createdAt: 1, updatedAt: 1 } as ServerConfig)),

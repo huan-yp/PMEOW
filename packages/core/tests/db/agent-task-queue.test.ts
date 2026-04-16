@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createServer, getAgentTaskQueueGroups, upsertAgentTask } from '../../src/index.js';
+import { createServer } from '../../src/index.js';
+import { getAgentTaskQueueGroups, upsertAgentTask } from '../../src/db/agent-tasks.js';
 
 describe('agent task queue helpers', () => {
   it('groups only agent servers and sorts queued, running, and recent tasks', () => {

@@ -117,23 +117,6 @@ class TaskRecord:
     pid: Optional[int] = None
 
 
-@dataclass
-class TaskUpdate:
-    task_id: str
-    status: TaskStatus
-    command: Optional[str] = None
-    cwd: Optional[str] = None
-    user: Optional[str] = None
-    require_vram_mb: Optional[int] = None
-    require_gpu_count: Optional[int] = None
-    gpu_ids: Optional[list[int]] = None
-    priority: Optional[int] = None
-    created_at: Optional[float] = None
-    started_at: Optional[float] = None
-    finished_at: Optional[float] = None
-    exit_code: Optional[int] = None
-    pid: Optional[int] = None
-
 
 @dataclass
 class QueueState:

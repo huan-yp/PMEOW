@@ -1,4 +1,4 @@
-import { getAgentTasksByServerId } from '../db/agent-tasks.js';
+import { getTaskQueueCache } from '../agent/task-queue-cache.js';
 import {
   getGpuUsageByServerIdAndTimestamp,
   getLatestUnownedGpuDurationMinutes,
@@ -21,8 +21,8 @@ export function processSecuritySnapshot(
   }
 
   const gpuRows = getGpuUsageByServerIdAndTimestamp(serverId, snapshotToAnalyze.timestamp);
-  const tasks = getAgentTasksByServerId(serverId);
-  const hasRunningPmeowTasks = tasks.some((task) => task.status === 'running');
+  const cached = getTaskQueueCache(serverId);
+  const hasRunningPmeowTasks = cached ? cached.running.length > 0 : false;
   const maxGapMs = Math.max(settings.refreshIntervalMs * 2, 90_000);
   const unownedGpuMinutes = getLatestUnownedGpuDurationMinutes(serverId, now, maxGapMs);
 

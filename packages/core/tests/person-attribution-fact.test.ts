@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getDatabase } from '../src/db/database.js';
 import { createServer } from '../src/db/servers.js';
 import { createPerson, createPersonBinding, setTaskOwnerOverride } from '../src/db/persons.js';
-import { upsertAgentTask } from '../src/db/agent-tasks.js';
+import { setTaskQueueCache } from '../src/agent/task-queue-cache.js';
 import { writeAttributionFacts } from '../src/person/attribution.js';
 import {
   insertPersonAttributionFact,
@@ -42,7 +42,11 @@ describe('person attribution fact persistence', () => {
     const alice = createPerson({ displayName: 'Alice', customFields: {} });
     createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: Date.now() - 100_000 });
 
-    upsertAgentTask({ serverId: server.id, taskId: 'task-f1', status: 'running', user: 'alice', startedAt: Date.now() - 50_000 });
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-f1', serverId: server.id, status: 'running', user: 'alice', startedAt: Date.now() - 50_000 }],
+      recent: [],
+    });
 
     const snapshot = makeSnapshot(server.id, {
       gpuAllocation: {
@@ -163,7 +167,11 @@ describe('person attribution fact persistence', () => {
     const bob = createPerson({ displayName: 'Bob', customFields: {} });
 
     setTaskOwnerOverride({ taskId: 'task-override-1', serverId: server.id, personId: bob.id, source: 'manual', effectiveFrom: Date.now() - 100_000 });
-    upsertAgentTask({ serverId: server.id, taskId: 'task-override-1', status: 'running', user: 'train', startedAt: Date.now() - 50_000 });
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-override-1', serverId: server.id, status: 'running', user: 'train', startedAt: Date.now() - 50_000 }],
+      recent: [],
+    });
 
     const snapshot = makeSnapshot(server.id, {
       gpuAllocation: {
@@ -193,7 +201,11 @@ describe('person attribution fact persistence', () => {
     const alice = createPerson({ displayName: 'Alice', customFields: {} });
     const now = Date.now();
     createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 10 * 60 * 1000 });
-    upsertAgentTask({ serverId: server.id, taskId: 'task-only-1', status: 'running', user: 'alice', startedAt: now - 60_000 });
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [{ taskId: 'task-only-1', serverId: server.id, status: 'running', user: 'alice', startedAt: now - 60_000 }],
+      recent: [],
+    });
 
     const snapshot: MetricsSnapshot = {
       serverId: server.id,
@@ -288,10 +300,12 @@ describe('person attribution fact persistence', () => {
     const now = Date.now();
     createPersonBinding({ personId: alice.id, serverId: server.id, systemUser: 'alice', source: 'manual', effectiveFrom: now - 600_000 });
 
-    // Task went queued → running → finished.
-    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'queued', user: 'alice', createdAt: now - 300_000 });
-    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'running', user: 'alice', startedAt: now - 200_000 });
-    upsertAgentTask({ serverId: server.id, taskId: 'task-done', status: 'finished', user: 'alice', startedAt: now - 200_000, finishedAt: now - 100_000 });
+    // Task went queued → running → finished. Now set final cache state.
+    setTaskQueueCache(server.id, {
+      queued: [],
+      running: [],
+      recent: [{ taskId: 'task-done', serverId: server.id, status: 'finished', user: 'alice', createdAt: now - 300_000, startedAt: now - 200_000, finishedAt: now - 100_000 }],
+    });
 
     // Record task_update attribution facts for each status transition (via singular insert).
     const transitions: Array<{ status: string; ts: number }> = [

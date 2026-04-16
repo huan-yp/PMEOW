@@ -2,8 +2,8 @@ import {
   SERVER_COMMAND,
   Scheduler,
   createServer,
-  getAgentTask,
-  upsertAgentTask,
+  setTaskQueueCache,
+  getTaskQueueCache,
   type MirroredAgentTaskRecord,
 } from '@monitor/core';
 import request from 'supertest';
@@ -120,11 +120,12 @@ async function registerAgent(
 }
 
 function mirrorTask(task: MirroredAgentTaskRecord): MirroredAgentTaskRecord {
-  upsertAgentTask(task);
-
-  const mirroredTask = getAgentTask(task.taskId);
-  expect(mirroredTask).toBeDefined();
-  return mirroredTask as MirroredAgentTaskRecord;
+  const statusArrayKey = task.status === 'queued' ? 'queued' : task.status === 'running' ? 'running' : 'recent';
+  const existing = getTaskQueueCache(task.serverId) ?? { queued: [], running: [], recent: [] };
+  const updated = { ...existing };
+  updated[statusArrayKey] = [...updated[statusArrayKey], task];
+  setTaskQueueCache(task.serverId, updated);
+  return task;
 }
 
 afterEach(async () => {
@@ -181,7 +182,9 @@ describe('agent control routes', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
     await expect(cancelCommand).resolves.toEqual({ taskId: mirroredTask.taskId });
-    expect(getAgentTask(mirroredTask.taskId)).toEqual(mirroredTask);
+    const cachedCancel = getTaskQueueCache(server.id);
+    const foundCancel = [...(cachedCancel?.queued ?? []), ...(cachedCancel?.running ?? []), ...(cachedCancel?.recent ?? [])].find(t => t.taskId === mirroredTask.taskId);
+    expect(foundCancel).toEqual(mirroredTask);
   });
 
   it('pause and resume commands reach the Agent session', async () => {
@@ -261,7 +264,8 @@ describe('agent control routes', () => {
     const setPriorityCommand = new Promise<{ taskId: string; priority: number }>((resolve) => {
       client.once(SERVER_COMMAND.setPriority, (payload) => resolve(payload));
     });
-    const taskBeforeDispatch = getAgentTask(mirroredTask.taskId);
+    const cachedPriority = getTaskQueueCache(server.id);
+    const taskBeforeDispatch = [...(cachedPriority?.queued ?? []), ...(cachedPriority?.running ?? []), ...(cachedPriority?.recent ?? [])].find(t => t.taskId === mirroredTask.taskId);
 
     const response = await api
       .post(`/api/servers/${server.id}/tasks/${mirroredTask.taskId}/priority`)
@@ -274,7 +278,9 @@ describe('agent control routes', () => {
       taskId: mirroredTask.taskId,
       priority: 11,
     });
-    expect(getAgentTask(mirroredTask.taskId)).toEqual(taskBeforeDispatch);
+    const cachedAfterPriority = getTaskQueueCache(server.id);
+    const taskAfterDispatch = [...(cachedAfterPriority?.queued ?? []), ...(cachedAfterPriority?.running ?? []), ...(cachedAfterPriority?.recent ?? [])].find(t => t.taskId === mirroredTask.taskId);
+    expect(taskAfterDispatch).toEqual(taskBeforeDispatch);
   });
 
   it('task-events route returns acknowledged structured events from the Agent session', async () => {

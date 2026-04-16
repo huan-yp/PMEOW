@@ -199,6 +199,12 @@ export interface AgentTaskQueueGroup {
   recent: MirroredAgentTaskRecord[];
 }
 
+export interface AgentTaskQueueResponse {
+  queued: MirroredAgentTaskRecord[];
+  running: MirroredAgentTaskRecord[];
+  recent: MirroredAgentTaskRecord[];
+}
+
 export interface AgentTaskEventRecord {
   id: number;
   taskId: string;
@@ -307,8 +313,22 @@ export interface AgentLocalUsersPayload {
   users: AgentLocalUserRecord[];
 }
 
-export interface MirroredAgentTaskRecord extends AgentTaskUpdatePayload {
+export interface MirroredAgentTaskRecord {
   serverId: string;
+  taskId: string;
+  status: AgentTaskStatus;
+  command?: string;
+  cwd?: string;
+  user?: string;
+  requireVramMB?: number;
+  requireGpuCount?: number;
+  gpuIds?: number[] | null;
+  priority?: number;
+  createdAt?: number;
+  startedAt?: number | null;
+  finishedAt?: number | null;
+  exitCode?: number | null;
+  pid?: number | null;
 }
 
 export interface ProcessInfo {

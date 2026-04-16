@@ -70,10 +70,12 @@ export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRunt
   const agentNamespace = createAgentNamespace(io, scheduler, {
     getMetricsTimeoutMs: () => getSettings().agentMetricsTimeoutMs,
     ...options.agentNamespace,
-    onTaskUpdate: (taskUpdate) => {
-      options.agentNamespace?.onTaskUpdate?.(taskUpdate);
-      uiNamespace.emit('taskUpdate', taskUpdate);
-      handleTaskUpdateForNotifications(taskUpdate);
+    onTaskChanged: (serverId, changedTasks) => {
+      options.agentNamespace?.onTaskChanged?.(serverId, changedTasks);
+      uiNamespace.emit('taskChanged', { serverId });
+      for (const task of changedTasks) {
+        handleTaskUpdateForNotifications(task);
+      }
     },
     onServerChanged: () => {
       options.agentNamespace?.onServerChanged?.();
