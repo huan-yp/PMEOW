@@ -4,6 +4,19 @@ import { useTransport } from '../transport/TransportProvider.js';
 import type { PersonRecord, PersonTimelinePoint, MirroredAgentTaskRecord, PersonBindingRecord, PersonSummaryItem } from '@monitor/core';
 import { formatVramGB } from '../utils/vram.js';
 
+type NodeDistributionItem = {
+  serverId: string;
+  serverName: string;
+  avgVramMB: number;
+  maxVramMB: number;
+  sampleCount: number;
+};
+
+type PeakPeriodItem = {
+  bucketStart: number;
+  totalVramMB: number;
+};
+
 async function adminFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('auth_token');
   const headers: Record<string, string> = {
@@ -14,6 +27,10 @@ async function adminFetch<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await window.fetch(url, { ...options, headers });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
 }
 
 function formatTimeLabel(ts: number, periodHours: number): string {
@@ -139,8 +156,8 @@ export function PersonDetail() {
   const [bindings, setBindings] = useState<PersonBindingRecord[]>([]);
   const [summary, setSummary] = useState<PersonSummaryItem | null>(null);
   const [period, setPeriod] = useState<24 | 168 | 720>(168);
-  const [nodeDistribution, setNodeDistribution] = useState<Array<{ serverId: string; serverName: string; avgVramMB: number; maxVramMB: number; sampleCount: number }>>([]);
-  const [peakPeriods, setPeakPeriods] = useState<Array<{ bucketStart: number; totalVramMB: number }>>([]);
+  const [nodeDistribution, setNodeDistribution] = useState<NodeDistributionItem[]>([]);
+  const [peakPeriods, setPeakPeriods] = useState<PeakPeriodItem[]>([]);
   const [tokenStatus, setTokenStatus] = useState<{ hasToken: boolean; createdAt?: number; lastUsedAt?: number | null } | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
   const [tokenLoading, setTokenLoading] = useState(false);
@@ -156,13 +173,18 @@ export function PersonDetail() {
     void transport.getPersonSummary(period).then(all => setSummary(all.find(s => s.personId === id) ?? null)).catch(() => setSummary(null));
     void transport.getPersonTimeline(id, period).then(setTimeline).catch(() => setTimeline([]));
     void transport.getPersonTasks(id, period).then(setTasks).catch(() => setTasks([]));
-    void adminFetch<Array<{ serverId: string; serverName: string; avgVramMB: number; maxVramMB: number; sampleCount: number }>>(
+    void adminFetch<NodeDistributionItem[]>(
       `/api/persons/${encodeURIComponent(id)}/node-distribution?hours=${period}`,
-    ).then(setNodeDistribution).catch(() => setNodeDistribution([]));
-    void adminFetch<Array<{ bucketStart: number; totalVramMB: number }>>(
+    ).then(data => setNodeDistribution(asArray<NodeDistributionItem>(data))).catch(() => setNodeDistribution([]));
+    void adminFetch<PeakPeriodItem[]>(
       `/api/persons/${encodeURIComponent(id)}/peak-periods?hours=${period}`,
-    ).then(setPeakPeriods).catch(() => setPeakPeriods([]));
+    ).then(data => setPeakPeriods(asArray<PeakPeriodItem>(data))).catch(() => setPeakPeriods([]));
   }, [id, transport, period]);
+
+  const maxNodeDistributionVram = useMemo(
+    () => Math.max(...nodeDistribution.map((item) => item.maxVramMB), 1),
+    [nodeDistribution],
+  );
 
   const refreshTokenStatus = useCallback(() => {
     if (!id) return;
@@ -297,7 +319,6 @@ export function PersonDetail() {
           ) : (
             <div className="space-y-2">
               {nodeDistribution.map(n => {
-                const maxBar = Math.max(...nodeDistribution.map(d => d.maxVramMB), 1);
                 return (
                   <div key={n.serverId} className="text-sm">
                     <div className="flex items-center justify-between mb-1">
@@ -309,7 +330,7 @@ export function PersonDetail() {
                     <div className="h-1.5 rounded-full bg-dark-border overflow-hidden">
                       <div
                         className="h-full rounded-full bg-accent-blue"
-                        style={{ width: `${(n.maxVramMB / maxBar) * 100}%` }}
+                        style={{ width: `${(n.maxVramMB / maxNodeDistributionVram) * 100}%` }}
                       />
                     </div>
                   </div>

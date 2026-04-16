@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 
 import pytest
@@ -86,11 +87,12 @@ class TestTaskRunner:
     def test_cuda_visible_devices_set(self, tmp_path: object) -> None:
         log_dir = str(tmp_path)
         runner = TaskRunner()
-        task = _make_task(
-            "printenv CUDA_VISIBLE_DEVICES",
-            cwd=str(tmp_path),
-            task_id="cuda-test",
-        )
+        task = _make_task(sys.executable, cwd=str(tmp_path), task_id="cuda-test")
+        task.argv = [
+            sys.executable,
+            "-c",
+            "import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))",
+        ]
 
         proc = runner.start(task, gpu_ids=[2, 5], log_dir=log_dir)
         proc.wait(timeout=10)
