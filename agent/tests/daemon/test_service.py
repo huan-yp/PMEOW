@@ -67,6 +67,24 @@ def test_submit_enqueues_task(svc: DaemonService):
     assert "cwd=/tmp" in content
 
 
+def test_submit_sends_queued_task_update_with_metadata(svc: DaemonService):
+    svc.transport = MagicMock()
+
+    rec = svc.submit_task(_make_spec(require_vram_mb=4096, require_gpu_count=2, priority=3))
+
+    svc.transport.send_task_update.assert_called_once()
+    update = svc.transport.send_task_update.call_args.args[0]
+    assert update.task_id == rec.id
+    assert update.status == TaskStatus.queued
+    assert update.command == "echo hello"
+    assert update.cwd == "/tmp"
+    assert update.user == "tester"
+    assert update.require_vram_mb == 4096
+    assert update.require_gpu_count == 2
+    assert update.priority == 3
+    assert update.created_at == rec.created_at
+
+
 def test_list_returns_tasks(svc: DaemonService):
     svc.submit_task(_make_spec(command="a"))
     svc.submit_task(_make_spec(command="b"))

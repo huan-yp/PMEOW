@@ -28,13 +28,17 @@ def run_attached_python(
     """
     stdout_target = stdout_target or sys.stdout.buffer
     stderr_target = stderr_target or sys.stderr.buffer
+    child_env = dict(env)
+    # Attached python is piped through the parent for teeing; force unbuffered
+    # child output so the terminal still behaves like a foreground python run.
+    child_env.setdefault("PYTHONUNBUFFERED", "1")
     stdin_mode = subprocess.PIPE if stdin_source is not None else None
 
     with open(log_path, "ab") as log_fh:
         proc = subprocess.Popen(
             argv,
             cwd=cwd,
-            env=env,
+            env=child_env,
             stdin=stdin_mode,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

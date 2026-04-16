@@ -88,6 +88,34 @@ class DaemonService:
         self._last_local_users_signature: tuple[tuple[str, int, int, str, str, str], ...] | None = None
         self._last_queue_reason_signatures: dict[str, tuple] = {}
 
+    def _task_update_from_record(
+        self,
+        task: TaskRecord,
+        *,
+        status: TaskStatus | None = None,
+        gpu_ids: list[int] | None = None,
+        started_at: float | None = None,
+        finished_at: float | None = None,
+        exit_code: int | None = None,
+        pid: int | None = None,
+    ) -> TaskUpdate:
+        return TaskUpdate(
+            task_id=task.id,
+            status=status or task.status,
+            command=task.command,
+            cwd=task.cwd,
+            user=task.user,
+            require_vram_mb=task.require_vram_mb,
+            require_gpu_count=task.require_gpu_count,
+            gpu_ids=task.gpu_ids if gpu_ids is None else gpu_ids,
+            priority=task.priority,
+            created_at=task.created_at,
+            started_at=started_at if started_at is not None else task.started_at,
+            finished_at=finished_at if finished_at is not None else task.finished_at,
+            exit_code=exit_code if exit_code is not None else task.exit_code,
+            pid=pid if pid is not None else task.pid,
+        )
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -284,13 +312,16 @@ class DaemonService:
 
             # Reap completed tasks
             for task_id, exit_code in self.runner.check_completed():
+                task = get_task(self.db, task_id)
+                if task is None:
+                    continue
                 finished_at = time.time()
                 finish_task(self.db, task_id, exit_code, finished_at)
                 self._clear_queue_reason(task_id)
                 log.info("task %s finished (exit=%d)", task_id, exit_code)
                 if self.transport:
-                    self.transport.send_task_update(TaskUpdate(
-                        task_id=task_id,
+                    self.transport.send_task_update(self._task_update_from_record(
+                        task,
                         status=TaskStatus.completed if exit_code == 0 else TaskStatus.failed,
                         finished_at=finished_at,
                         exit_code=exit_code,
@@ -386,9 +417,10 @@ class DaemonService:
                         task.id, proc.pid, dec.gpu_ids,
                     )
                     if self.transport:
-                        self.transport.send_task_update(TaskUpdate(
-                            task_id=task.id,
+                        self.transport.send_task_update(self._task_update_from_record(
+                            task,
                             status=TaskStatus.running,
+                            gpu_ids=dec.gpu_ids,
                             started_at=started_at,
                             pid=proc.pid,
                         ))
@@ -429,6 +461,8 @@ class DaemonService:
                 rec.launch_mode.value,
                 rec.cwd,
             )
+            if self.transport:
+                self.transport.send_task_update(self._task_update_from_record(rec))
             return rec
 
     def cancel_task(self, task_id: str) -> bool:
@@ -518,7 +552,13 @@ class DaemonService:
             self._clear_queue_reason(task_id)
             self._record_task_message(task_id, "attached_started", f"attached process started pid={pid}")
             if self.transport:
-                self.transport.send_task_update(TaskUpdate(task_id=task_id, status=TaskStatus.running, started_at=time.time(), pid=pid))
+                started_at = time.time()
+                self.transport.send_task_update(self._task_update_from_record(
+                    task,
+                    status=TaskStatus.running,
+                    started_at=started_at,
+                    pid=pid,
+                ))
             return True
 
     def finish_attached_task(self, task_id: str, exit_code: int) -> bool:
@@ -531,9 +571,10 @@ class DaemonService:
             self._clear_queue_reason(task_id)
             self._record_task_message(task_id, "attached_finished", f"attached process finished exit_code={exit_code}")
             if self.transport:
-                self.transport.send_task_update(TaskUpdate(
-                    task_id=task_id,
+                self.transport.send_task_update(self._task_update_from_record(
+                    task,
                     status=TaskStatus.completed if exit_code == 0 else TaskStatus.failed,
-                    finished_at=finished_at, exit_code=exit_code,
+                    finished_at=finished_at,
+                    exit_code=exit_code,
                 ))
             return True
