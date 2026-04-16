@@ -13,6 +13,7 @@ import { HooksManage } from './pages/HooksManage.js';
 import { Settings } from './pages/Settings.js';
 import { Alerts } from './pages/Alerts.js';
 import { TaskQueue } from './pages/TaskQueue.js';
+import { TaskAuditDetail } from './pages/TaskAuditDetail.js';
 import { Security } from './pages/Security.js';
 import { Login } from './pages/Login.js';
 import { PeopleOverview } from './pages/PeopleOverview.js';
@@ -120,6 +121,7 @@ function AppContent() {
           <Route path="/hooks" element={<HooksManage />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/tasks" element={<TaskQueue />} />
+          <Route path="/tasks/:serverId/:taskId" element={<TaskAuditDetail />} />
           <Route path="/security" element={<Security />} />
           <Route path="/people" element={<PeopleOverview />} />
           <Route path="/people/new" element={<PeopleManage />} />
