@@ -113,6 +113,7 @@ def attribute_gpu_processes(
     per_gpu_memory: dict[int, float],
     redundancy_coefficient: float = 0.1,
     per_gpu_used_memory: Optional[dict[int, float]] = None,
+    task_process_pids: Optional[dict[int, str]] = None,
 ) -> GpuAllocationSummary:
     """Classify each GPU process and build an allocation summary."""
 
@@ -121,6 +122,15 @@ def attribute_gpu_processes(
     for task in running_tasks:
         if task.pid is not None:
             pid_to_task[task.pid] = task
+
+    # Supplement with child-process PID → TaskRecord mappings
+    if task_process_pids:
+        task_by_id = {task.id: task for task in running_tasks}
+        for pid, task_id in task_process_pids.items():
+            if pid not in pid_to_task:
+                task = task_by_id.get(task_id)
+                if task is not None:
+                    pid_to_task[pid] = task
 
     # Buckets per GPU
     task_allocs: dict[int, list[GpuTaskAllocation]] = defaultdict(list)

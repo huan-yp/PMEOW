@@ -6,7 +6,7 @@ import psutil
 
 from pmeow.models import ProcessInfo
 
-_ATTRS = ["pid", "username", "cpu_percent", "memory_percent", "memory_info", "cmdline", "name"]
+_ATTRS = ["pid", "ppid", "username", "cpu_percent", "memory_percent", "memory_info", "cmdline", "name"]
 
 
 def collect_processes() -> list[ProcessInfo]:
@@ -23,6 +23,7 @@ def collect_processes() -> list[ProcessInfo]:
 
             result.append(ProcessInfo(
                 pid=info["pid"],
+                ppid=info.get("ppid"),
                 user=info.get("username") or "",
                 cpu_percent=round(info.get("cpu_percent") or 0.0, 1),
                 mem_percent=round(info.get("memory_percent") or 0.0, 1),

@@ -188,6 +188,24 @@ class TestAttributionPmeowTask:
         assert alloc.declared_vram_mb == 8000
         assert alloc.actual_vram_mb == 6500.0
 
+    def test_child_process_attribution_via_task_process_pids(self):
+        """GPU process PID matches a child process, not the root task PID."""
+        task = _make_task("task-1", pid=1234, vram=8000)
+        # GPU process is a child (PID 5678), not the root (PID 1234)
+        proc = GpuProcessInfo(pid=5678, gpu_index=0, used_memory_mb=4000.0, process_name="")
+        summary = attribute_gpu_processes(
+            gpu_processes=[proc],
+            running_tasks=[task],
+            per_gpu_memory={0: 24000.0},
+            task_process_pids={5678: "task-1"},
+        )
+        assert len(summary.per_gpu) == 1
+        alloc = summary.per_gpu[0].pmeow_tasks[0]
+        assert isinstance(alloc, GpuTaskAllocation)
+        assert alloc.task_id == "task-1"
+        assert alloc.declared_vram_mb == 8000
+        assert alloc.actual_vram_mb == 4000.0
+
 
 # ---------------------------------------------------------------------------
 # Test: attribution – user process (/proc readable)

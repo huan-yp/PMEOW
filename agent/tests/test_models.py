@@ -111,7 +111,7 @@ def _make_snapshot(gpu_allocation=None):
             gpu_count=2,
         ),
         processes=[
-            ProcessInfo(pid=1234, user="alice", cpu_percent=30.0, mem_percent=10.0, rss=512000, command="python train.py")
+            ProcessInfo(pid=1234, ppid=1, user="alice", cpu_percent=30.0, mem_percent=10.0, rss=512000, command="python train.py")
         ],
         docker=[
             DockerContainer(id="abc123", name="web", image="nginx", status="Up 2h", state="running", ports="80/tcp", created_at="2026-01-01")
@@ -242,7 +242,7 @@ class TestMetricsSnapshot:
     def test_to_dict_process_keys(self):
         d = _make_snapshot().to_dict()
         proc = d["processes"][0]
-        assert set(proc.keys()) == {"pid", "user", "cpuPercent", "memPercent", "rss", "command"}
+        assert set(proc.keys()) == {"pid", "ppid", "user", "cpuPercent", "memPercent", "rss", "command"}
 
     def test_to_dict_docker_keys(self):
         d = _make_snapshot().to_dict()

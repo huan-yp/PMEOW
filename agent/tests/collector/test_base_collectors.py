@@ -180,3 +180,25 @@ def test_local_user_collector_filters_system_accounts_by_default():
 
     assert [user.username for user in users] == ["alice"]
     assert users[0].home == "/home/alice"
+
+
+def test_process_collector_includes_ppid():
+    """collect_processes() should populate the ppid field from psutil."""
+    fake_proc = MagicMock()
+    fake_proc.info = {
+        "pid": 42,
+        "ppid": 1,
+        "username": "alice",
+        "cpu_percent": 1.0,
+        "memory_percent": 0.5,
+        "memory_info": SimpleNamespace(rss=1024),
+        "cmdline": ["python", "train.py"],
+        "name": "python",
+    }
+
+    with patch("pmeow.collector.processes.psutil.process_iter", return_value=[fake_proc]):
+        procs = collect_processes()
+
+    assert len(procs) == 1
+    assert procs[0].pid == 42
+    assert procs[0].ppid == 1

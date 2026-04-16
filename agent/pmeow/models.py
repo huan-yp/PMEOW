@@ -358,6 +358,7 @@ class GpuSnapshot:
 @dataclass
 class ProcessInfo:
     pid: int
+    ppid: int | None
     user: str
     cpu_percent: float
     mem_percent: float
