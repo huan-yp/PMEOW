@@ -45,6 +45,7 @@ interface AgentConnectionState {
   lastHeartbeatAt: number;
   lastMetricsAt?: number;
   timedOut: boolean;
+  version?: string;
 }
 
 interface AgentSocketData {
@@ -363,9 +364,9 @@ export function createAgentNamespace(
     getAgentDataSource(scheduler, serverId)?.detachSession(session, reason);
   };
 
-  const attachServerSession = (serverId: string, session: AgentLiveSession): void => {
+  const attachServerSession = (serverId: string, session: AgentLiveSession, version?: string): void => {
     scheduler.refreshServerDataSource(serverId);
-    getAgentDataSource(scheduler, serverId)?.attachSession(session);
+    getAgentDataSource(scheduler, serverId)?.attachSession(session, version);
   };
 
   const clearSocketState = (socket: AgentSocket, state: AgentConnectionState): void => {
@@ -427,6 +428,7 @@ export function createAgentNamespace(
         serverId: resolution.status === 'bound' ? resolution.server.id : undefined,
         lastHeartbeatAt: now(),
         timedOut: false,
+        version: payload.version,
       };
 
       if (previous && previous.serverId && previous.serverId !== nextState.serverId) {
@@ -441,7 +443,7 @@ export function createAgentNamespace(
       });
 
       if (nextState.serverId) {
-        attachServerSession(nextState.serverId, session);
+        attachServerSession(nextState.serverId, session, payload.version);
         onServerChanged?.();
       }
 

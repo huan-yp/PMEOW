@@ -185,12 +185,15 @@ export class Scheduler extends EventEmitter {
     }
 
     const now = Date.now();
+    const ds = this.dataSources.get(serverId);
+    const agentVersion = ds instanceof AgentDataSource ? ds.agentVersion : prev?.agentVersion;
     const status: ServerStatus = {
       serverId,
       status: nextStatus,
       lastSeen: prev?.lastSeen ?? now,
       error: reason,
       latestMetrics: prev?.latestMetrics,
+      agentVersion,
     };
 
     this.serverStatuses.set(serverId, status);

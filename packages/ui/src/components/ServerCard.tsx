@@ -90,6 +90,7 @@ export function ServerCard({ server, status, metrics }: Props) {
       {metrics && (
         <p className="mb-3 truncate text-xs text-slate-500">
           {metrics.system.hostname} · {server.host}:{server.port} · {metrics.system.uptime}
+          {status?.agentVersion ? ` · v${status.agentVersion}` : ''}
           {isStale && status?.lastSeen ? ` · 最后上报 ${formatLastSeen(status.lastSeen)}` : ''}
         </p>
       )}

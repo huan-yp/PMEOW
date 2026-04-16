@@ -17,6 +17,7 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource, Age
   private connected = false;
   private latestSnapshot: MetricsSnapshot | null = null;
   private liveSession: AgentLiveSession | null = null;
+  private _agentVersion: string | undefined;
 
   constructor(serverId: string, agentId: string | null = null) {
     super();
@@ -57,9 +58,16 @@ export class AgentDataSource extends EventEmitter implements NodeDataSource, Age
     this.emit('metricsReceived', snapshot);
   }
 
-  attachSession(session: AgentLiveSession): void {
+  get agentVersion(): string | undefined {
+    return this._agentVersion;
+  }
+
+  attachSession(session: AgentLiveSession, version?: string): void {
     this.liveSession = session;
     this.connected = true;
+    if (version !== undefined) {
+      this._agentVersion = version;
+    }
     this.emit('sessionAttached');
   }
 

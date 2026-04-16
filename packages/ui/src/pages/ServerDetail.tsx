@@ -496,6 +496,7 @@ export function ServerDetail() {
               <span>{server.host}:{server.port}</span>
               {metrics?.system.hostname && <span>{metrics.system.hostname}</span>}
               {metrics?.system.uptime && <span>运行 {metrics.system.uptime}</span>}
+              {status?.agentVersion && <span>v{status.agentVersion}</span>}
               {status?.status && status.status !== 'connected' && status.lastSeen > 0 && (
                 <span className="text-slate-500">最后上报 {formatLastSeen(status.lastSeen)}</span>
               )}
@@ -641,6 +642,7 @@ export function ServerDetail() {
               <div><span className="text-slate-500">内核</span><p className="mt-0.5 text-slate-300">{metrics?.system.kernelVersion}</p></div>
               <div><span className="text-slate-500">运行时间</span><p className="mt-0.5 text-slate-300">{metrics?.system.uptime}</p></div>
               <div><span className="text-slate-500">负载</span><p className="mt-0.5 text-slate-300">{metrics?.system.loadAvg1} / {metrics?.system.loadAvg5} / {metrics?.system.loadAvg15}</p></div>
+              {status?.agentVersion && <div><span className="text-slate-500">Agent 版本</span><p className="mt-0.5 text-slate-300">v{status.agentVersion}</p></div>}
             </div>
           </div>
 

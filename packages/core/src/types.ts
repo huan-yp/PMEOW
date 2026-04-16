@@ -365,6 +365,7 @@ export interface ServerStatus {
   lastSeen: number;
   error?: string;
   latestMetrics?: MetricsSnapshot;
+  agentVersion?: string;
 }
 
 export interface ServerStatusEvent {
