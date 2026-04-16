@@ -158,7 +158,10 @@ describe('person pages', () => {
           updatedAt: 2,
         },
       ]),
-      getPersonSummary: vi.fn(async () => [{ personId: 'person-1', displayName: 'Alice', currentVramMB: 4096, runningTaskCount: 1, queuedTaskCount: 0, activeServerCount: 1, lastActivityAt: Date.now(), vramOccupancyHours: 2, vramGigabyteHours: 8, taskRuntimeHours: 1.5 }]),
+      getPersonSummary: vi.fn(async () => [
+        { personId: 'person-1', displayName: 'Alice', currentVramMB: 4096, runningTaskCount: 1, queuedTaskCount: 0, activeServerCount: 1, lastActivityAt: Date.now(), vramOccupancyHours: 2, vramGigabyteHours: 8, taskRuntimeHours: 1.5 },
+        { personId: 'person-2', displayName: 'Bob', currentVramMB: 0, runningTaskCount: 0, queuedTaskCount: 1, activeServerCount: 1, lastActivityAt: Date.now(), vramOccupancyHours: 0, vramGigabyteHours: 0, taskRuntimeHours: 0 },
+      ]),
     });
 
     render(
@@ -324,5 +327,135 @@ describe('person pages', () => {
     );
     expect(await screen.findByText('Alice')).toBeTruthy();
     expect(await screen.findByText('3.5 GB')).toBeTruthy();
+  });
+
+  describe('active filter', () => {
+    const activePerson: PersonRecord = { ...basePerson, id: 'active-1', displayName: 'Active Alice' };
+    const inactivePerson: PersonRecord = { ...basePerson, id: 'inactive-1', displayName: 'Inactive Bob', email: 'bob@example.com' };
+
+    const activeSummary: PersonSummaryItem = {
+      personId: 'active-1', displayName: 'Active Alice',
+      currentVramMB: 4096, runningTaskCount: 1, queuedTaskCount: 0,
+      activeServerCount: 1, lastActivityAt: Date.now(),
+      vramOccupancyHours: 2, vramGigabyteHours: 8, taskRuntimeHours: 1.5,
+    };
+
+    const inactiveSummary: PersonSummaryItem = {
+      personId: 'inactive-1', displayName: 'Inactive Bob',
+      currentVramMB: 0, runningTaskCount: 0, queuedTaskCount: 0,
+      activeServerCount: 0, lastActivityAt: 0,
+      vramOccupancyHours: 0, vramGigabyteHours: 0, taskRuntimeHours: 0,
+    };
+
+    function renderPeopleOverview(transport: TransportAdapter) {
+      return render(
+        <TransportProvider adapter={transport}>
+          <MemoryRouter initialEntries={['/people']}>
+            <Routes>
+              <Route path="/people" element={<PeopleOverview />} />
+            </Routes>
+          </MemoryRouter>
+        </TransportProvider>
+      );
+    }
+
+    it('defaults to showing only active people once summary data is available', async () => {
+      const transport = createMockTransport({
+        getPersons: vi.fn(async () => [activePerson, inactivePerson]),
+        getPersonSummary: vi.fn(async () => [activeSummary, inactiveSummary]),
+      });
+
+      renderPeopleOverview(transport);
+
+      expect(await screen.findByText('Active Alice')).toBeTruthy();
+      await waitFor(() => {
+        expect(screen.queryByText('Inactive Bob')).toBeNull();
+      });
+      expect(screen.getByRole('button', { name: '当前活跃' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: '全部' })).toBeTruthy();
+    });
+
+    it('switches to all to restore the complete directory list', async () => {
+      const transport = createMockTransport({
+        getPersons: vi.fn(async () => [activePerson, inactivePerson]),
+        getPersonSummary: vi.fn(async () => [activeSummary, inactiveSummary]),
+      });
+
+      renderPeopleOverview(transport);
+
+      expect(await screen.findByText('Active Alice')).toBeTruthy();
+      await waitFor(() => {
+        expect(screen.queryByText('Inactive Bob')).toBeNull();
+      });
+
+      await act(async () => {
+        screen.getByRole('button', { name: '全部' }).click();
+      });
+
+      expect(screen.getByText('Active Alice')).toBeTruthy();
+      expect(screen.getByText('Inactive Bob')).toBeTruthy();
+    });
+
+    it('includes a person with any single activity signal in currently active', async () => {
+      const vramOnlyPerson: PersonRecord = { ...basePerson, id: 'vram-only', displayName: 'VRAM Only' };
+      const queuedOnlyPerson: PersonRecord = { ...basePerson, id: 'queued-only', displayName: 'Queued Only' };
+      const serverOnlyPerson: PersonRecord = { ...basePerson, id: 'server-only', displayName: 'Server Only' };
+
+      const transport = createMockTransport({
+        getPersons: vi.fn(async () => [vramOnlyPerson, queuedOnlyPerson, serverOnlyPerson]),
+        getPersonSummary: vi.fn(async () => [
+          { ...inactiveSummary, personId: 'vram-only', displayName: 'VRAM Only', currentVramMB: 1024 },
+          { ...inactiveSummary, personId: 'queued-only', displayName: 'Queued Only', queuedTaskCount: 2 },
+          { ...inactiveSummary, personId: 'server-only', displayName: 'Server Only', activeServerCount: 1 },
+        ]),
+      });
+
+      renderPeopleOverview(transport);
+
+      expect(await screen.findByText('VRAM Only')).toBeTruthy();
+      expect(screen.getByText('Queued Only')).toBeTruthy();
+      expect(screen.getByText('Server Only')).toBeTruthy();
+    });
+
+    it('excludes a person with all four signals at zero from currently active', async () => {
+      const transport = createMockTransport({
+        getPersons: vi.fn(async () => [inactivePerson]),
+        getPersonSummary: vi.fn(async () => [inactiveSummary]),
+      });
+
+      renderPeopleOverview(transport);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Inactive Bob')).toBeNull();
+      });
+      expect(screen.getByText('当前没有活跃人员')).toBeTruthy();
+    });
+
+    it('shows filter-specific empty state when summary loading fails', async () => {
+      const transport = createMockTransport({
+        getPersons: vi.fn(async () => [inactivePerson]),
+        getPersonSummary: vi.fn(async () => { throw new Error('network error'); }),
+      });
+
+      renderPeopleOverview(transport);
+
+      // Summary fails → falls back to empty summary → all metrics are zero → no active people
+      await waitFor(() => {
+        expect(screen.getByText('当前没有活跃人员')).toBeTruthy();
+      });
+      expect(screen.getByRole('button', { name: '查看全部人员' })).toBeTruthy();
+    });
+
+    it('shows the no-people empty state when there are no person records at all', async () => {
+      const transport = createMockTransport({
+        getPersons: vi.fn(async () => []),
+        getPersonSummary: vi.fn(async () => []),
+      });
+
+      renderPeopleOverview(transport);
+
+      expect(await screen.findByText('还没有人员')).toBeTruthy();
+      expect(screen.queryByText('当前没有活跃人员')).toBeNull();
+    });
   });
 });

@@ -4,12 +4,18 @@ import { useTransport } from '../transport/TransportProvider.js';
 import type { PersonRecord, PersonSummaryItem } from '@monitor/core';
 import { formatVramGB } from '../utils/vram.js';
 
+type PeopleFilter = 'active' | 'all';
+
 type PersonDirectoryRow = Pick<PersonRecord, 'id' | 'displayName' | 'email' | 'qq' | 'note'> & {
   currentVramMB: number;
   runningTaskCount: number;
   queuedTaskCount: number;
   activeServerCount: number;
 };
+
+function isPersonActive(row: PersonDirectoryRow): boolean {
+  return row.currentVramMB > 0 || row.runningTaskCount > 0 || row.queuedTaskCount > 0 || row.activeServerCount > 0;
+}
 
 function mergePersonDirectory(persons: PersonRecord[], summary: PersonSummaryItem[]): PersonDirectoryRow[] {
   const summaryByPersonId = new Map(summary.map((row) => [row.personId, row]));
@@ -70,6 +76,7 @@ export function PeopleOverview() {
   const [persons, setPersons] = useState<PersonRecord[] | null>(null);
   const [summary, setSummary] = useState<PersonSummaryItem[] | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [filter, setFilter] = useState<PeopleFilter>('active');
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +133,13 @@ export function PeopleOverview() {
 
   const rows = persons ? mergePersonDirectory(persons, summary ?? []) : [];
 
+  // While summary is still loading we cannot evaluate activity, so show all rows.
+  const summaryReady = !summaryLoading && summary !== null;
+  const filteredRows = filter === 'active' && summaryReady ? rows.filter(isPersonActive) : rows;
+
+  const FILTER_LABELS: Record<PeopleFilter, string> = { active: '当前活跃', all: '全部' };
+  const filters: PeopleFilter[] = ['active', 'all'];
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -140,6 +154,23 @@ export function PeopleOverview() {
           添加人员
         </Link>
       </div>
+      {persons !== null && rows.length > 0 && (
+        <div className="flex gap-0 border-b border-dark-border">
+          {filters.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-4 py-2 text-sm font-medium transition-colors ${
+                filter === f
+                  ? 'border-b-2 border-accent-blue text-slate-100 -mb-px'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {FILTER_LABELS[f]}
+            </button>
+          ))}
+        </div>
+      )}
       {persons === null ? (
         <PeopleOverviewLoadingState />
       ) : rows.length === 0 ? (
@@ -153,9 +184,20 @@ export function PeopleOverview() {
             开始添加
           </Link>
         </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-dark-border bg-dark-card/50 p-8 text-center">
+          <p className="text-lg font-medium text-slate-100">当前没有活跃人员</p>
+          <p className="mt-2 text-sm text-slate-400">所有人员当前都没有运行中的任务、排队任务、活跃节点或显存占用。</p>
+          <button
+            onClick={() => setFilter('all')}
+            className="mt-5 inline-flex items-center justify-center rounded-lg border border-accent-blue/30 bg-accent-blue/10 px-4 py-2 text-sm font-medium text-accent-blue transition-colors hover:border-accent-blue/50 hover:bg-accent-blue/15"
+          >
+            查看全部人员
+          </button>
+        </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {rows.map((row) => (
+          {filteredRows.map((row) => (
             <Link key={row.id} to={`/people/${row.id}`} className="block rounded-2xl border border-dark-border bg-dark-card p-5 transition-colors hover:border-accent-blue/30">
               <p className="text-lg text-slate-100">{row.displayName}</p>
               <p className="mt-2 text-sm text-slate-500">{[row.email, row.qq].filter(Boolean).join(' · ') || row.note || '未填写联系信息'}</p>
