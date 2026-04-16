@@ -125,6 +125,59 @@ function TaskSummary({ data }: { data: AgentTaskAuditDetail }) {
   );
 }
 
+function formatReasonCode(code: string): string {
+  const labels: Record<string, string> = {
+    blocked_by_higher_priority: '被更高优先级任务占用 GPU',
+    insufficient_gpu_count: '当前可用 GPU 数量不足',
+    sustained_window_not_satisfied: '持续可用窗口不满足',
+  };
+  return labels[code] ?? code;
+}
+
+function ScheduleDecisionSummary({ details, eventType }: { details: Record<string, unknown>; eventType: string }) {
+  const reasonCode = typeof details.reason_code === 'string' ? details.reason_code : null;
+  const currentEligible = Array.isArray(details.current_eligible_gpu_ids) ? details.current_eligible_gpu_ids as number[] : [];
+  const sustainedEligible = Array.isArray(details.sustained_eligible_gpu_ids) ? details.sustained_eligible_gpu_ids as number[] : [];
+  const blockerTaskIds = Array.isArray(details.blocker_task_ids) ? details.blocker_task_ids as string[] : [];
+  const gpuIds = Array.isArray(details.gpu_ids) ? details.gpu_ids as number[] : [];
+
+  if (eventType === 'schedule_started') {
+    return (
+      <div className="mt-2 space-y-1 text-sm">
+        <p className="text-emerald-400">
+          调度成功，分配 GPU：{gpuIds.length > 0 ? gpuIds.join(', ') : '-'}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 space-y-1.5 text-sm">
+      {reasonCode ? (
+        <p className="font-medium text-amber-400">{formatReasonCode(reasonCode)}</p>
+      ) : null}
+      {currentEligible.length > 0 ? (
+        <p className="text-slate-400">当前满足条件 GPU：{currentEligible.join(', ')}</p>
+      ) : (
+        <p className="text-slate-500">当前无满足条件的 GPU</p>
+      )}
+      {sustainedEligible.length > 0 && reasonCode === 'sustained_window_not_satisfied' ? (
+        <p className="text-slate-400">持续可用 GPU：{sustainedEligible.join(', ')}</p>
+      ) : null}
+      {blockerTaskIds.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 text-slate-400">
+          <span>阻塞任务：</span>
+          {blockerTaskIds.map((id) => (
+            <span key={String(id)} className="rounded border border-dark-border px-1.5 py-0.5 font-mono text-xs text-slate-300">
+              {String(id)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function LifecycleTimeline({ events }: { events: AgentTaskEventRecord[] }) {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -142,6 +195,7 @@ function LifecycleTimeline({ events }: { events: AgentTaskEventRecord[] }) {
             const details = event.details as Record<string, unknown> | null;
             const gpuLedgers = details?.gpu_ledgers;
             const isExpanded = expandedId === event.id;
+            const isDecision = isDecisionEvent(event.eventType);
 
             return (
               <div key={event.id} className="border-l-2 border-dark-border pl-4 pb-4 last:pb-0">
@@ -160,9 +214,12 @@ function LifecycleTimeline({ events }: { events: AgentTaskEventRecord[] }) {
                     </button>
                   ) : null}
                 </div>
+                {isDecision && details ? (
+                  <ScheduleDecisionSummary details={details} eventType={event.eventType} />
+                ) : null}
                 {isExpanded ? (
                   <div>
-                    {isDecisionEvent(event.eventType) && gpuLedgers ? (
+                    {isDecision && gpuLedgers ? (
                       <GpuLedgerTable ledgers={gpuLedgers} />
                     ) : null}
                     <EventDetails details={details} />

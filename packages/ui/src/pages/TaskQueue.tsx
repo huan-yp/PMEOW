@@ -1,6 +1,6 @@
 import { Fragment, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { AgentTaskEventRecord, MirroredAgentTaskRecord } from '@monitor/core';
+import type { MirroredAgentTaskRecord } from '@monitor/core';
 import { useTransport } from '../transport/TransportProvider.js';
 import { useStore } from '../store/useStore.js';
 
@@ -35,39 +35,10 @@ function formatTaskStatus(status: MirroredAgentTaskRecord['status']) {
   }
 }
 
-type SchedulingReasonSummary = {
-  title: string;
-  blockerTaskIds: string[];
-  message: string | null;
-};
-
 function getDefaultTabKey(group: { queued: MirroredAgentTaskRecord[]; running: MirroredAgentTaskRecord[]; recent: MirroredAgentTaskRecord[] }): TabKey {
   if (group.queued.length > 0) return 'queued';
   if (group.running.length > 0) return 'running';
   return 'recent';
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
-}
-
-function summarizeSchedulingReason(events: AgentTaskEventRecord[]): SchedulingReasonSummary {
-  const latestBlockedEvent = [...events].reverse().find((event) => event.eventType === 'schedule_blocked' && event.details);
-  const details = latestBlockedEvent?.details as Record<string, unknown> | null | undefined;
-  const reasonCode = typeof details?.reason_code === 'string' ? details.reason_code : null;
-  const message = typeof details?.message === 'string' ? details.message : null;
-  const blockerTaskIds = asStringArray(details?.blocker_task_ids);
-
-  const title = reasonCode === 'blocked_by_higher_priority'
-    ? '被更高优先级任务占用'
-    : message ?? '暂无结构化调度原因';
-
-  return {
-    title,
-    blockerTaskIds,
-    message,
-  };
 }
 
 function TaskTable({
@@ -75,20 +46,12 @@ function TaskTable({
   busyTaskKeys,
   onCancel,
   onRaisePriority,
-  onLoadSchedulingReason,
-  canLoadSchedulingReason,
-  schedulingReasonByTaskKey,
-  loadingSchedulingReasonTaskKeys,
   pagination,
 }: {
   tasks: MirroredAgentTaskRecord[];
   busyTaskKeys: string[];
   onCancel: (task: MirroredAgentTaskRecord) => void;
   onRaisePriority: (task: MirroredAgentTaskRecord) => void;
-  onLoadSchedulingReason?: (task: MirroredAgentTaskRecord) => void;
-  canLoadSchedulingReason?: boolean;
-  schedulingReasonByTaskKey: Record<string, SchedulingReasonSummary | undefined>;
-  loadingSchedulingReasonTaskKeys: string[];
   pagination?: {
     page: number;
     pageSize: number;
@@ -126,11 +89,8 @@ function TaskTable({
             {visibleTasks.map((task) => {
               const taskKey = getTaskBusyKey(task);
               const taskBusy = busyTaskKeys.includes(taskKey);
-              const schedulingReasonLoading = loadingSchedulingReasonTaskKeys.includes(taskKey);
-              const schedulingReason = schedulingReasonByTaskKey[taskKey];
               const canCancel = task.status === 'queued' || task.status === 'running';
               const canRaisePriority = task.status === 'queued';
-              const canViewSchedulingReason = canLoadSchedulingReason && task.status === 'queued';
 
               return (
                 <Fragment key={task.taskId}>
@@ -148,17 +108,6 @@ function TaskTable({
                         >
                           审计详情
                         </Link>
-                        {canViewSchedulingReason ? (
-                          <button
-                            type="button"
-                            aria-label={`查看调度原因 ${task.taskId}`}
-                            onClick={() => onLoadSchedulingReason?.(task)}
-                            disabled={taskBusy || schedulingReasonLoading}
-                            className="rounded border border-dark-border px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
-                          >
-                            {schedulingReasonLoading ? '加载中...' : '查看调度原因'}
-                          </button>
-                        ) : null}
                         {canCancel ? (
                           <button
                             type="button"
@@ -184,27 +133,6 @@ function TaskTable({
                       </div>
                     </td>
                   </tr>
-                  {schedulingReason ? (
-                    <tr className="border-b border-dark-border/50 bg-dark-bg/30">
-                      <td colSpan={6} className="px-3 py-3 text-sm">
-                        <div className="space-y-1">
-                          <p className="font-medium text-slate-200">{schedulingReason.title}</p>
-                          {schedulingReason.blockerTaskIds.length > 0 ? (
-                            <div className="flex flex-wrap gap-2 text-xs text-slate-400">
-                              {schedulingReason.blockerTaskIds.map((blockerTaskId) => (
-                                <span key={blockerTaskId} className="rounded border border-dark-border px-2 py-1 font-mono text-slate-300">
-                                  {blockerTaskId}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
-                          {schedulingReason.message && schedulingReason.message !== schedulingReason.title ? (
-                            <p className="text-xs text-slate-500">{schedulingReason.message}</p>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
                 </Fragment>
               );
             })}
@@ -246,11 +174,8 @@ export function TaskQueue() {
   const [busyTaskKeys, setBusyTaskKeys] = useState<string[]>([]);
   const [activeTabByServerId, setActiveTabByServerId] = useState<Record<string, TabKey>>({});
   const [recentPagesByServerId, setRecentPagesByServerId] = useState<Record<string, number>>({});
-  const [loadingSchedulingReasonTaskKeys, setLoadingSchedulingReasonTaskKeys] = useState<string[]>([]);
-  const [schedulingReasonByTaskKey, setSchedulingReasonByTaskKey] = useState<Record<string, SchedulingReasonSummary | undefined>>({});
   const busyServerIdsRef = useRef(new Set<string>());
   const busyTaskKeysRef = useRef(new Set<string>());
-  const loadingSchedulingReasonTaskKeysRef = useRef(new Set<string>());
 
   const runServerAction = async (serverId: string, action: () => Promise<void>) => {
     if (busyServerIdsRef.current.has(serverId)) {
@@ -312,42 +237,6 @@ export function TaskQueue() {
   const handleRaisePriority = (task: MirroredAgentTaskRecord) => {
     const nextPriority = (task.priority ?? 0) + 1;
     void runTaskAction(task, () => transport.setTaskPriority(task.serverId, task.taskId, nextPriority));
-  };
-
-  const handleLoadSchedulingReason = (task: MirroredAgentTaskRecord) => {
-    if (typeof transport.getTaskEvents !== 'function') {
-      return;
-    }
-
-    const taskKey = getTaskBusyKey(task);
-    if (loadingSchedulingReasonTaskKeysRef.current.has(taskKey)) {
-      return;
-    }
-
-    loadingSchedulingReasonTaskKeysRef.current.add(taskKey);
-    setLoadingSchedulingReasonTaskKeys((current) => current.includes(taskKey) ? current : [...current, taskKey]);
-
-    void transport.getTaskEvents(task.serverId, task.taskId, 0)
-      .then((events) => {
-        setSchedulingReasonByTaskKey((current) => ({
-          ...current,
-          [taskKey]: summarizeSchedulingReason(events),
-        }));
-      })
-      .catch(() => {
-        setSchedulingReasonByTaskKey((current) => ({
-          ...current,
-          [taskKey]: {
-            title: '暂无结构化调度原因',
-            blockerTaskIds: [],
-            message: null,
-          },
-        }));
-      })
-      .finally(() => {
-        loadingSchedulingReasonTaskKeysRef.current.delete(taskKey);
-        setLoadingSchedulingReasonTaskKeys((current) => current.filter((value) => value !== taskKey));
-      });
   };
 
   return (
@@ -439,10 +328,6 @@ export function TaskQueue() {
                     busyTaskKeys={busyTaskKeys}
                     onCancel={handleCancelTask}
                     onRaisePriority={handleRaisePriority}
-                    onLoadSchedulingReason={handleLoadSchedulingReason}
-                    canLoadSchedulingReason={typeof transport.getTaskEvents === 'function'}
-                    schedulingReasonByTaskKey={schedulingReasonByTaskKey}
-                    loadingSchedulingReasonTaskKeys={loadingSchedulingReasonTaskKeys}
                     pagination={activeTab === 'recent' ? {
                       page: currentRecentPage,
                       pageSize: RECENT_TASKS_PAGE_SIZE,

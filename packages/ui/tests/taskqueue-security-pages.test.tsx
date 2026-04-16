@@ -318,24 +318,6 @@ describe('task queue and security pages', () => {
     expect(screen.queryByRole('button', { name: '查看日志' })).toBeNull();
   });
 
-  it('loads and displays the latest structured scheduling reason on demand', async () => {
-    const transport = createMockTransport();
-    const user = userEvent.setup();
-
-    renderApp(transport, '/tasks');
-
-    expect(await screen.findByText('task-queued-1')).toBeTruthy();
-
-    await user.click(screen.getByRole('button', { name: '查看调度原因 task-queued-1' }));
-
-    await waitFor(() => {
-      expect(transport.getTaskEvents).toHaveBeenCalledWith('server-1', 'task-queued-1', 0);
-    });
-
-    expect(await screen.findByText('被更高优先级任务占用')).toBeTruthy();
-    expect(screen.getByText('task-a')).toBeTruthy();
-  });
-
   it('paginates recent tasks per server without affecting other servers', async () => {
     const transport = createMockTransport();
     const user = userEvent.setup();
