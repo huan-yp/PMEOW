@@ -120,11 +120,14 @@ class AgentTransportClient:
     def send_register(self, hostname: str, version: str) -> None:
         self._register_hostname = hostname
         self._register_version = version
-        self._send_event("agent:register", {
+        payload = {
             "agentId": self._agent_id,
             "hostname": hostname,
             "version": version,
-        })
+        }
+        with self._lock:
+            if self._connected:
+                self._emit_or_buffer_locked("agent:register", payload, prepend_on_failure=True)
 
     def send_metrics(self, snapshot: MetricsSnapshot) -> None:
         self._send_event("agent:metrics", snapshot.to_dict())
@@ -174,12 +177,8 @@ class AgentTransportClient:
 
     def _send_event(self, event: str, data: Any) -> None:
         with self._lock:
-            if self._connected:
-                try:
-                    self._client.emit(event, data, namespace=_NAMESPACE)
-                    return
-                except Exception:
-                    log.warning("send failed, buffering message")
+            if self._connected and self._emit_locked(event, data):
+                return
             self._buffer.append((event, data))
 
     # ------------------------------------------------------------------
@@ -190,13 +189,17 @@ class AgentTransportClient:
         log.info("connected to %s", self._server_url)
         with self._lock:
             self._connected = True
-
-        # Flush buffered messages
-        self._flush_buffer()
-
-        # Re-register if we have previously registered
-        if self._register_hostname and self._register_version:
-            self.send_register(self._register_hostname, self._register_version)
+            if self._register_hostname and self._register_version:
+                self._emit_or_buffer_locked(
+                    "agent:register",
+                    {
+                        "agentId": self._agent_id,
+                        "hostname": self._register_hostname,
+                        "version": self._register_version,
+                    },
+                    prepend_on_failure=True,
+                )
+            self._flush_buffer_locked()
 
     def _on_disconnect(self) -> None:
         log.info("disconnected from %s", self._server_url)
@@ -212,13 +215,31 @@ class AgentTransportClient:
 
     def _flush_buffer(self) -> None:
         with self._lock:
-            while self._buffer and self._connected:
-                event, data = self._buffer.popleft()
-                try:
-                    self._client.emit(event, data, namespace=_NAMESPACE)
-                except Exception:
-                    self._buffer.appendleft((event, data))
-                    break
+            self._flush_buffer_locked()
+
+    def _emit_locked(self, event: str, data: Any) -> bool:
+        try:
+            self._client.emit(event, data, namespace=_NAMESPACE)
+            return True
+        except Exception:
+            log.warning("send failed, buffering message")
+            return False
+
+    def _emit_or_buffer_locked(self, event: str, data: Any, *, prepend_on_failure: bool = False) -> None:
+        if self._emit_locked(event, data):
+            return
+        if prepend_on_failure:
+            self._buffer.appendleft((event, data))
+            return
+        self._buffer.append((event, data))
+
+    def _flush_buffer_locked(self) -> None:
+        while self._buffer and self._connected:
+            event, data = self._buffer.popleft()
+            if self._emit_locked(event, data):
+                continue
+            self._buffer.appendleft((event, data))
+            break
 
     # ------------------------------------------------------------------
     # Internal: heartbeat thread

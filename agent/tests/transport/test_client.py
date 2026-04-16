@@ -230,6 +230,24 @@ class TestReconnect:
         assert event == "agent:register"
         assert data["hostname"] == "mybox"
 
+    def test_reconnect_registers_before_flushing_buffered_task_updates(self):
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+
+        client.send_register("mybox", "0.1.0")
+        client.send_task_update(TaskUpdate(task_id="task-1", status=TaskStatus.failed))
+
+        assert [event for event, _payload in client._buffer] == ["agent:taskUpdate"]
+
+        mock_sio.emit.reset_mock()
+        client._on_connect()
+
+        emitted_events = [call.args[0] for call in mock_sio.emit.call_args_list]
+        assert emitted_events == [
+            "agent:register",
+            "agent:taskUpdate",
+        ]
+
 
 class TestOfflineBuffering:
     def test_offline_buffering(self):
@@ -242,10 +260,11 @@ class TestOfflineBuffering:
             client.send_heartbeat()  # heartbeats skip when disconnected
             client.send_register(f"host-{i}", "1.0")
 
-        # heartbeats don't buffer (they return early when disconnected)
-        # registers do buffer, capped at 100
-        assert len(client._buffer) == 100
+        # heartbeats don't buffer and register state is remembered separately.
+        assert len(client._buffer) == 0
         assert mock_sio.emit.call_count == 0
+        assert client._register_hostname == "host-109"
+        assert client._register_version == "1.0"
 
     def test_buffer_flushed_on_reconnect(self):
         mock_sio = MagicMock()

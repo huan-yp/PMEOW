@@ -72,6 +72,13 @@ class TaskLaunchMode(enum.Enum):
     attached_python = "attached_python"
 
 
+class RuntimePhase(enum.Enum):
+    registered = "registered"
+    running = "running"
+    finalizing = "finalizing"
+    finalized = "finalized"
+
+
 @dataclass
 class TaskSpec:
     command: str
@@ -138,6 +145,39 @@ class QueueState:
     cancelled: int
 
 
+@dataclass
+class TaskRuntimeRecord:
+    task_id: str
+    launch_mode: TaskLaunchMode
+    root_pid: int
+    runtime_phase: RuntimePhase
+    first_started_at: float
+    last_seen_at: float
+    root_created_at: Optional[float] = None
+    finalize_source: Optional[str] = None
+    finalize_reason_code: Optional[str] = None
+    last_observed_exit_code: Optional[int] = None
+    updated_at: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
+
+@dataclass
+class TaskProcessRecord:
+    task_id: str
+    pid: int
+    ppid: Optional[int]
+    depth: int
+    user: str
+    command: str
+    is_root: bool
+    first_seen_at: float
+    last_seen_at: float
+    create_time: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
 # ---------------------------------------------------------------------------
 # GPU attribution models
 # ---------------------------------------------------------------------------

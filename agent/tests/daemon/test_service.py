@@ -422,6 +422,91 @@ def test_confirm_and_finish_attached_task(tmp_state):
     close_database(svc.db)
 
 
+def test_finish_attached_task_duplicate_exit_skips_fresh_completion_side_effects(tmp_state):
+    from pmeow.store.database import close_database
+    from pmeow.store.tasks import reserve_attached_launch
+
+    svc = DaemonService(tmp_state)
+    svc.transport = MagicMock()
+    record = svc.submit_task(_make_spec(
+        command="python demo.py",
+        argv=["/usr/bin/python3", "demo.py"],
+        launch_mode=TaskLaunchMode.attached_python,
+        require_vram_mb=0,
+        require_gpu_count=0,
+    ))
+    now = time.time()
+    reserve_attached_launch(svc.db, record.id, gpu_ids=[0], launch_deadline=now + 30, reserved_at=now)
+
+    assert svc.confirm_attached_launch(record.id, pid=5432) is True
+    svc.transport.reset_mock()
+
+    assert svc.finish_attached_task(record.id, exit_code=0) is True
+
+    first_events = svc.get_task_events(record.id)
+    assert [event["event_type"] for event in first_events].count("attached_finished") == 1
+    svc.transport.send_task_update.assert_called_once()
+
+    svc.transport.reset_mock()
+    assert svc.finish_attached_task(record.id, exit_code=1) is False
+    svc.transport.send_task_update.assert_not_called()
+
+    finished = svc.get_task(record.id)
+    assert finished is not None
+    assert finished.status == TaskStatus.completed
+    assert finished.exit_code == 0
+
+    second_events = svc.get_task_events(record.id)
+    assert [event["event_type"] for event in second_events].count("attached_finished") == 1
+    close_database(svc.db)
+
+
+@pytest.mark.parametrize(
+    ("setup", "expected_status"),
+    [
+        ("queued", TaskStatus.queued),
+        ("launching", TaskStatus.launching),
+    ],
+)
+def test_finish_attached_task_requires_running_state(tmp_state, setup, expected_status):
+    from pmeow.store.database import close_database
+    from pmeow.store.tasks import reserve_attached_launch
+
+    svc = DaemonService(tmp_state)
+    svc.transport = MagicMock()
+    record = svc.submit_task(_make_spec(
+        command="python demo.py",
+        argv=["/usr/bin/python3", "demo.py"],
+        launch_mode=TaskLaunchMode.attached_python,
+        require_vram_mb=0,
+        require_gpu_count=0,
+    ))
+
+    if setup == "launching":
+        now = time.time()
+        reserve_attached_launch(
+            svc.db,
+            record.id,
+            gpu_ids=[0],
+            launch_deadline=now + 30,
+            reserved_at=now,
+        )
+
+    svc.transport.reset_mock()
+
+    assert svc.finish_attached_task(record.id, exit_code=0) is False
+
+    fetched = svc.get_task(record.id)
+    assert fetched is not None
+    assert fetched.status == expected_status
+    assert fetched.finished_at is None
+    assert fetched.exit_code is None
+
+    assert [event["event_type"] for event in svc.get_task_events(record.id)].count("attached_finished") == 0
+    svc.transport.send_task_update.assert_not_called()
+    close_database(svc.db)
+
+
 def test_socket_roundtrip_for_attached_methods(tmp_state):
     from pmeow.store.tasks import reserve_attached_launch
     from pmeow.store.database import close_database
@@ -486,3 +571,196 @@ def test_socket_roundtrip_for_attached_methods(tmp_state):
     finally:
         srv.shutdown()
         close_database(svc.db)
+
+
+def test_start_wires_runtime_monitor_lifecycle_independently_of_collect_cycle(tmp_state, monkeypatch):
+    started: list[str] = []
+
+    class FakeSocketServer:
+        def __init__(self, _socket_path, _service):
+            pass
+
+        def serve_forever(self):
+            started.append("socket")
+
+        def shutdown(self):
+            started.append("socket_shutdown")
+
+    class FakeRuntimeMonitor:
+        def __init__(self, conn, poll_interval=1.0, db_lock=None, on_terminal_transition=None):
+            self.conn = conn
+            self.poll_interval = poll_interval
+            self.db_lock = db_lock
+            self.on_terminal_transition = on_terminal_transition
+
+        def recover_after_restart(self):
+            started.append("recover")
+            return []
+
+        def run_forever(self):
+            started.append("monitor_run")
+
+        def stop(self):
+            started.append("monitor_stop")
+
+    monkeypatch.setattr("pmeow.daemon.service.RuntimeMonitorLoop", FakeRuntimeMonitor)
+    monkeypatch.setattr("pmeow.daemon.socket_server.SocketServer", FakeSocketServer)
+    monkeypatch.setattr("pmeow.daemon.service.signal.signal", lambda *_args, **_kwargs: None)
+
+    svc = DaemonService(tmp_state)
+    monkeypatch.setattr(
+        svc,
+        "collect_cycle",
+        lambda: (started.append("collect"), svc.stop()),
+    )
+
+    svc.start()
+
+    assert started.index("recover") < started.index("monitor_run")
+    assert started.index("monitor_run") < started.index("collect")
+    assert started.index("collect") < started.index("monitor_stop")
+    assert "monitor_stop" in started
+    assert started[-1] == "socket_shutdown"
+
+
+def test_start_completes_restart_recovery_before_socket_server_becomes_available(tmp_state, monkeypatch):
+    started: list[str] = []
+
+    class FakeThread:
+        def __init__(self, *, target, daemon):
+            self._target = target
+            self.daemon = daemon
+
+        def start(self):
+            self._target()
+
+        def join(self, timeout=None):
+            started.append("joined")
+
+    class FakeSocketServer:
+        def __init__(self, _socket_path, _service):
+            pass
+
+        def serve_forever(self):
+            started.append("socket")
+
+        def shutdown(self):
+            started.append("socket_shutdown")
+
+    class FakeRuntimeMonitor:
+        def __init__(self, conn, poll_interval=1.0, db_lock=None, on_terminal_transition=None):
+            self.conn = conn
+            self.poll_interval = poll_interval
+            self.db_lock = db_lock
+            self.on_terminal_transition = on_terminal_transition
+
+        def recover_after_restart(self):
+            started.append("recover")
+            return []
+
+        def run_forever(self):
+            started.append("monitor_run")
+
+        def stop(self):
+            started.append("monitor_stop")
+
+    monkeypatch.setattr("pmeow.daemon.service.RuntimeMonitorLoop", FakeRuntimeMonitor)
+    monkeypatch.setattr("pmeow.daemon.socket_server.SocketServer", FakeSocketServer)
+    monkeypatch.setattr("pmeow.daemon.service.threading.Thread", FakeThread)
+    monkeypatch.setattr("pmeow.daemon.service.signal.signal", lambda *_args, **_kwargs: None)
+
+    svc = DaemonService(tmp_state)
+    monkeypatch.setattr(
+        svc,
+        "collect_cycle",
+        lambda: (started.append("collect"), svc.stop()),
+    )
+
+    svc.start()
+
+    assert started.index("recover") < started.index("socket")
+    assert started.index("socket") < started.index("monitor_run")
+
+
+@pytest.mark.parametrize("trigger", ["recover", "monitor"])
+def test_start_sends_terminal_task_update_for_runtime_monitor_transitions(tmp_state, monkeypatch, trigger):
+    from pmeow.store.tasks import attach_runtime
+
+    started: list[str] = []
+    terminal_task_id: str | None = None
+
+    class FakeThread:
+        def __init__(self, *, target, daemon):
+            self._target = target
+            self.daemon = daemon
+
+        def start(self):
+            self._target()
+
+        def join(self, timeout=None):
+            started.append("joined")
+
+    class FakeSocketServer:
+        def __init__(self, _socket_path, _service):
+            pass
+
+        def serve_forever(self):
+            started.append("socket")
+
+        def shutdown(self):
+            started.append("socket_shutdown")
+
+    class FakeRuntimeMonitor:
+        def __init__(self, conn, poll_interval=1.0, db_lock=None, on_terminal_transition=None):
+            self.conn = conn
+            self.poll_interval = poll_interval
+            self.db_lock = db_lock
+            self.on_terminal_transition = on_terminal_transition
+
+        def recover_after_restart(self):
+            started.append("recover")
+            if trigger == "recover":
+                self.conn.execute(
+                    "UPDATE tasks SET status = 'failed', finished_at = ?, exit_code = NULL WHERE id = ?",
+                    (time.time(), terminal_task_id),
+                )
+                self.conn.commit()
+                assert self.on_terminal_transition is not None
+                self.on_terminal_transition(terminal_task_id)
+            return []
+
+        def run_forever(self):
+            started.append("monitor_run")
+            if trigger == "monitor":
+                self.conn.execute(
+                    "UPDATE tasks SET status = 'failed', finished_at = ?, exit_code = NULL WHERE id = ?",
+                    (time.time(), terminal_task_id),
+                )
+                self.conn.commit()
+                assert self.on_terminal_transition is not None
+                self.on_terminal_transition(terminal_task_id)
+            service.stop()
+
+        def stop(self):
+            started.append("monitor_stop")
+
+    monkeypatch.setattr("pmeow.daemon.service.RuntimeMonitorLoop", FakeRuntimeMonitor)
+    monkeypatch.setattr("pmeow.daemon.socket_server.SocketServer", FakeSocketServer)
+    monkeypatch.setattr("pmeow.daemon.service.threading.Thread", FakeThread)
+    monkeypatch.setattr("pmeow.daemon.service.signal.signal", lambda *_args, **_kwargs: None)
+
+    service = DaemonService(tmp_state)
+    service.transport = MagicMock()
+    task = service.submit_task(_make_spec())
+    terminal_task_id = task.id
+    attach_runtime(service.db, task.id, pid=5252, gpu_ids=[0], started_at=time.time())
+    service.transport.reset_mock()
+    monkeypatch.setattr(service, "collect_cycle", lambda: service.stop())
+
+    service.start()
+
+    service.transport.send_task_update.assert_called_once()
+    update = service.transport.send_task_update.call_args.args[0]
+    assert update.task_id == task.id
+    assert update.status == TaskStatus.failed
+    assert update.finished_at is not None

@@ -15,6 +15,7 @@ from pmeow.collector.internet import InternetProbe, load_probe_from_env
 from pmeow.collector.local_users import collect_local_users
 from pmeow.collector.snapshot import collect_snapshot
 from pmeow.config import AgentConfig
+from pmeow.daemon.runtime_monitor import RuntimeMonitorLoop
 from pmeow.executor.logs import append_task_log_line, ensure_task_log, read_task_log
 from pmeow.executor.runner import TaskRunner
 from pmeow.models import (
@@ -71,6 +72,12 @@ class DaemonService:
 
         self.db = open_database(config.state_dir)
         self.runner = TaskRunner()
+        self.runtime_monitor = RuntimeMonitorLoop(
+            self.db,
+            poll_interval=1.0,
+            db_lock=self._lock,
+            on_terminal_transition=self._emit_runtime_monitor_terminal_update,
+        )
         self.history = GpuHistoryTracker(window_seconds=config.history_window_seconds)
         self.scheduler = QueueScheduler(self.history)
         # The probe carries its own cache state across collection cycles, so
@@ -116,6 +123,20 @@ class DaemonService:
             pid=pid if pid is not None else task.pid,
         )
 
+    def _emit_runtime_monitor_terminal_update(self, task_id: str) -> None:
+        if not self.transport:
+            return
+
+        with self._lock:
+            task = get_task(self.db, task_id)
+            if task is None or task.status not in {
+                TaskStatus.completed,
+                TaskStatus.failed,
+                TaskStatus.cancelled,
+            }:
+                return
+            self.transport.send_task_update(self._task_update_from_record(task))
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -128,8 +149,11 @@ class DaemonService:
         from pmeow.daemon.socket_server import SocketServer
 
         srv = SocketServer(self.config.socket_path, self)
+        self.runtime_monitor.recover_after_restart()
         srv_thread = threading.Thread(target=srv.serve_forever, daemon=True)
         srv_thread.start()
+        monitor_thread = threading.Thread(target=self.runtime_monitor.run_forever, daemon=True)
+        monitor_thread.start()
 
         if self.transport:
             self._register_transport_commands()
@@ -153,6 +177,8 @@ class DaemonService:
                     log.exception("collection cycle error")
                 self._shutdown.wait(timeout=self.config.collection_interval)
         finally:
+            self.runtime_monitor.stop()
+            monitor_thread.join(timeout=5)
             if self.transport:
                 self.transport.disconnect()
             srv.shutdown()
@@ -316,7 +342,9 @@ class DaemonService:
                 if task is None:
                     continue
                 finished_at = time.time()
-                finish_task(self.db, task_id, exit_code, finished_at)
+                outcome = finish_task(self.db, task_id, exit_code, finished_at)
+                if not outcome.transitioned:
+                    continue
                 self._clear_queue_reason(task_id)
                 log.info("task %s finished (exit=%d)", task_id, exit_code)
                 if self.transport:
@@ -564,10 +592,16 @@ class DaemonService:
     def finish_attached_task(self, task_id: str, exit_code: int) -> bool:
         with self._lock:
             task = get_task(self.db, task_id)
-            if task is None or task.launch_mode != TaskLaunchMode.attached_python:
+            if (
+                task is None
+                or task.launch_mode != TaskLaunchMode.attached_python
+                or task.status != TaskStatus.running
+            ):
                 return False
             finished_at = time.time()
-            finish_task(self.db, task_id, exit_code, finished_at)
+            outcome = finish_task(self.db, task_id, exit_code, finished_at)
+            if not outcome.transitioned:
+                return False
             self._clear_queue_reason(task_id)
             self._record_task_message(task_id, "attached_finished", f"attached process finished exit_code={exit_code}")
             if self.transport:

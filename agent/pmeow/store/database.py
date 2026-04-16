@@ -44,6 +44,37 @@ CREATE TABLE IF NOT EXISTS resource_reservations (
     vram_mb INTEGER NOT NULL,
     created_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS task_runtime (
+    task_id TEXT PRIMARY KEY REFERENCES tasks(id),
+    launch_mode TEXT NOT NULL,
+    root_pid INTEGER NOT NULL,
+    root_created_at REAL,
+    runtime_phase TEXT NOT NULL,
+    first_started_at REAL NOT NULL,
+    last_seen_at REAL NOT NULL,
+    finalize_source TEXT,
+    finalize_reason_code TEXT,
+    last_observed_exit_code INTEGER,
+    updated_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_processes (
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    pid INTEGER NOT NULL,
+    create_time REAL,
+    ppid INTEGER,
+    depth INTEGER NOT NULL,
+    user TEXT NOT NULL,
+    command TEXT NOT NULL,
+    is_root INTEGER NOT NULL DEFAULT 0,
+    first_seen_at REAL NOT NULL,
+    last_seen_at REAL NOT NULL,
+    PRIMARY KEY (task_id, pid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_runtime_phase ON task_runtime(runtime_phase);
+CREATE INDEX IF NOT EXISTS idx_task_processes_pid ON task_processes(pid);
 """
 
 
@@ -64,6 +95,7 @@ def open_database(directory: str | Path) -> sqlite3.Connection:
     conn.commit()
 
     _ensure_task_columns(conn)
+    _ensure_runtime_tracking_columns(conn)
     recover_interrupted_tasks(conn)
     return conn
 
@@ -93,12 +125,41 @@ def _ensure_task_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN launch_deadline REAL")
     conn.commit()
 
+def _ensure_runtime_tracking_columns(conn: sqlite3.Connection) -> None:
+    runtime_cols = conn.execute("PRAGMA table_info(task_runtime)").fetchall()
+    runtime_names = {row[1] for row in runtime_cols}
+    if "root_created_at" not in runtime_names:
+        conn.execute("ALTER TABLE task_runtime ADD COLUMN root_created_at REAL")
 
+    process_cols = conn.execute("PRAGMA table_info(task_processes)").fetchall()
+    process_names = {row[1] for row in process_cols}
+    if "create_time" not in process_names:
+        conn.execute("ALTER TABLE task_processes ADD COLUMN create_time REAL")
+    conn.commit()
+
+
+def _clear_task_runtime_tracking(
+    conn: sqlite3.Connection,
+    task_ids: list[str],
+) -> None:
+    if not task_ids:
+        return
+
+    placeholders = ", ".join("?" for _ in task_ids)
+    conn.execute(
+        f"DELETE FROM task_processes WHERE task_id IN ({placeholders})",
+        tuple(task_ids),
+    )
+    conn.execute(
+        f"DELETE FROM task_runtime WHERE task_id IN ({placeholders})",
+        tuple(task_ids),
+    )
 def recover_interrupted_tasks(conn: sqlite3.Connection) -> None:
-    """Mark any tasks left in 'running' status as 'failed' and clean up.
+    """Requeue any tasks left in 'launching' status after restart.
 
-    Called automatically by :func:`open_database` on startup so that tasks
-    that were executing when the daemon last exited are correctly resolved.
+    Running-task reconciliation is handled by the runtime monitor during
+    daemon startup, because it can inspect current process state instead of
+    blindly forcing terminal status.
     """
     now = time.time()
 
@@ -125,26 +186,9 @@ def recover_interrupted_tasks(conn: sqlite3.Connection) -> None:
             (task_id, now),
         )
 
-    # Handle running tasks: mark as failed
-    cursor = conn.execute("SELECT id FROM tasks WHERE status = 'running'")
-    running_ids = [row[0] for row in cursor.fetchall()]
-
-    if not running_ids and not launching_ids:
+    if not launching_ids:
         return
 
-    for task_id in running_ids:
-        conn.execute(
-            "UPDATE tasks SET status = 'failed', finished_at = ? WHERE id = ?",
-            (now, task_id),
-        )
-        conn.execute(
-            "INSERT INTO task_events (task_id, event_type, timestamp, details) "
-            "VALUES (?, 'daemon_restart', ?, NULL)",
-            (task_id, now),
-        )
-        conn.execute(
-            "DELETE FROM resource_reservations WHERE task_id = ?",
-            (task_id,),
-        )
+    _clear_task_runtime_tracking(conn, launching_ids)
 
     conn.commit()

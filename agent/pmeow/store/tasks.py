@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import sqlite3
 import time
@@ -9,6 +10,17 @@ import uuid
 from typing import Optional
 
 from pmeow.models import TaskLaunchMode, TaskRecord, TaskSpec, TaskStatus
+from pmeow.store.task_runtime import (
+    clear_task_runtime_tracking,
+    register_task_root_process,
+)
+
+
+_TERMINAL_STATUSES = {
+    TaskStatus.completed,
+    TaskStatus.failed,
+    TaskStatus.cancelled,
+}
 
 
 def _deserialize_env_json(env_json: str | None) -> dict[str, str] | None:
@@ -75,6 +87,29 @@ _SELECT_COLS = (
     "gpu_ids, priority, status, created_at, started_at, finished_at, "
     "exit_code, pid, argv_json, env_json, launch_mode, report_requested, launch_deadline"
 )
+
+
+@dataclass(frozen=True)
+class GuardedFinalizeResult:
+    transitioned: bool
+    status: TaskStatus | None
+    finished_at: float | None
+    exit_code: int | None
+
+
+def _insert_task_event_row(
+    conn: sqlite3.Connection,
+    task_id: str,
+    event_type: str,
+    timestamp: float,
+    details: dict | None = None,
+) -> None:
+    serialized_details = None if details is None else json.dumps(details, sort_keys=True)
+    conn.execute(
+        "INSERT INTO task_events (task_id, event_type, timestamp, details) "
+        "VALUES (?, ?, ?, ?)",
+        (task_id, event_type, timestamp, serialized_details),
+    )
 
 
 def create_task(conn: sqlite3.Connection, spec: TaskSpec) -> TaskRecord:
@@ -176,11 +211,13 @@ def attach_runtime(
 ) -> None:
     """Transition a task to running and create resource reservations."""
     gpu_ids_json = json.dumps(gpu_ids)
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE tasks SET status = 'running', pid = ?, gpu_ids = ?, started_at = ? "
-        "WHERE id = ?",
+        "WHERE id = ? AND status = 'queued'",
         (pid, gpu_ids_json, started_at, task_id),
     )
+    if cursor.rowcount == 0:
+        return
 
     task = get_task(conn, task_id)
     vram_per_gpu = task.require_vram_mb if task else 0
@@ -191,32 +228,117 @@ def attach_runtime(
             (task_id, gpu_index, vram_per_gpu, started_at),
         )
 
+    if task is not None:
+        register_task_root_process(
+            conn,
+            task_id,
+            launch_mode=task.launch_mode,
+            pid=pid,
+            started_at=started_at,
+            user=task.user,
+            command=task.command,
+            commit=False,
+        )
+
     conn.commit()
 
 
 def finish_task(
     conn: sqlite3.Connection, task_id: str, exit_code: int, finished_at: float
-) -> None:
+) -> GuardedFinalizeResult:
     """Complete a task — status is 'completed' if exit_code == 0, else 'failed'."""
-    status = "completed" if exit_code == 0 else "failed"
-    conn.execute(
-        "UPDATE tasks SET status = ?, exit_code = ?, finished_at = ? WHERE id = ?",
-        (status, exit_code, finished_at, task_id),
+    status = TaskStatus.completed if exit_code == 0 else TaskStatus.failed
+    return guarded_finalize_task(
+        conn,
+        task_id,
+        status=status,
+        finished_at=finished_at,
+        exit_code=exit_code,
+        finalize_source="legacy_finish",
     )
-    conn.execute(
-        "DELETE FROM resource_reservations WHERE task_id = ?", (task_id,)
+
+
+def guarded_finalize_task(
+    conn: sqlite3.Connection,
+    task_id: str,
+    *,
+    status: TaskStatus,
+    finished_at: float,
+    exit_code: int | None,
+    finalize_source: str,
+    finalize_reason_code: str | None = None,
+) -> GuardedFinalizeResult:
+    if status not in _TERMINAL_STATUSES:
+        raise ValueError("guarded_finalize_task requires a terminal status")
+
+    terminal_values = tuple(task_status.value for task_status in _TERMINAL_STATUSES)
+    placeholders = ", ".join("?" for _ in terminal_values)
+    cursor = conn.execute(
+        f"UPDATE tasks SET status = ?, exit_code = ?, finished_at = ? WHERE id = ? "
+        f"AND status NOT IN ({placeholders})",
+        (status.value, exit_code, finished_at, task_id, *terminal_values),
+    )
+    if cursor.rowcount == 0:
+        task = get_task(conn, task_id)
+        if task is None:
+            return GuardedFinalizeResult(False, None, None, None)
+
+        _insert_task_event_row(
+            conn,
+            task_id,
+            "runtime_finalize_ignored_late_source",
+            finished_at,
+            {
+                "finalize_source": finalize_source,
+                "finalize_reason_code": finalize_reason_code,
+                "late_exit_code": exit_code,
+            },
+        )
+        conn.commit()
+        return GuardedFinalizeResult(False, task.status, task.finished_at, task.exit_code)
+
+    conn.execute("DELETE FROM resource_reservations WHERE task_id = ?", (task_id,))
+    clear_task_runtime_tracking(conn, task_id, commit=False)
+    _insert_task_event_row(
+        conn,
+        task_id,
+        "runtime_finalized",
+        finished_at,
+        {
+            "status": status.value,
+            "finalize_source": finalize_source,
+            "finalize_reason_code": finalize_reason_code,
+            "exit_code": exit_code,
+        },
     )
     conn.commit()
+    return GuardedFinalizeResult(True, status, finished_at, exit_code)
 
 
 def cancel_task(conn: sqlite3.Connection, task_id: str) -> None:
     """Cancel a task and remove any resource reservations."""
+    task = get_task(conn, task_id)
+    if task is None or task.status in _TERMINAL_STATUSES:
+        return
+
+    if task.status is TaskStatus.running:
+        guarded_finalize_task(
+            conn,
+            task_id,
+            status=TaskStatus.cancelled,
+            finished_at=time.time(),
+            exit_code=None,
+            finalize_source="cancel_request",
+        )
+        return
+
     conn.execute(
         "UPDATE tasks SET status = 'cancelled' WHERE id = ?", (task_id,)
     )
     conn.execute(
         "DELETE FROM resource_reservations WHERE task_id = ?", (task_id,)
     )
+    clear_task_runtime_tracking(conn, task_id, commit=False)
     conn.commit()
 
 
@@ -229,11 +351,14 @@ def reserve_attached_launch(
 ) -> None:
     """Reserve GPUs for an attached launch — sets status to 'launching'."""
     gpu_ids_json = json.dumps(gpu_ids)
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE tasks SET status = 'launching', gpu_ids = ?, launch_deadline = ? "
-        "WHERE id = ?",
+        "WHERE id = ? AND status = 'queued'",
         (gpu_ids_json, launch_deadline, task_id),
     )
+    if cursor.rowcount == 0:
+        return
+
     task = get_task(conn, task_id)
     vram_per_gpu = task.require_vram_mb if task else 0
     for gpu_index in gpu_ids:
@@ -252,11 +377,27 @@ def confirm_attached_launch(
     started_at: float,
 ) -> None:
     """Confirm an attached launch — sets status to 'running', clears deadline."""
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE tasks SET status = 'running', pid = ?, started_at = ?, "
-        "launch_deadline = NULL WHERE id = ?",
+        "launch_deadline = NULL WHERE id = ? AND status = 'launching'",
         (pid, started_at, task_id),
     )
+    if cursor.rowcount == 0:
+        return
+
+    task = get_task(conn, task_id)
+    if task is not None:
+        register_task_root_process(
+            conn,
+            task_id,
+            launch_mode=task.launch_mode,
+            pid=pid,
+            started_at=started_at,
+            user=task.user,
+            command=task.command,
+            commit=False,
+        )
+
     conn.commit()
 
 
