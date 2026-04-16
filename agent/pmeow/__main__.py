@@ -23,6 +23,10 @@ def _normalize_submit_command(command_args: list[str]) -> tuple[str, list[str] |
     if not command_args:
         return "", None
 
+    if command_args[0].endswith(".py"):
+        argv = [sys.executable, *command_args]
+        return shlex.join(argv), argv
+
     if _is_generic_python_command(command_args[0]) and len(command_args) >= 2:
         second = command_args[1]
         if second.endswith(".py") or second in {"-m", "-c"}:
