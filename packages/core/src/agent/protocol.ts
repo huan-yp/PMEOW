@@ -3,6 +3,7 @@ import type {
   AgentLocalUserRecord,
   AgentLocalUsersPayload,
   AgentRegisterPayload,
+  AgentTaskAuditDetail,
   AgentTaskEventRecord,
   AgentTaskStatus,
   AgentTaskUpdatePayload,
@@ -38,6 +39,7 @@ export const SERVER_COMMAND = {
   resumeQueue: 'server:resumeQueue',
   setPriority: 'server:setPriority',
   getTaskEvents: 'server:getTaskEvents',
+  getTaskAuditDetail: 'server:getTaskAuditDetail',
 } as const;
 
 export const AGENT_TASK_STATUSES = [
@@ -66,6 +68,10 @@ export interface ServerSetPriorityPayload {
 export interface ServerGetTaskEventsPayload {
   taskId: string;
   afterId?: number;
+}
+
+export interface ServerGetTaskAuditDetailPayload {
+  taskId: string;
 }
 
 export interface AgentRegisterEnvelope {
@@ -125,14 +131,21 @@ export interface ServerGetTaskEventsEnvelope {
   data: ServerGetTaskEventsPayload;
 }
 
+export interface ServerGetTaskAuditDetailEnvelope {
+  event: typeof SERVER_COMMAND.getTaskAuditDetail;
+  data: ServerGetTaskAuditDetailPayload;
+}
+
 export type ServerCommandEnvelope =
   | ServerCancelTaskEnvelope
   | ServerPauseQueueEnvelope
   | ServerResumeQueueEnvelope
   | ServerSetPriorityEnvelope
-  | ServerGetTaskEventsEnvelope;
+  | ServerGetTaskEventsEnvelope
+  | ServerGetTaskAuditDetailEnvelope;
 
 export type AgentTaskEventsResponse = AgentTaskEventRecord[];
+export type AgentTaskAuditDetailResponse = AgentTaskAuditDetail | null;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -389,6 +402,11 @@ export function isServerGetTaskEventsPayload(value: unknown): value is ServerGet
     && (value.afterId === undefined || isInteger(value.afterId));
 }
 
+export function isServerGetTaskAuditDetailPayload(value: unknown): value is ServerGetTaskAuditDetailPayload {
+  return isRecord(value)
+    && isString(value.taskId);
+}
+
 export function isAgentRegisterEnvelope(value: unknown): value is AgentRegisterEnvelope {
   return hasEnvelopeShape(value)
     && value.event === AGENT_EVENT.register
@@ -457,10 +475,17 @@ export function isServerGetTaskEventsEnvelope(value: unknown): value is ServerGe
     && isServerGetTaskEventsPayload(value.data);
 }
 
+export function isServerGetTaskAuditDetailEnvelope(value: unknown): value is ServerGetTaskAuditDetailEnvelope {
+  return hasEnvelopeShape(value)
+    && value.event === SERVER_COMMAND.getTaskAuditDetail
+    && isServerGetTaskAuditDetailPayload(value.data);
+}
+
 export function isServerCommandEnvelope(value: unknown): value is ServerCommandEnvelope {
   return isServerCancelTaskEnvelope(value)
     || isServerPauseQueueEnvelope(value)
     || isServerResumeQueueEnvelope(value)
     || isServerSetPriorityEnvelope(value)
-    || isServerGetTaskEventsEnvelope(value);
+    || isServerGetTaskEventsEnvelope(value)
+    || isServerGetTaskAuditDetailEnvelope(value);
 }

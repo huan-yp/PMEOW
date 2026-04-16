@@ -8,7 +8,7 @@ import type {
   GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity, AutoAddUnassignedPersonsReport,
-  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
+  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord, AgentTaskAuditDetail,
   MetricsHistoryResponse, GpuUsageHistoryResponse, ProcessHistoryFrame, ProcessReplayIndexPoint,
 } from '@monitor/core';
 import type { SecurityEventQuery, AlertQuery } from './types.js';
@@ -284,6 +284,10 @@ export class WebSocketAdapter implements TransportAdapter {
 
   async getTaskEvents(serverId: string, taskId: string, afterId = 0): Promise<AgentTaskEventRecord[]> {
     return this.fetch(`/api/servers/${serverId}/tasks/${taskId}/events?afterId=${afterId}`);
+  }
+
+  async getTaskAuditDetail(serverId: string, taskId: string): Promise<AgentTaskAuditDetail | null> {
+    return this.fetch(`/api/servers/${serverId}/tasks/${taskId}/audit`);
   }
 
   async getProcessAudit(serverId: string): Promise<ProcessAuditRow[]> {

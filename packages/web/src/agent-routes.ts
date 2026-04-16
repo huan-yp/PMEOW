@@ -163,6 +163,35 @@ export function setupAgentReadRoutes(app: Express, options: AgentRouteOptions): 
     }
   });
 
+  app.get('/api/servers/:id/tasks/:taskId/audit', async (req: Request, res: Response) => {
+    const serverId = requireServer(req, res);
+    if (!serverId) {
+      return;
+    }
+
+    const taskId = requireTaskForServer(serverId, req, res);
+    if (!taskId) {
+      return;
+    }
+
+    const dataSource = resolveCommandDataSource(serverId, options, res);
+    if (!dataSource) {
+      return;
+    }
+
+    try {
+      const detail = await dataSource.getTaskAuditDetail(taskId);
+      res.json(detail);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('is offline')) {
+        res.status(409).json({ error: 'Agent 未在线' });
+        return;
+      }
+
+      res.status(500).json({ error: error instanceof Error ? error.message : '获取审计详情失败' });
+    }
+  });
+
   app.get('/api/servers/:id/gpu-allocation', (req: Request, res: Response) => {
     const serverId = requireServer(req, res);
     if (!serverId) {

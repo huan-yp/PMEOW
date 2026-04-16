@@ -1,9 +1,10 @@
-import type { AgentTaskEventsResponse, ServerCommandEnvelope, ServerGetTaskEventsPayload } from './protocol.js';
+import type { AgentTaskAuditDetailResponse, AgentTaskEventsResponse, ServerCommandEnvelope, ServerGetTaskAuditDetailPayload, ServerGetTaskEventsPayload } from './protocol.js';
 
 export interface AgentLiveSession {
   readonly agentId: string;
   emitCommand(command: ServerCommandEnvelope): void;
   requestTaskEvents(payload: ServerGetTaskEventsPayload): Promise<AgentTaskEventsResponse>;
+  requestTaskAuditDetail(payload: ServerGetTaskAuditDetailPayload): Promise<AgentTaskAuditDetailResponse>;
 }
 
 export interface AttachAgentSessionOptions {

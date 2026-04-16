@@ -207,6 +207,24 @@ export interface AgentTaskEventRecord {
   details: Record<string, unknown> | null;
 }
 
+export interface AgentTaskRuntimeSummary {
+  launchMode: string;
+  rootPid: number | null;
+  rootCreatedAt: number | null;
+  runtimePhase: string;
+  firstStartedAt: number | null;
+  lastSeenAt: number | null;
+  finalizeSource: string | null;
+  finalizeReasonCode: string | null;
+  lastObservedExitCode: number | null;
+}
+
+export interface AgentTaskAuditDetail {
+  task: MirroredAgentTaskRecord;
+  events: AgentTaskEventRecord[];
+  runtime?: AgentTaskRuntimeSummary;
+}
+
 export interface GpuOverviewUserSummary {
   user: string;
   totalVramMB: number;

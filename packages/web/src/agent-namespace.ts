@@ -2,6 +2,7 @@ import {
   AGENT_EVENT,
   AgentDataSource,
   type AgentHeartbeatPayload,
+  type AgentTaskAuditDetailResponse,
   type AgentTaskEventsResponse,
   type AgentLocalUsersPayload,
   type AgentRegisterPayload,
@@ -16,6 +17,7 @@ import {
   SERVER_COMMAND,
   type ServerCancelTaskPayload,
   type ServerCommandEnvelope,
+  type ServerGetTaskAuditDetailPayload,
   type ServerGetTaskEventsPayload,
   type ServerPauseQueuePayload,
   type ServerResumeQueuePayload,
@@ -61,6 +63,10 @@ interface AgentNamespaceServerEvents {
   [SERVER_COMMAND.getTaskEvents]: (
     payload: ServerGetTaskEventsPayload,
     callback: (response: AgentTaskEventsResponse) => void,
+  ) => void;
+  [SERVER_COMMAND.getTaskAuditDetail]: (
+    payload: ServerGetTaskAuditDetailPayload,
+    callback: (response: AgentTaskAuditDetailResponse) => void,
   ) => void;
   [SERVER_COMMAND.pauseQueue]: (payload: ServerPauseQueuePayload) => void;
   [SERVER_COMMAND.resumeQueue]: (payload: ServerResumeQueuePayload) => void;
@@ -162,6 +168,9 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
         case SERVER_COMMAND.getTaskEvents:
           socket.emit(SERVER_COMMAND.getTaskEvents, command.data, () => undefined);
           break;
+        case SERVER_COMMAND.getTaskAuditDetail:
+          socket.emit(SERVER_COMMAND.getTaskAuditDetail, command.data, () => undefined);
+          break;
         case SERVER_COMMAND.pauseQueue:
           socket.emit(SERVER_COMMAND.pauseQueue, command.data);
           break;
@@ -179,6 +188,21 @@ function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSessi
           SERVER_COMMAND.getTaskEvents,
           payload,
           (error: Error | null, response: AgentTaskEventsResponse) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve(response);
+          },
+        );
+      });
+    },
+    requestTaskAuditDetail(payload: ServerGetTaskAuditDetailPayload): Promise<AgentTaskAuditDetailResponse> {
+      return new Promise((resolve, reject) => {
+        socket.timeout(5_000).emit(
+          SERVER_COMMAND.getTaskAuditDetail,
+          payload,
+          (error: Error | null, response: AgentTaskAuditDetailResponse) => {
             if (error) {
               reject(error);
               return;

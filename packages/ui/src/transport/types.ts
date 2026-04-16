@@ -6,7 +6,7 @@ import type {
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
   AutoAddUnassignedPersonsReport,
-  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
+  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord, AgentTaskAuditDetail,
   MetricsHistoryResponse, GpuUsageHistoryResponse, ProcessHistoryFrame, ProcessReplayIndexPoint,
 } from '@monitor/core';
 
@@ -80,6 +80,7 @@ export interface TransportAdapter {
   // Operator data
   getTaskQueue(): Promise<AgentTaskQueueGroup[]>;
   getTaskEvents?(serverId: string, taskId: string, afterId?: number): Promise<AgentTaskEventRecord[]>;
+  getTaskAuditDetail?(serverId: string, taskId: string): Promise<AgentTaskAuditDetail | null>;
   getProcessAudit(serverId: string): Promise<ProcessAuditRow[]>;
   getProcessHistoryIndex?(serverId: string, from: number, to: number): Promise<ProcessReplayIndexPoint[]>;
   getProcessHistoryFrame?(serverId: string, timestamp: number): Promise<ProcessHistoryFrame>;
