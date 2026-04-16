@@ -207,3 +207,59 @@ def test_run_python_invocation_attached_launch_uses_task_cwd_and_current_environ
     assert launch["argv"] == [sys.executable, str(script)]
     assert launch["env"]["PMEOW_ATTACHED_MARKER"] == "attached-env"
     assert launch["env"]["CUDA_VISIBLE_DEVICES"] == "1,3"
+
+
+def test_run_python_invocation_keyboard_interrupt_returns_130_and_finishes(monkeypatch, tmp_path):
+    from pmeow.cli_python import PythonInvocation, run_python_invocation
+
+    script = tmp_path / "demo.py"
+    script.write_text("print('hi')\n")
+    finished: list[dict] = []
+
+    def fake_send_request(socket_path, method, params=None):
+        params = params or {}
+        if method == "submit_task":
+            return {"ok": True, "result": {"id": "task-1"}}
+        if method == "get_task":
+            return {
+                "ok": True,
+                "result": {
+                    "status": "launching",
+                    "argv": [sys.executable, str(script)],
+                    "cwd": str(tmp_path),
+                    "gpu_ids": [0],
+                    "log_path": str(tmp_path / "task.log"),
+                },
+            }
+        if method == "confirm_attached_launch":
+            return {"ok": True, "result": True}
+        if method == "finish_attached_task":
+            finished.append(params)
+            return {"ok": True, "result": True}
+        raise AssertionError(f"unexpected method: {method}")
+
+    def fake_run_attached_python(**kwargs):
+        kwargs["on_started"](1234)
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
+    monkeypatch.setattr("pmeow.executor.attached.run_attached_python", fake_run_attached_python)
+    monkeypatch.setenv("USER", "tester")
+
+    exit_code = run_python_invocation(
+        PythonInvocation(
+            socket_path="socket",
+            require_vram_mb=0,
+            require_gpu_count=0,
+            priority=10,
+            report=False,
+            script_path=str(script),
+            script_args=[],
+        ),
+        stdout_target=io.BytesIO(),
+        stderr_target=io.BytesIO(),
+    )
+
+    assert exit_code == 130
+    assert len(finished) == 1
+    assert finished[0]["exit_code"] == 130

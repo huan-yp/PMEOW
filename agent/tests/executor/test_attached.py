@@ -132,3 +132,23 @@ def test_run_attached_python_streams_stdout_before_process_exit(tmp_path):
 
     thread.join(timeout=3)
     assert result["exit_code"] == 0
+
+
+def test_normalize_attached_exit_code_sigint_returns_130():
+    import signal
+
+    from pmeow.executor.attached import _normalize_attached_exit_code
+
+    assert _normalize_attached_exit_code(-signal.SIGINT) == 130
+
+
+def test_normalize_attached_exit_code_preserves_zero():
+    from pmeow.executor.attached import _normalize_attached_exit_code
+
+    assert _normalize_attached_exit_code(0) == 0
+
+
+def test_normalize_attached_exit_code_preserves_nonzero():
+    from pmeow.executor.attached import _normalize_attached_exit_code
+
+    assert _normalize_attached_exit_code(5) == 5

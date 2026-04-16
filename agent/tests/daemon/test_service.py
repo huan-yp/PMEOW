@@ -462,13 +462,10 @@ def test_finish_attached_task_duplicate_exit_skips_fresh_completion_side_effects
 
 
 @pytest.mark.parametrize(
-    ("setup", "expected_status"),
-    [
-        ("queued", TaskStatus.queued),
-        ("launching", TaskStatus.launching),
-    ],
+    "setup",
+    ["queued", "launching"],
 )
-def test_finish_attached_task_requires_running_state(tmp_state, setup, expected_status):
+def test_finish_attached_task_finalizes_non_running_attached_task(tmp_state, setup):
     from pmeow.store.database import close_database
     from pmeow.store.tasks import reserve_attached_launch
 
@@ -494,16 +491,16 @@ def test_finish_attached_task_requires_running_state(tmp_state, setup, expected_
 
     svc.transport.reset_mock()
 
-    assert svc.finish_attached_task(record.id, exit_code=0) is False
+    assert svc.finish_attached_task(record.id, exit_code=0) is True
 
     fetched = svc.get_task(record.id)
     assert fetched is not None
-    assert fetched.status == expected_status
-    assert fetched.finished_at is None
-    assert fetched.exit_code is None
+    assert fetched.status == TaskStatus.completed
+    assert fetched.finished_at is not None
+    assert fetched.exit_code == 0
 
-    assert [event["event_type"] for event in svc.get_task_events(record.id)].count("attached_finished") == 0
-    svc.transport.send_task_update.assert_not_called()
+    assert [event["event_type"] for event in svc.get_task_events(record.id)].count("attached_finished") == 1
+    svc.transport.send_task_update.assert_called_once()
     close_database(svc.db)
 
 
@@ -764,3 +761,48 @@ def test_start_sends_terminal_task_update_for_runtime_monitor_transitions(tmp_st
     assert update.task_id == task.id
     assert update.status == TaskStatus.failed
     assert update.finished_at is not None
+
+
+def test_finish_attached_task_uses_cli_finish_finalize_source(tmp_state):
+    from pmeow.store.database import close_database
+    from pmeow.store.tasks import list_task_events, reserve_attached_launch
+
+    svc = DaemonService(tmp_state)
+    record = svc.submit_task(_make_spec(
+        command="python demo.py",
+        argv=["/usr/bin/python3", "demo.py"],
+        launch_mode=TaskLaunchMode.attached_python,
+        require_vram_mb=0,
+        require_gpu_count=0,
+    ))
+    now = time.time()
+    reserve_attached_launch(svc.db, record.id, gpu_ids=[0], launch_deadline=now + 30, reserved_at=now)
+    svc.confirm_attached_launch(record.id, pid=5432)
+
+    svc.finish_attached_task(record.id, exit_code=0)
+
+    events = list_task_events(svc.db, record.id)
+    finalized = [e for e in events if e["event_type"] == "runtime_finalized"]
+    assert len(finalized) == 1
+    assert finalized[0]["details"]["finalize_source"] == "cli_finish"
+    close_database(svc.db)
+
+
+def test_collect_cycle_runner_exit_uses_runner_exit_finalize_source(svc, monkeypatch):
+    from pmeow.store.tasks import attach_runtime, list_task_events
+
+    monkeypatch.setattr(
+        "pmeow.daemon.service.collect_snapshot",
+        lambda **kw: _fake_snapshot(),
+    )
+
+    record = svc.submit_task(_make_spec())
+    attach_runtime(svc.db, record.id, pid=1234, gpu_ids=[0], started_at=time.time())
+    monkeypatch.setattr(svc.runner, "check_completed", lambda: [(record.id, 0)])
+
+    svc.collect_cycle()
+
+    events = list_task_events(svc.db, record.id)
+    finalized = [e for e in events if e["event_type"] == "runtime_finalized"]
+    assert len(finalized) == 1
+    assert finalized[0]["details"]["finalize_source"] == "runner_exit"

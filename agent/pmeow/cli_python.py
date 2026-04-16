@@ -151,17 +151,23 @@ def run_python_invocation(
                 if not ack.get("ok") or ack.get("result") is not True:
                     raise RuntimeError("failed to confirm attached launch")
 
-            exit_code = run_attached_python(
-                argv=task["argv"],
-                cwd=task["cwd"],
-                env=env,
-                log_path=task["log_path"],
-                on_started=_on_started,
-                stdin_source=stdin_source,
-                stdout_target=stdout_target,
-                stderr_target=stderr_target,
-            )
-            send_request(socket_path, "finish_attached_task", {"task_id": task_id, "exit_code": exit_code})
+            try:
+                exit_code = run_attached_python(
+                    argv=task["argv"],
+                    cwd=task["cwd"],
+                    env=env,
+                    log_path=task["log_path"],
+                    on_started=_on_started,
+                    stdin_source=stdin_source,
+                    stdout_target=stdout_target,
+                    stderr_target=stderr_target,
+                )
+            except KeyboardInterrupt:
+                exit_code = 130
+            try:
+                send_request(socket_path, "finish_attached_task", {"task_id": task_id, "exit_code": exit_code})
+            except Exception:
+                print("warning: failed to notify daemon of task completion", file=sys.stderr)
             print(f"task finished exit_code={exit_code}")
             return exit_code
 

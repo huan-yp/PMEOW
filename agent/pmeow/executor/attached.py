@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import signal
 import subprocess
 import sys
 import threading
 from typing import BinaryIO, Callable
+
+
+def _normalize_attached_exit_code(exit_code: int) -> int:
+    """Map platform-specific signal exit codes to portable values."""
+    return 130 if exit_code == -signal.SIGINT else exit_code
 
 
 def run_attached_python(
@@ -75,7 +81,7 @@ def run_attached_python(
         err_thread.start()
         threads.extend([out_thread, err_thread])
 
-        exit_code = proc.wait()
+        exit_code = _normalize_attached_exit_code(proc.wait())
         for t in threads:
             t.join(timeout=5)
         return exit_code

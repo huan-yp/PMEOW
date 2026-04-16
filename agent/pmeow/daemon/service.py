@@ -38,8 +38,8 @@ from pmeow.store.tasks import (
     cancel_task as db_cancel_task,
     confirm_attached_launch as db_confirm_attached_launch,
     create_task,
-    finish_task,
     get_task,
+    guarded_finalize_task,
     list_task_events,
     list_tasks as db_list_tasks,
     requeue_expired_attached_launches,
@@ -342,7 +342,12 @@ class DaemonService:
                 if task is None:
                     continue
                 finished_at = time.time()
-                outcome = finish_task(self.db, task_id, exit_code, finished_at)
+                status = TaskStatus.completed if exit_code == 0 else TaskStatus.failed
+                outcome = guarded_finalize_task(
+                    self.db, task_id,
+                    status=status, finished_at=finished_at, exit_code=exit_code,
+                    finalize_source="runner_exit",
+                )
                 if not outcome.transitioned:
                     continue
                 self._clear_queue_reason(task_id)
@@ -350,7 +355,7 @@ class DaemonService:
                 if self.transport:
                     self.transport.send_task_update(self._task_update_from_record(
                         task,
-                        status=TaskStatus.completed if exit_code == 0 else TaskStatus.failed,
+                        status=status,
                         finished_at=finished_at,
                         exit_code=exit_code,
                     ))
@@ -500,7 +505,23 @@ class DaemonService:
                 return False
             if task.status == TaskStatus.running:
                 self.runner.cancel(task_id)
-            if task.status in (TaskStatus.queued, TaskStatus.running):
+                outcome = guarded_finalize_task(
+                    self.db, task_id,
+                    status=TaskStatus.cancelled,
+                    finished_at=time.time(),
+                    exit_code=None,
+                    finalize_source="cancel",
+                    finalize_reason_code="explicit_cancel",
+                )
+                if outcome.transitioned:
+                    self._clear_queue_reason(task_id)
+                    if self.transport:
+                        self.transport.send_task_update(TaskUpdate(
+                            task_id=task_id,
+                            status=TaskStatus.cancelled,
+                        ))
+                return outcome.transitioned
+            if task.status == TaskStatus.queued:
                 db_cancel_task(self.db, task_id)
                 self._clear_queue_reason(task_id)
                 if self.transport:
@@ -592,14 +613,16 @@ class DaemonService:
     def finish_attached_task(self, task_id: str, exit_code: int) -> bool:
         with self._lock:
             task = get_task(self.db, task_id)
-            if (
-                task is None
-                or task.launch_mode != TaskLaunchMode.attached_python
-                or task.status != TaskStatus.running
-            ):
+            if task is None or task.launch_mode != TaskLaunchMode.attached_python:
                 return False
             finished_at = time.time()
-            outcome = finish_task(self.db, task_id, exit_code, finished_at)
+            status = TaskStatus.completed if exit_code == 0 else TaskStatus.failed
+            outcome = guarded_finalize_task(
+                self.db, task_id,
+                status=status, finished_at=finished_at, exit_code=exit_code,
+                finalize_source="cli_finish",
+                finalize_reason_code="ctrl_c" if exit_code == 130 else None,
+            )
             if not outcome.transitioned:
                 return False
             self._clear_queue_reason(task_id)
@@ -607,7 +630,7 @@ class DaemonService:
             if self.transport:
                 self.transport.send_task_update(self._task_update_from_record(
                     task,
-                    status=TaskStatus.completed if exit_code == 0 else TaskStatus.failed,
+                    status=status,
                     finished_at=finished_at,
                     exit_code=exit_code,
                 ))
