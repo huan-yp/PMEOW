@@ -140,6 +140,44 @@ function createWizardTransport(overrides: Partial<TransportAdapter> = {}): Trans
       },
     ]),
     getPersonBindingSuggestions: vi.fn<() => Promise<PersonBindingSuggestion[]>>(async () => []),
+    autoAddUnassignedPersons: vi.fn(async () => ({
+      generatedAt: 1,
+      summary: {
+        candidateUserCount: 2,
+        createdPersonCount: 1,
+        reusedPersonCount: 1,
+        createdBindingCount: 3,
+        skippedRootCount: 0,
+        skippedAmbiguousCount: 0,
+        skippedAlreadyBoundCount: 0,
+        failedCount: 0,
+      },
+      items: [
+        {
+          username: 'alice',
+          normalizedUsername: 'alice',
+          result: 'reused-person' as const,
+          personId: 'person-1',
+          personDisplayName: 'Alice',
+          bindingCount: 2,
+          bindings: [
+            { serverId: 'server-1', serverName: 'gpu-1', systemUser: 'alice' },
+            { serverId: 'server-2', serverName: 'gpu-2', systemUser: 'alice-lab' },
+          ],
+          message: '已复用同名人员并补充绑定。',
+        },
+        {
+          username: 'carol',
+          normalizedUsername: 'carol',
+          result: 'created-person' as const,
+          personId: 'person-2',
+          personDisplayName: 'carol',
+          bindingCount: 1,
+          bindings: [{ serverId: 'server-3', serverName: 'gpu-3', systemUser: 'carol' }],
+          message: '已创建人员并完成账号归属。',
+        },
+      ],
+    })),
     getPersonSummary: vi.fn<() => Promise<PersonSummaryItem[]>>(async () => []),
     getPersonTimeline: vi.fn<() => Promise<PersonTimelinePoint[]>>(async () => []),
     getPersonTasks: vi.fn<() => Promise<MirroredAgentTaskRecord[]>>(async () => []),
@@ -222,5 +260,91 @@ describe('person create wizard', () => {
     });
 
     expect(await screen.findByText('detail page')).toBeTruthy();
+  });
+
+  it('paginates seed candidates so long lists stay manageable', async () => {
+    const user = userEvent.setup();
+    const transport = createWizardTransport({
+      getPersonBindingCandidates: vi.fn(async () => Array.from({ length: 9 }, (_value, index) => ({
+        serverId: `server-${index + 1}`,
+        serverName: `gpu-${index + 1}`,
+        systemUser: `user-${index + 1}`,
+        lastSeenAt: 100 - index,
+        activeBinding: null,
+      }))),
+    });
+
+    render(
+      <TransportProvider adapter={transport}>
+        <MemoryRouter initialEntries={['/people/new']}>
+          <Routes>
+            <Route path="/people/new" element={<PeopleManage />} />
+          </Routes>
+        </MemoryRouter>
+      </TransportProvider>
+    );
+
+    await user.click(await screen.findByRole('button', { name: '从服务器用户开始' }));
+
+    expect(await screen.findByRole('button', { name: '选择 gpu-1 · user-1' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '选择 gpu-9 · user-9' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Seed 列表下一页' }));
+
+    expect(await screen.findByRole('button', { name: '选择 gpu-9 · user-9' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '选择 gpu-1 · user-1' })).toBeNull();
+  });
+
+  it('shows a paginated auto-add report after one-click setup', async () => {
+    const user = userEvent.setup();
+    const transport = createWizardTransport({
+      autoAddUnassignedPersons: vi.fn(async () => ({
+        generatedAt: 1,
+        summary: {
+          candidateUserCount: 9,
+          createdPersonCount: 5,
+          reusedPersonCount: 2,
+          createdBindingCount: 9,
+          skippedRootCount: 1,
+          skippedAmbiguousCount: 1,
+          skippedAlreadyBoundCount: 0,
+          failedCount: 0,
+        },
+        items: Array.from({ length: 9 }, (_value, index) => ({
+          username: `user-${index + 1}`,
+          normalizedUsername: `user-${index + 1}`,
+          result: index === 0 ? 'reused-person' as const : 'created-person' as const,
+          personId: `person-${index + 1}`,
+          personDisplayName: `user-${index + 1}`,
+          bindingCount: 1,
+          bindings: [{ serverId: `server-${index + 1}`, serverName: `gpu-${index + 1}`, systemUser: `user-${index + 1}` }],
+          message: '已创建人员并完成账号归属。',
+        })),
+      })),
+    });
+
+    render(
+      <TransportProvider adapter={transport}>
+        <MemoryRouter initialEntries={['/people/new']}>
+          <Routes>
+            <Route path="/people/new" element={<PeopleManage />} />
+            <Route path="/people" element={<div>people overview</div>} />
+          </Routes>
+        </MemoryRouter>
+      </TransportProvider>
+    );
+
+    await user.click(await screen.findByRole('button', { name: '一键添加未归属用户' }));
+
+    expect(await screen.findByRole('heading', { name: '一键添加结果' })).toBeTruthy();
+    expect(screen.getByText('处理用户名数')).toBeTruthy();
+    expect(screen.getAllByText('user-1').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('user-9')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: '结果报告下一页' }));
+
+    expect((await screen.findAllByText('user-9')).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('user-1')).toHaveLength(0);
+    expect(transport.autoAddUnassignedPersons).toHaveBeenCalledTimes(1);
   });
 });

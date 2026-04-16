@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { PersonBindingCandidate } from '@monitor/core';
+import type { AutoAddUnassignedPersonsReport, AutoAddUnassignedPersonsReportItem, PersonBindingCandidate } from '@monitor/core';
 import { useTransport } from '../transport/TransportProvider.js';
 
 type WizardMode = 'seed-user' | 'manual';
-type WizardStep = 'entry' | 'seed' | 'profile' | 'bindings' | 'review';
+type WizardStep = 'entry' | 'seed' | 'profile' | 'bindings' | 'review' | 'auto-result';
 
 type ProfileFormState = {
   displayName: string;
@@ -19,6 +19,9 @@ const EMPTY_FORM: ProfileFormState = {
   qq: '',
   note: '',
 };
+
+const SEED_PAGE_SIZE = 8;
+const AUTO_RESULT_PAGE_SIZE = 8;
 
 function getCandidateKey(candidate: Pick<PersonBindingCandidate, 'serverId' | 'systemUser'>): string {
   return `${candidate.serverId}::${candidate.systemUser}`;
@@ -71,6 +74,44 @@ function formatCandidateLabel(candidate: Pick<PersonBindingCandidate, 'serverNam
   return `${candidate.serverName} · ${candidate.systemUser}`;
 }
 
+function formatAutoAddResultLabel(result: AutoAddUnassignedPersonsReportItem['result']): string {
+  switch (result) {
+    case 'created-person':
+      return '已创建人员';
+    case 'reused-person':
+      return '复用已有人员';
+    case 'skipped-root':
+      return '已跳过 root';
+    case 'skipped-ambiguous':
+      return '同名冲突';
+    case 'skipped-already-bound':
+      return '已被绑定';
+    case 'failed':
+      return '处理失败';
+    default:
+      return result;
+  }
+}
+
+function getAutoAddResultBadgeClass(result: AutoAddUnassignedPersonsReportItem['result']): string {
+  switch (result) {
+    case 'created-person':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+    case 'reused-person':
+      return 'border-accent-blue/30 bg-accent-blue/10 text-accent-blue';
+    case 'skipped-root':
+      return 'border-slate-500/30 bg-slate-500/10 text-slate-300';
+    case 'skipped-ambiguous':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+    case 'skipped-already-bound':
+      return 'border-orange-500/30 bg-orange-500/10 text-orange-300';
+    case 'failed':
+      return 'border-red-500/30 bg-red-500/10 text-red-200';
+    default:
+      return 'border-slate-500/30 bg-slate-500/10 text-slate-300';
+  }
+}
+
 function isStepAccessible(step: WizardStep, mode: WizardMode | null, seed: PersonBindingCandidate | null): boolean {
   if (step === 'entry') {
     return true;
@@ -100,10 +141,23 @@ export function PeopleManage() {
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [seedPage, setSeedPage] = useState(0);
+  const [autoAddLoading, setAutoAddLoading] = useState(false);
+  const [autoAddError, setAutoAddError] = useState('');
+  const [autoAddReport, setAutoAddReport] = useState<AutoAddUnassignedPersonsReport | null>(null);
+  const [autoAddPage, setAutoAddPage] = useState(0);
 
   useEffect(() => {
     void transport.getPersonBindingCandidates().then(setCandidates).catch(() => setCandidates([]));
   }, [transport]);
+
+  useEffect(() => {
+    setSeedPage(0);
+  }, [candidates.length]);
+
+  useEffect(() => {
+    setAutoAddPage(0);
+  }, [autoAddReport]);
 
   const seed = useMemo(
     () => candidates.find((candidate) => getCandidateKey(candidate) === seedKey) ?? null,
@@ -149,6 +203,11 @@ export function PeopleManage() {
 
   const hasTransferSelections = selectedCandidates.some((candidate) => candidate.activeBinding !== null);
   const canSubmit = Boolean(form.displayName.trim()) && !submitting && (!hasTransferSelections || confirmTransfer);
+  const seedPageCount = Math.max(1, Math.ceil(candidates.length / SEED_PAGE_SIZE));
+  const pagedSeedCandidates = candidates.slice(seedPage * SEED_PAGE_SIZE, (seedPage + 1) * SEED_PAGE_SIZE);
+  const autoAddItems = autoAddReport?.items ?? [];
+  const autoAddPageCount = Math.max(1, Math.ceil(autoAddItems.length / AUTO_RESULT_PAGE_SIZE));
+  const pagedAutoAddItems = autoAddItems.slice(autoAddPage * AUTO_RESULT_PAGE_SIZE, (autoAddPage + 1) * AUTO_RESULT_PAGE_SIZE);
 
   function resetWizard(nextMode: WizardMode, nextStep: WizardStep) {
     setMode(nextMode);
@@ -159,6 +218,27 @@ export function PeopleManage() {
     setConfirmTransfer(false);
     setSubmitting(false);
     setSubmitError('');
+    setSeedPage(0);
+    setAutoAddLoading(false);
+    setAutoAddError('');
+    setAutoAddReport(null);
+    setAutoAddPage(0);
+  }
+
+  function resetToEntry() {
+    setMode(null);
+    setStep('entry');
+    setSeedKey(null);
+    setSelectedKeys(new Set());
+    setForm(EMPTY_FORM);
+    setConfirmTransfer(false);
+    setSubmitting(false);
+    setSubmitError('');
+    setSeedPage(0);
+    setAutoAddLoading(false);
+    setAutoAddError('');
+    setAutoAddReport(null);
+    setAutoAddPage(0);
   }
 
   function toggleCandidate(candidate: PersonBindingCandidate) {
@@ -225,6 +305,34 @@ export function PeopleManage() {
 
     if (step === 'bindings') {
       setStep('review');
+    }
+  }
+
+  async function handleAutoAdd() {
+    if (!transport.autoAddUnassignedPersons || autoAddLoading) {
+      return;
+    }
+
+    setMode(null);
+    setStep('auto-result');
+    setSeedKey(null);
+    setSelectedKeys(new Set());
+    setForm(EMPTY_FORM);
+    setConfirmTransfer(false);
+    setSubmitting(false);
+    setSubmitError('');
+    setAutoAddLoading(true);
+    setAutoAddError('');
+    setAutoAddReport(null);
+    setAutoAddPage(0);
+
+    try {
+      const report = await transport.autoAddUnassignedPersons();
+      setAutoAddReport(report);
+    } catch {
+      setAutoAddError('一键添加失败，请稍后重试。');
+    } finally {
+      setAutoAddLoading(false);
     }
   }
 
@@ -303,10 +411,10 @@ export function PeopleManage() {
               <div className="space-y-6">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-100">选择创建入口</h2>
-                  <p className="mt-2 text-sm text-slate-400">推荐先从观察到的服务器用户开始，也可以完全手动创建一个空白人员。</p>
+                  <p className="mt-2 text-sm text-slate-400">推荐先从观察到的服务器用户开始，也可以完全手动创建一个空白人员，或者自动把同名未归属账号批量归到人员档案中。</p>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-4 md:grid-cols-3">
                   <button
                     type="button"
                     onClick={() => resetWizard('seed-user', 'seed')}
@@ -326,15 +434,51 @@ export function PeopleManage() {
                     <p className="text-sm font-medium text-slate-100">手动创建空白人员</p>
                     <p className="mt-2 text-sm leading-6 text-slate-400">只创建 profile。账号绑定完全可选，跳过后只会创建 person。</p>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleAutoAdd()}
+                    disabled={autoAddLoading || !transport.autoAddUnassignedPersons}
+                    aria-label="一键添加未归属用户"
+                    className="rounded-[24px] border border-emerald-500/20 bg-gradient-to-br from-emerald-500/15 via-dark-card to-dark-card p-5 text-left transition-colors hover:border-emerald-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <p className="text-sm font-medium text-slate-100">一键添加未归属用户</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">同名非 root 用户自动复用或创建人员，并把所有未归属账号一次性绑定到人名下。</p>
+                  </button>
                 </div>
               </div>
             )}
 
             {step === 'seed' && (
               <div className="space-y-6">
-                <div>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
                   <h2 className="text-xl font-semibold text-slate-100">选择 seed 账号</h2>
                   <p className="mt-2 text-sm text-slate-400">这里展示所有 observed system user，包括已经绑定到其他人的账号。</p>
+                  </div>
+                  {candidates.length > SEED_PAGE_SIZE && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <span>{seedPage + 1} / {seedPageCount}</span>
+                      <button
+                        type="button"
+                        aria-label="Seed 列表上一页"
+                        onClick={() => setSeedPage((current) => Math.max(0, current - 1))}
+                        disabled={seedPage === 0}
+                        className="rounded-full border border-dark-border px-3 py-1 transition-colors hover:bg-white/5 disabled:opacity-30"
+                      >
+                        上一页
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Seed 列表下一页"
+                        onClick={() => setSeedPage((current) => Math.min(seedPageCount - 1, current + 1))}
+                        disabled={seedPage >= seedPageCount - 1}
+                        className="rounded-full border border-dark-border px-3 py-1 transition-colors hover:bg-white/5 disabled:opacity-30"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {candidates.length === 0 ? (
@@ -343,7 +487,7 @@ export function PeopleManage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {candidates.map((candidate) => {
+                    {pagedSeedCandidates.map((candidate) => {
                       const key = getCandidateKey(candidate);
                       const isSelected = key === seedKey;
 
@@ -538,7 +682,148 @@ export function PeopleManage() {
               </div>
             )}
 
-            {step !== 'entry' && (
+            {step === 'auto-result' && (
+              <div className="space-y-6">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-semibold text-slate-100">一键添加结果</h2>
+                    <p className="mt-2 text-sm text-slate-400">按用户名聚合处理未归属账号，结果会区分复用已有人员、自动创建、跳过 root、同名冲突等情况。</p>
+                  </div>
+                  {autoAddItems.length > AUTO_RESULT_PAGE_SIZE && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <span>{autoAddPage + 1} / {autoAddPageCount}</span>
+                      <button
+                        type="button"
+                        aria-label="结果报告上一页"
+                        onClick={() => setAutoAddPage((current) => Math.max(0, current - 1))}
+                        disabled={autoAddPage === 0}
+                        className="rounded-full border border-dark-border px-3 py-1 transition-colors hover:bg-white/5 disabled:opacity-30"
+                      >
+                        上一页
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="结果报告下一页"
+                        onClick={() => setAutoAddPage((current) => Math.min(autoAddPageCount - 1, current + 1))}
+                        disabled={autoAddPage >= autoAddPageCount - 1}
+                        className="rounded-full border border-dark-border px-3 py-1 transition-colors hover:bg-white/5 disabled:opacity-30"
+                      >
+                        下一页
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {autoAddLoading && (
+                  <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-5 text-sm text-slate-400">
+                    正在自动归属未归属用户...
+                  </div>
+                )}
+
+                {autoAddError && (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+                    {autoAddError}
+                  </div>
+                )}
+
+                {autoAddReport && (
+                  <>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4 text-sm text-slate-300">
+                        <p className="text-slate-500">处理用户名数</p>
+                        <p className="mt-2 text-2xl text-slate-100">{autoAddReport.summary.candidateUserCount}</p>
+                      </div>
+                      <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4 text-sm text-slate-300">
+                        <p className="text-slate-500">创建/复用人员</p>
+                        <p className="mt-2 text-2xl text-slate-100">{autoAddReport.summary.createdPersonCount} / {autoAddReport.summary.reusedPersonCount}</p>
+                      </div>
+                      <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4 text-sm text-slate-300">
+                        <p className="text-slate-500">创建绑定数</p>
+                        <p className="mt-2 text-2xl text-slate-100">{autoAddReport.summary.createdBindingCount}</p>
+                      </div>
+                      <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4 text-sm text-slate-300">
+                        <p className="text-slate-500">跳过 root</p>
+                        <p className="mt-2 text-2xl text-slate-100">{autoAddReport.summary.skippedRootCount}</p>
+                      </div>
+                      <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4 text-sm text-slate-300">
+                        <p className="text-slate-500">同名冲突/已绑定</p>
+                        <p className="mt-2 text-2xl text-slate-100">{autoAddReport.summary.skippedAmbiguousCount} / {autoAddReport.summary.skippedAlreadyBoundCount}</p>
+                      </div>
+                      <div className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4 text-sm text-slate-300">
+                        <p className="text-slate-500">失败数</p>
+                        <p className="mt-2 text-2xl text-slate-100">{autoAddReport.summary.failedCount}</p>
+                      </div>
+                    </div>
+
+                    {autoAddItems.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-dark-border bg-dark-bg/60 p-5 text-sm text-slate-400">
+                        当前没有可自动处理的未归属用户名。
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {pagedAutoAddItems.map((item) => (
+                          <div key={item.normalizedUsername} className="rounded-2xl border border-dark-border bg-dark-bg/60 p-4">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-base font-medium text-slate-100">{item.username}</p>
+                                  <span className={`rounded-full border px-2.5 py-0.5 text-xs ${getAutoAddResultBadgeClass(item.result)}`}>
+                                    {formatAutoAddResultLabel(item.result)}
+                                  </span>
+                                </div>
+                                <p className="mt-2 text-sm text-slate-400">{item.message}</p>
+                              </div>
+                              <div className="text-right text-xs text-slate-500">
+                                <p>绑定账号 {item.bindingCount}</p>
+                                <p className="mt-1">归属 {item.personDisplayName ?? '-'}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+                              <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3 text-sm text-slate-300">
+                                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">人员</p>
+                                <p className="mt-2 text-slate-100">{item.personDisplayName ?? '未归属到人员'}</p>
+                                <p className="mt-1 text-xs text-slate-500">{item.personId ?? '无 personId'}</p>
+                              </div>
+
+                              <div className="rounded-xl border border-white/5 bg-white/[0.03] p-3 text-sm text-slate-300">
+                                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">账号明细</p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  {item.bindings.map((binding) => (
+                                    <span key={`${binding.serverId}:${binding.systemUser}`} className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-slate-200">
+                                      {binding.serverName} · {binding.systemUser}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-6">
+                      <button
+                        type="button"
+                        onClick={resetToEntry}
+                        className="rounded-full border border-dark-border px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-white/5"
+                      >
+                        返回入口
+                      </button>
+
+                      <Link
+                        to="/people"
+                        className="rounded-full bg-accent-blue px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-blue/90"
+                      >
+                        返回人员列表
+                      </Link>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {step !== 'entry' && step !== 'auto-result' && (
               <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-white/5 pt-6">
                 <button
                   type="button"
@@ -572,28 +857,48 @@ export function PeopleManage() {
           </section>
 
           <aside className="space-y-6">
-            <div className="rounded-[28px] border border-dark-border bg-dark-card p-6 shadow-xl shadow-black/10">
-              <p className="text-xs uppercase tracking-[0.24em] text-slate-500">流程</p>
-              <ol className="mt-4 space-y-3 text-sm">
-                {[
-                  { key: 'entry', label: '入口模式' },
-                  { key: 'seed', label: '选择 seed' },
-                  { key: 'profile', label: '填写 profile' },
-                  { key: 'bindings', label: '挑选归并账号' },
-                  { key: 'review', label: '确认并创建' },
-                ].filter((item) => item.key !== 'seed' || mode !== 'manual').map((item) => {
-                  const isCurrent = item.key === step;
-                  const accessible = isStepAccessible(item.key as WizardStep, mode, seed);
+            {step === 'auto-result' ? (
+              <div className="rounded-[28px] border border-dark-border bg-dark-card p-6 shadow-xl shadow-black/10">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">批量规则</p>
+                <div className="mt-4 space-y-4 text-sm text-slate-300">
+                  <div>
+                    <p className="text-slate-500">处理范围</p>
+                    <p className="mt-1 text-slate-100">仅处理未归属且非 root 的同名账号</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">同名策略</p>
+                    <p className="mt-1 text-slate-100">唯一同名复用，多条同名跳过并记入报告</p>
+                  </div>
+                  <div>
+                    <p className="text-slate-500">显示名称</p>
+                    <p className="mt-1 text-slate-100">自动新建人员时直接使用用户名</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[28px] border border-dark-border bg-dark-card p-6 shadow-xl shadow-black/10">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-500">流程</p>
+                <ol className="mt-4 space-y-3 text-sm">
+                  {[
+                    { key: 'entry', label: '入口模式' },
+                    { key: 'seed', label: '选择 seed' },
+                    { key: 'profile', label: '填写 profile' },
+                    { key: 'bindings', label: '挑选归并账号' },
+                    { key: 'review', label: '确认并创建' },
+                  ].filter((item) => item.key !== 'seed' || mode !== 'manual').map((item) => {
+                    const isCurrent = item.key === step;
+                    const accessible = isStepAccessible(item.key as WizardStep, mode, seed);
 
-                  return (
-                    <li key={item.key} className={`flex items-center justify-between rounded-2xl px-4 py-3 ${isCurrent ? 'bg-accent-blue/10 text-accent-blue' : accessible ? 'bg-dark-bg/60 text-slate-300' : 'bg-dark-bg/30 text-slate-600'}`}>
-                      <span>{item.label}</span>
-                      {isCurrent && <span className="text-xs uppercase tracking-[0.22em]">Now</span>}
-                    </li>
-                  );
-                })}
-              </ol>
-            </div>
+                    return (
+                      <li key={item.key} className={`flex items-center justify-between rounded-2xl px-4 py-3 ${isCurrent ? 'bg-accent-blue/10 text-accent-blue' : accessible ? 'bg-dark-bg/60 text-slate-300' : 'bg-dark-bg/30 text-slate-600'}`}>
+                        <span>{item.label}</span>
+                        {isCurrent && <span className="text-xs uppercase tracking-[0.22em]">Now</span>}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            )}
 
             <div className="rounded-[28px] border border-dark-border bg-dark-card p-6 shadow-xl shadow-black/10">
               <p className="text-xs uppercase tracking-[0.24em] text-slate-500">当前结果</p>

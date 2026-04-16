@@ -283,6 +283,7 @@ describe('person pages', () => {
     expect(await screen.findByRole('heading', { name: '添加人员' })).toBeTruthy();
     expect(await screen.findByRole('button', { name: '从服务器用户开始' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '手动创建空白人员' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '一键添加未归属用户' })).toBeTruthy();
     expect(screen.getByRole('link', { name: '人员' }).getAttribute('aria-current')).toBe('page');
     expect(screen.queryByRole('link', { name: '人员管理' })).toBeNull();
   });
