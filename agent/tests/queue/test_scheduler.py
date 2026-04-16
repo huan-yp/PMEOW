@@ -595,3 +595,90 @@ class TestEvaluationLedgerSnapshot:
         assert "managed_reserved_mb" in ledger
         assert "unmanaged_peak_mb" in ledger
         assert "exclusive_owner" in ledger
+
+
+class TestExclusiveBlockedByUserProcesses:
+    """Exclusive tasks must not be scheduled on GPUs occupied by user processes."""
+
+    def test_all_gpus_occupied_by_user_processes_blocks_exclusive(self, conn) -> None:
+        """When all GPUs have active user processes, exclusive task must wait."""
+        # Simulate 4 GPUs all occupied by non-PMEOW user processes
+        # (e.g., other users' PyTorch training jobs)
+        per_gpu = _make_per_gpu(
+            {0: 5000.0, 1: 7000.0, 2: 1000.0, 3: 8000.0},
+            total=24576.0,
+            user_processes={
+                0: [GpuUserProcess(pid=1001, user="alice", gpu_index=0,
+                                   used_memory_mb=19296, command="python train.py")],
+                1: [GpuUserProcess(pid=1002, user="bob", gpu_index=1,
+                                   used_memory_mb=16798, command="python train.py")],
+                2: [GpuUserProcess(pid=1003, user="bob", gpu_index=2,
+                                   used_memory_mb=23300, command="python train.py")],
+                3: [GpuUserProcess(pid=1004, user="carol", gpu_index=3,
+                                   used_memory_mb=15746, command="python train.py")],
+            },
+            utilization={0: 48.0, 1: 73.0, 2: 83.0, 3: 80.0},
+            used_memory={0: 19305.0, 1: 16807.0, 2: 23309.0, 3: 15755.0},
+        )
+        create_task(conn, TaskSpec(
+            command="excl", cwd="/tmp", user="u",
+            require_vram_mb=0, require_gpu_count=2, priority=1,
+        ))
+        tracker = GpuHistoryTracker(window_seconds=120)
+        now = time.time()
+        tracker.record(now - 10, per_gpu)
+
+        result = QueueScheduler(tracker).try_schedule(conn, per_gpu)
+        assert len(result.decisions) == 0
+
+    def test_user_processes_block_even_with_zero_utilization(self, conn) -> None:
+        """If utilization reporting fails (0%) but user processes exist, still block."""
+        per_gpu = _make_per_gpu(
+            {0: 20000.0, 1: 20000.0},
+            total=24576.0,
+            user_processes={
+                0: [GpuUserProcess(pid=2001, user="alice", gpu_index=0,
+                                   used_memory_mb=10000, command="python train.py")],
+                1: [GpuUserProcess(pid=2002, user="bob", gpu_index=1,
+                                   used_memory_mb=10000, command="python train.py")],
+            },
+            utilization={0: 0.0, 1: 0.0},  # utilization data unavailable
+            used_memory={0: 10000.0, 1: 10000.0},
+        )
+        create_task(conn, TaskSpec(
+            command="excl", cwd="/tmp", user="u",
+            require_vram_mb=0, require_gpu_count=1, priority=1,
+        ))
+        tracker = GpuHistoryTracker(window_seconds=120)
+        now = time.time()
+        tracker.record(now - 10, per_gpu)
+
+        result = QueueScheduler(tracker).try_schedule(conn, per_gpu)
+        # User processes with 10GB VRAM → unmanaged VRAM ~40% >> 3% → blocked
+        assert len(result.decisions) == 0
+
+    def test_user_processes_block_current_snapshot_even_with_clean_history(
+        self, conn,
+    ) -> None:
+        """GPU was idle in history but now has user processes → still blocked."""
+        history_gpu = _make_per_gpu({0: 24000.0}, total=24576.0)
+        current_gpu = _make_per_gpu(
+            {0: 5000.0},
+            total=24576.0,
+            user_processes={
+                0: [GpuUserProcess(pid=3001, user="alice", gpu_index=0,
+                                   used_memory_mb=19000, command="python train.py")],
+            },
+            utilization={0: 0.0},  # utilization data unavailable
+            used_memory={0: 19000.0},
+        )
+        create_task(conn, TaskSpec(
+            command="excl", cwd="/tmp", user="u",
+            require_vram_mb=0, require_gpu_count=1, priority=1,
+        ))
+        tracker = GpuHistoryTracker(window_seconds=120)
+        now = time.time()
+        tracker.record(now - 10, history_gpu)
+
+        result = QueueScheduler(tracker).try_schedule(conn, current_gpu)
+        assert len(result.decisions) == 0

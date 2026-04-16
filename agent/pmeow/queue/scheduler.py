@@ -239,10 +239,10 @@ def _eligible_exclusive(
                 if not _is_gpu_idle_in_sample(gpu):
                     return False
                 break
-    # Also check current snapshot
+    # Also check current snapshot (same idle criteria as history samples)
     for gpu in current_per_gpu:
         if gpu.gpu_index == idx:
-            if gpu.pmeow_tasks:
+            if not _is_gpu_idle_in_sample(gpu):
                 return False
             break
     return True
