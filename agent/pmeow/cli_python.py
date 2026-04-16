@@ -127,51 +127,59 @@ def run_python_invocation(
     print(f"task_id={task_id}")
     last_event_id = 0
 
-    while True:
-        current = send_request(socket_path, "get_task", {"task_id": task_id})
-        if not current.get("ok") or current.get("result") is None:
-            raise SystemExit("error: task disappeared")
-        task = current["result"]
+    try:
+        while True:
+            current = send_request(socket_path, "get_task", {"task_id": task_id})
+            if not current.get("ok") or current.get("result") is None:
+                raise SystemExit("error: task disappeared")
+            task = current["result"]
 
-        if invocation.report:
-            events = send_request(socket_path, "get_task_events", {"task_id": task_id, "after_id": last_event_id})
-            for event in events.get("result", []):
-                details = event.get("details")
-                message = details.get("message") if isinstance(details, dict) else None
-                if message:
-                    print(message)
-                last_event_id = event["id"]
+            if invocation.report:
+                events = send_request(socket_path, "get_task_events", {"task_id": task_id, "after_id": last_event_id})
+                for event in events.get("result", []):
+                    details = event.get("details")
+                    message = details.get("message") if isinstance(details, dict) else None
+                    if message:
+                        print(message)
+                    last_event_id = event["id"]
 
-        if task["status"] == "launching":
-            env = os.environ.copy()
-            env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in (task["gpu_ids"] or []))
+            if task["status"] == "launching":
+                env = os.environ.copy()
+                env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in (task["gpu_ids"] or []))
 
-            def _on_started(pid: int) -> None:
-                ack = send_request(socket_path, "confirm_attached_launch", {"task_id": task_id, "pid": pid})
-                if not ack.get("ok") or ack.get("result") is not True:
-                    raise RuntimeError("failed to confirm attached launch")
+                def _on_started(pid: int) -> None:
+                    ack = send_request(socket_path, "confirm_attached_launch", {"task_id": task_id, "pid": pid})
+                    if not ack.get("ok") or ack.get("result") is not True:
+                        raise RuntimeError("failed to confirm attached launch")
 
-            try:
-                exit_code = run_attached_python(
-                    argv=task["argv"],
-                    cwd=task["cwd"],
-                    env=env,
-                    log_path=task["log_path"],
-                    on_started=_on_started,
-                    stdin_source=stdin_source,
-                    stdout_target=stdout_target,
-                    stderr_target=stderr_target,
-                )
-            except KeyboardInterrupt:
-                exit_code = 130
-            try:
-                send_request(socket_path, "finish_attached_task", {"task_id": task_id, "exit_code": exit_code})
-            except Exception:
-                print("warning: failed to notify daemon of task completion", file=sys.stderr)
-            print(f"task finished exit_code={exit_code}")
-            return exit_code
+                try:
+                    exit_code = run_attached_python(
+                        argv=task["argv"],
+                        cwd=task["cwd"],
+                        env=env,
+                        log_path=task["log_path"],
+                        on_started=_on_started,
+                        stdin_source=stdin_source,
+                        stdout_target=stdout_target,
+                        stderr_target=stderr_target,
+                    )
+                except KeyboardInterrupt:
+                    exit_code = 130
+                try:
+                    send_request(socket_path, "finish_attached_task", {"task_id": task_id, "exit_code": exit_code})
+                except Exception:
+                    print("warning: failed to notify daemon of task completion", file=sys.stderr)
+                print(f"task finished exit_code={exit_code}")
+                return exit_code
 
-        if task["status"] in {"completed", "failed", "cancelled"}:
-            return int(task.get("exit_code") or 0)
+            if task["status"] in {"completed", "failed", "cancelled"}:
+                return int(task.get("exit_code") or 0)
 
-        time.sleep(1)
+            time.sleep(1)
+    except KeyboardInterrupt:
+        try:
+            send_request(socket_path, "cancel_task", {"task_id": task_id})
+        except Exception:
+            print("warning: failed to cancel task on daemon", file=sys.stderr)
+        print(f"task cancelled task_id={task_id}")
+        return 130

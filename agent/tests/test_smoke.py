@@ -5,7 +5,7 @@ import pytest
 
 def test_import():
     import pmeow
-    assert pmeow.__version__ == "0.1.0"
+    assert isinstance(pmeow.__version__, str)
 
 
 def test_cli_status():

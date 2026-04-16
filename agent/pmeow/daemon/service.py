@@ -563,8 +563,8 @@ class DaemonService:
                 if outcome.transitioned:
                     self._clear_queue_reason(task_id)
                     if self.transport:
-                        self.transport.send_task_update(TaskUpdate(
-                            task_id=task_id,
+                        self.transport.send_task_update(self._task_update_from_record(
+                            task,
                             status=TaskStatus.cancelled,
                         ))
                 return outcome.transitioned
@@ -572,8 +572,8 @@ class DaemonService:
                 db_cancel_task(self.db, task_id)
                 self._clear_queue_reason(task_id)
                 if self.transport:
-                    self.transport.send_task_update(TaskUpdate(
-                        task_id=task_id,
+                    self.transport.send_task_update(self._task_update_from_record(
+                        task,
                         status=TaskStatus.cancelled,
                     ))
                 return True
