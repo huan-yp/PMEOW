@@ -28,9 +28,9 @@ This design refines local scheduling so declared reservations remain authoritati
 ### Request Semantics
 
 1. Scheduler admission operates on a concrete resolved GPU count. Existing Python sugar may still default to `1`, but the scheduler must receive a concrete `require_gpu_count` before admission.
-2. Omitting `--vram` and explicitly passing `--vram=0` are equivalent.
-3. A task with omitted or zero VRAM is a strict exclusive GPU task.
-4. A task with positive VRAM is a shared-capacity task.
+2. `require_vram_mb` is `int` type. Omitting `--vram` and explicitly passing `--vram=0` are equivalent; both resolve to `require_vram_mb=0`. No `Optional[int]` / `None` semantics.
+3. A task with `require_vram_mb=0` is a strict exclusive GPU task.
+4. A task with positive `require_vram_mb` is a shared-capacity task.
 
 ### Managed and Unmanaged Accounting
 
@@ -83,14 +83,14 @@ The task may launch only when at least `N` GPUs satisfy that rule. Once selected
 
 The scheduler should separate requests that can never fit on this node from requests that are only temporarily blocked.
 
-### Immediate Failure
+### Immediate Failure (Submission-Time Rejection)
 
-Reject before queue wait when either condition holds:
+Reject at submission time in `DaemonService` or `socket_server`, before the task enters the queue, when either condition holds:
 
 1. Requested GPU count is greater than physical GPU count.
 2. Positive per-GPU VRAM request is physically satisfiable on fewer than the requested number of GPUs, where each GPU's physical schedulable limit is `total_vram_mb * 0.98`.
 
-These errors should fail submission or attached launch preparation immediately with a clear message.
+Implement as `validate_request_possible(per_gpu, require_gpu_count, require_vram_mb) -> str | None`. Return an error message if impossible, `None` if feasible. Call this at the submission path so impossible requests never enter the queue.
 
 ### Wait
 
@@ -113,19 +113,75 @@ Why:
 2. It keeps managed declarations and unmanaged history separate, which avoids rule leakage.
 3. It makes the reported failures easy to express in tests.
 
-### Expected Internal Changes
+### Per-GPU Utilization Collection
 
-1. Introduce or extend an internal per-GPU summary structure to expose:
-   - total VRAM
-   - current utilization and VRAM utilization
-   - managed reserved VRAM
-   - exclusive owner presence
-   - unmanaged historical peak VRAM
-2. Build that summary from two sources:
-   - current managed task reservations from the local runtime and queue state
-   - historical unmanaged usage from the existing sample window
-3. Keep shared-task admission and exclusive-task admission as separate predicates rather than mixing them into one overloaded branch.
-4. Keep the final GPU selection path unchanged where possible so attached launch reporting and `CUDA_VISIBLE_DEVICES` handling remain stable.
+Current snapshot only has aggregated GPU utilization. The scheduler needs per-GPU utilization for exclusive idle checks.
+
+1. `gpu.py` adds `collect_per_gpu_utilization()` querying `nvidia-smi --query-gpu=index,utilization.gpu`.
+2. `models.py` adds `utilization_percent: float` to `PerGpuAllocationSummary`.
+3. `snapshot.py` calls the new collector and populates the field.
+4. `gpu_attribution.py` passes utilization through.
+
+### Constants Block
+
+All scheduling constants live in one block at the top of `scheduler.py`:
+
+```python
+CAPACITY_FACTOR = 0.98
+UNMANAGED_MULTIPLIER = 1.05
+IDLE_UTILIZATION_THRESHOLD = 3.0
+IDLE_VRAM_UTILIZATION_THRESHOLD = 3.0
+```
+
+These can be promoted to configuration later without changing call sites.
+
+### GpuLedger Dataclass
+
+Introduce a scheduler-internal `GpuLedger` dataclass per GPU:
+
+```python
+@dataclass
+class GpuLedger:
+    gpu_index: int
+    total_vram_mb: float
+    schedulable_mb: float          # total_vram_mb * CAPACITY_FACTOR
+    managed_reserved_mb: float     # sum of declared VRAM for managed tasks on this GPU
+    exclusive_owner: str | None    # task_id of exclusive owner, or None
+    unmanaged_peak_mb: float       # max unmanaged VRAM in history window * UNMANAGED_MULTIPLIER
+    utilization_percent: float     # current GPU utilization %
+    vram_utilization_percent: float # current VRAM utilization %
+    effective_free_mb: float       # schedulable_mb - managed_reserved_mb - unmanaged_peak_mb
+```
+
+Build via `_build_gpu_ledgers(current_per_gpu, history, pending, exclusive_pending)`:
+- `managed_reserved_mb` from current snapshot's `pmeow_tasks` declared VRAM.
+- `unmanaged_peak_mb` from history window's unmanaged VRAM maximum * `UNMANAGED_MULTIPLIER`.
+- `exclusive_owner` from running tasks with `require_vram_mb=0`.
+
+### Same-Batch Exclusive Pending
+
+Within a single `try_schedule` round, if an exclusive task is selected for launch, its GPUs are added to `exclusive_pending: set[int]`. Subsequent tasks in the same batch treat those GPUs as unavailable. This prevents the scheduler from double-booking GPUs within one scheduling cycle.
+
+### Admission Predicates
+
+Keep shared-task and exclusive-task admission as separate predicates:
+
+- `_eligible_shared(ledger: GpuLedger, require_vram_mb: int) -> bool`
+- `_eligible_exclusive(ledger: GpuLedger, history_samples, gpu_index: int) -> bool`
+
+### Submission-Time Validation
+
+`validate_request_possible(per_gpu, require_gpu_count, require_vram_mb) -> str | None` is called at the submission path in `DaemonService` or `socket_server`. Impossible requests are rejected before entering the queue.
+
+### effective_free_mb in Attribution Layer
+
+`effective_free_mb` computed in `gpu_attribution.py` is for display and reporting only. All scheduling decisions use `GpuLedger.effective_free_mb` computed inside the scheduler. This avoids coupling the admission logic to the attribution/snapshot pipeline.
+
+### Other Internal Changes
+
+1. Rewrite `try_schedule` to use `GpuLedger` list, maintain `pending` and `exclusive_pending` sets, and route through shared/exclusive predicates.
+2. Delete legacy functions: `check_sustained`, `_eligible_gpus`, `_all_samples`, `_min_free_by_gpu`, `_analyze_sustained`.
+3. Keep the final GPU selection path unchanged where possible so attached launch reporting and `CUDA_VISIBLE_DEVICES` handling remain stable.
 
 ## Logging and Observability
 

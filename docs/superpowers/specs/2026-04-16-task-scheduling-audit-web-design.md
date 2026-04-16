@@ -30,6 +30,9 @@
 - 移动端任务审计页改造。
 - 自动 hang 判定或推理性结论。
 - 兼容旧版行内 reason 面板与旧版消费方式。
+- 多子进程资源归属（进程树建模、GPU 归属按进程树匹配）。
+
+Agent 侧调度重构（双账本 `GpuLedger`、exclusive 语义、per-GPU utilization 采集、提交时拒绝不可能请求）的规则与实现细节见 [GPU Scheduling Reservation Design](2026-04-16-gpu-scheduling-reservation-design.md)。本文仅定义 Web/UI 侧如何消费调度结果。
 
 ## 背景与现状
 
@@ -104,17 +107,33 @@
 
 ### 任务审计详情接口
 
-不再让详情页直接拼装列表页缓存和裸 task_events，而是新增统一任务审计接口。建议返回结构包含：
+不再让详情页直接拼装列表页缓存和裸 task_events，而是新增统一任务审计接口。
 
-- task summary
-- ordered events
-- optional latest runtime summary
+**通道选择**：审计详情通过新 Socket.IO command `getTaskAuditDetail` 从 agent 获取。Agent 直接返回结构化数据，Web 层通过 `GET /api/servers/:id/tasks/:taskId/audit` 对外暴露。
+
+返回结构：
+
+```typescript
+interface AgentTaskAuditDetail {
+  task: TaskSummary;
+  events: TaskEvent[];          // ordered by timestamp
+  runtime?: TaskRuntimeSummary; // latest runtime state if still running
+}
+```
 
 其中：
 
 - task summary 用于展示基础任务信息与终态摘要。
 - ordered events 是详情页的主数据源。
 - latest runtime summary 用于展示最后已知 pid、gpu_ids、心跳或 orphan 检测结果等运行事实。
+
+**实现路径**：
+
+1. Agent `socket_server.py` 注册 `getTaskAuditDetail` command。
+2. Core `agent-datasource.ts` 新增 `getTaskAuditDetail(taskId)` 方法。
+3. Web `agent-namespace.ts` 新增 `SERVER_COMMAND.getTaskAuditDetail` handler。
+4. Web `operator-routes.ts` 新增 `GET /api/servers/:id/tasks/:taskId/audit`。
+5. UI `ws-adapter.ts` 新增 `getTaskAuditDetail(serverId, taskId)`。
 
 列表页继续使用现有 task queue snapshot；详情页进入后单独请求任务审计详情。
 
@@ -136,7 +155,7 @@
 - daemon_restart
 
 其中 schedule_started、process_started、finalized 是本次新增或统一的重点，因为它们决定页面能否解释“为什么开始”和“为什么结束”。
-
+**事件迁移**：旧 `runtime_finalized` 事件通过 DB migration rename 为 `finalized`（`UPDATE task_events SET event_type='finalized' WHERE event_type='runtime_finalized'`）。不新建事件类型与旧类型并存。
 ### 统一结束事件
 
 第一版要求所有终态统一落审计事件，不再只改任务状态。结束事件至少包含：
@@ -189,16 +208,24 @@
 
 ### 资源语义要求
 
-本设计不定义 agent 侧最终字段名，但详情页必须能表达以下调度语义：
+决策快照中的资源事实直接来自 scheduler 内部的 `GpuLedger` 结构，字段已确定：
 
-- 空闲 GPU 判定采用阈值，而不是要求绝对 0。
-- 当前约束为 GPU 使用率小于 3% 且显存占用率小于 3%，两个条件同时满足时才视为空闲。
-- 受管任务占用按调度系统已分配或已预留的声明资源计算，不看实际使用值。
-- 非受管占用按历史窗口内观测峰值计算，例如默认 2 分钟窗口最大值再乘系数。
-- 对共享任务，可用资源判断需要体现总显存冗余、managed reserved 和 unmanaged peak 的扣减逻辑。
-- 对独占任务，详情页需要表达该 GPU 是否满足空闲阈值，以及是否已经被 exclusive_owner 占用。
+```
+gpu_index, total_vram_mb, schedulable_mb, managed_reserved_mb,
+exclusive_owner, unmanaged_peak_mb, utilization_percent,
+vram_utilization_percent, effective_free_mb
+```
 
-这部分在 UI 中不要求暴露公式字符串，但必须暴露足够的原始事实，让操作者能理解这次判断为什么成立。
+详情页必须能表达以下调度语义：
+
+- 空闲 GPU 判定采用阈值：GPU 使用率 < 3% 且显存占用率 < 3%，两个条件同时满足时才视为空闲。
+- 受管任务占用按 `managed_reserved_mb`（调度系统已分配或已预留的声明资源）计算，不看实际使用值。
+- 非受管占用按 `unmanaged_peak_mb`（历史窗口内观测峰值 × 1.05）计算。
+- 对共享任务，可用资源 = `schedulable_mb - managed_reserved_mb - unmanaged_peak_mb`。
+- 对独占任务，详情页需要表达该 GPU 的 `utilization_percent` 和 `vram_utilization_percent` 是否满足空闲阈值，以及 `exclusive_owner` 是否已被占用。
+- `effective_free_mb` 在 attribution 层仅作展示用途，调度判断完全由 scheduler `GpuLedger` 内部计算。
+
+UI 不暴露公式字符串，但暴露 `GpuLedger` 的原始事实字段，让操作者能理解判断依据。
 
 ## 页面信息架构
 
@@ -257,14 +284,14 @@
 - 阻塞任务摘要表
 - 最终判断摘要
 
-每 GPU 资源表至少包含：
+每 GPU 资源表至少包含（对应 `GpuLedger` 字段）：
 
-- GPU 编号
-- 是否空闲
-- managed reserved
-- unmanaged peak
-- effective free
-- exclusive owner
+- GPU 编号（`gpu_index`）
+- 是否空闲（`utilization_percent` < 3% 且 `vram_utilization_percent` < 3%）
+- managed reserved（`managed_reserved_mb`）
+- unmanaged peak（`unmanaged_peak_mb`）
+- effective free（`effective_free_mb`）
+- exclusive owner（`exclusive_owner`）
 - 是否入选候选集
 
 ### 终态事实面板
@@ -288,8 +315,9 @@
 
 - 删除或废弃当前列表页内“只读最后一条阻塞原因”的交互。
 - 列表页统一跳转到详情页。
-- 详情页只消费新的统一任务审计接口与统一事件模型。
+- 详情页只消费新的统一任务审计接口（`getTaskAuditDetail`）与统一事件模型。
 - 历史旧任务不作为兼容目标，不为旧事件格式增加特判逻辑。
+- DB migration 将旧 `runtime_finalized` 事件统一 rename 为 `finalized`，不保留旧类型。
 
 这样可以避免 UI 层同时维护两种审计逻辑，并使测试边界更清晰。
 
