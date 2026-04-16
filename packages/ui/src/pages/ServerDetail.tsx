@@ -10,11 +10,26 @@ import { GpuAllocationBars } from '../components/GpuAllocationBars.js';
 import { ProgressBar } from '../components/ProgressBar.js';
 import { buildAdaptiveRateChart, formatBytesPerSecond } from '../utils/rates';
 import { formatMemoryPairGB, formatVramGB, formatVramPairGB } from '../utils/vram.js';
-import type { MetricsSnapshot, MetricsHistoryResponse, MetricsBucketRow, ProcessAuditRow, ServerPersonActivity, ResolvedGpuAllocationResponse } from '@monitor/core';
+import {
+  getConnectionStatusVisual,
+  getInternetReachabilityState,
+  getInternetStatusVisual,
+} from '../utils/nodeStatus.js';
+import type {
+  MetricsSnapshot,
+  MetricsHistoryResponse,
+  MetricsBucketRow,
+  ProcessAuditRow,
+  ServerPersonActivity,
+  ResolvedGpuAllocationResponse,
+  ProcessHistoryFrame,
+  ProcessReplayIndexPoint,
+} from '@monitor/core';
 
 type Tab = 'overview' | 'history' | 'processes' | 'docker' | 'tasks';
 
 type HistoryRange = '1h' | '6h' | '24h' | '7d' | '30d' | '90d';
+type ProcessReplayRange = '1h' | '6h' | '24h' | '72h';
 
 const HISTORY_RANGES: { key: HistoryRange; label: string; ms: number }[] = [
   { key: '1h', label: '1 小时', ms: 3_600_000 },
@@ -23,6 +38,13 @@ const HISTORY_RANGES: { key: HistoryRange; label: string; ms: number }[] = [
   { key: '7d', label: '7 天', ms: 7 * 86_400_000 },
   { key: '30d', label: '30 天', ms: 30 * 86_400_000 },
   { key: '90d', label: '90 天', ms: 90 * 86_400_000 },
+];
+
+const PROCESS_REPLAY_RANGES: { key: ProcessReplayRange; label: string; ms: number }[] = [
+  { key: '1h', label: '1 小时', ms: 3_600_000 },
+  { key: '6h', label: '6 小时', ms: 6 * 3_600_000 },
+  { key: '24h', label: '24 小时', ms: 24 * 3_600_000 },
+  { key: '72h', label: '72 小时', ms: 72 * 3_600_000 },
 ];
 
 function bucketGranularityLabel(bucketMs: number): string {
@@ -52,38 +74,19 @@ function formatLastSeen(timestamp: number): string {
   });
 }
 
-function getStatusVisual(status: string) {
-  switch (status) {
-    case 'connected':
-      return {
-        label: '在线',
-        badgeClassName: 'node-badge-status-online',
-        dotClassName: 'bg-sky-300',
-        surfaceClassName: 'node-surface-shell-online',
-      };
-    case 'connecting':
-      return {
-        label: '连接中',
-        badgeClassName: 'node-badge-status-connecting',
-        dotClassName: 'bg-amber-300 animate-pulse-dot',
-        surfaceClassName: 'node-surface-shell-connecting',
-      };
-    case 'error':
-      return {
-        label: '异常',
-        badgeClassName: 'node-badge-status-error',
-        dotClassName: 'bg-rose-300',
-        surfaceClassName: 'node-surface-shell-error',
-      };
-    case 'disconnected':
-    default:
-      return {
-        label: '离线',
-        badgeClassName: 'node-badge-status-offline',
-        dotClassName: 'bg-rose-300',
-        surfaceClassName: 'node-surface-shell-offline',
-      };
+function formatReplayTimestamp(timestamp: number | null): string {
+  if (!timestamp) {
+    return '--';
   }
+
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 function getSourceVisual(sourceType: string) {
@@ -110,6 +113,16 @@ export function ServerDetail() {
   const [tab, setTab] = useState<Tab>('overview');
   const [history, setHistory] = useState<MetricsSnapshot[]>([]);
   const [processAudit, setProcessAudit] = useState<ProcessAuditRow[]>([]);
+  const [processMode, setProcessMode] = useState<'live' | 'replay'>('live');
+  const [processReplayRange, setProcessReplayRange] = useState<ProcessReplayRange>('6h');
+  const [processReplayIndex, setProcessReplayIndex] = useState<ProcessReplayIndexPoint[]>([]);
+  const [processReplayFrame, setProcessReplayFrame] = useState<ProcessHistoryFrame | null>(null);
+  const [processReplayLoading, setProcessReplayLoading] = useState(false);
+  const [processReplayFrameLoading, setProcessReplayFrameLoading] = useState(false);
+  const [selectedReplayTimestamp, setSelectedReplayTimestamp] = useState<number | null>(null);
+  const [processReplayNotice, setProcessReplayNotice] = useState<string | null>(null);
+  const [processReplayFrameError, setProcessReplayFrameError] = useState<string | null>(null);
+  const [processReplayPlaying, setProcessReplayPlaying] = useState(false);
   const [personActivity, setPersonActivity] = useState<ServerPersonActivity | null>(null);
   const [resolvedGpuAllocation, setResolvedGpuAllocation] = useState<ResolvedGpuAllocationResponse | null>(null);
   const [historyRange, setHistoryRange] = useState<HistoryRange>('24h');
@@ -119,6 +132,8 @@ export function ServerDetail() {
   const requestScopeRef = useRef({ serverId: id, version: 0 });
   const historyRequestIdRef = useRef(0);
   const processAuditRequestIdRef = useRef(0);
+  const processReplayIndexRequestIdRef = useRef(0);
+  const processReplayFrameRequestIdRef = useRef(0);
 
   if (requestScopeRef.current.serverId !== id) {
     requestScopeRef.current = {
@@ -131,6 +146,8 @@ export function ServerDetail() {
   const metrics = id ? latestMetrics.get(id) : undefined;
   const status = id ? statuses.get(id) : undefined;
   const taskQueueGroup = taskQueueGroups.find((group) => group.serverId === id);
+  const supportsProcessReplay = typeof transport.getProcessHistoryIndex === 'function'
+    && typeof transport.getProcessHistoryFrame === 'function';
 
   const loadHistory = useCallback(async () => {
     if (!id) return;
@@ -188,6 +205,92 @@ export function ServerDetail() {
     }
   }, [id, transport]);
 
+  const loadProcessReplayIndex = useCallback(async () => {
+    if (!id || !transport.getProcessHistoryIndex) return;
+    const serverId = id;
+    const scopeVersion = requestScopeRef.current.version;
+    const requestId = ++processReplayIndexRequestIdRef.current;
+    setProcessReplayLoading(true);
+    setProcessReplayNotice(null);
+    const rangeMs = PROCESS_REPLAY_RANGES.find((range) => range.key === processReplayRange)?.ms ?? 6 * 3_600_000;
+    const to = Date.now();
+    const from = to - rangeMs;
+
+    try {
+      const points = await transport.getProcessHistoryIndex(serverId, from, to);
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        processReplayIndexRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+
+      setProcessReplayIndex(points);
+      setSelectedReplayTimestamp((current) => {
+        if (current !== null && points.some((point) => point.timestamp === current)) {
+          return current;
+        }
+        return points.length > 0 ? points[points.length - 1]!.timestamp : null;
+      });
+      if (points.length === 0) {
+        setProcessReplayFrame(null);
+      }
+    } catch {
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        processReplayIndexRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+
+      setProcessReplayIndex([]);
+      setSelectedReplayTimestamp(null);
+      setProcessReplayFrame(null);
+      setProcessReplayPlaying(false);
+      setProcessReplayNotice('历史回放暂不可用，已切回实时视图。');
+      setProcessMode('live');
+    } finally {
+      setProcessReplayLoading(false);
+    }
+  }, [id, processReplayRange, transport]);
+
+  const loadProcessReplayFrame = useCallback(async (timestamp: number) => {
+    if (!id || !transport.getProcessHistoryFrame) return;
+    const serverId = id;
+    const scopeVersion = requestScopeRef.current.version;
+    const requestId = ++processReplayFrameRequestIdRef.current;
+    setProcessReplayFrameLoading(true);
+    setProcessReplayFrameError(null);
+
+    try {
+      const frame = await transport.getProcessHistoryFrame(serverId, timestamp);
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        processReplayFrameRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+
+      setProcessReplayFrame(frame);
+    } catch {
+      if (
+        requestScopeRef.current.serverId !== serverId ||
+        requestScopeRef.current.version !== scopeVersion ||
+        processReplayFrameRequestIdRef.current !== requestId
+      ) {
+        return;
+      }
+
+      setProcessReplayFrame(null);
+      setProcessReplayFrameError('选定时间点的历史帧不可用。');
+    } finally {
+      setProcessReplayFrameLoading(false);
+    }
+  }, [id, transport]);
+
   const loadBucketedHistory = useCallback(async () => {
     if (!id) return;
     const serverId = id;
@@ -220,6 +323,14 @@ export function ServerDetail() {
   useLayoutEffect(() => {
     setHistory([]);
     setProcessAudit([]);
+    setProcessMode('live');
+    setProcessReplayRange('6h');
+    setProcessReplayIndex([]);
+    setProcessReplayFrame(null);
+    setSelectedReplayTimestamp(null);
+    setProcessReplayNotice(null);
+    setProcessReplayFrameError(null);
+    setProcessReplayPlaying(false);
   }, [id]);
 
   useEffect(() => {
@@ -231,6 +342,51 @@ export function ServerDetail() {
   useEffect(() => {
     void loadProcessAudit();
   }, [loadProcessAudit]);
+
+  useEffect(() => {
+    if (tab === 'processes' && processMode === 'replay' && supportsProcessReplay) {
+      void loadProcessReplayIndex();
+    }
+  }, [tab, processMode, supportsProcessReplay, loadProcessReplayIndex]);
+
+  useEffect(() => {
+    if (
+      tab === 'processes'
+      && processMode === 'replay'
+      && supportsProcessReplay
+      && selectedReplayTimestamp !== null
+    ) {
+      void loadProcessReplayFrame(selectedReplayTimestamp);
+    }
+  }, [tab, processMode, supportsProcessReplay, selectedReplayTimestamp, loadProcessReplayFrame]);
+
+  useEffect(() => {
+    if (!processReplayPlaying || processMode !== 'replay' || processReplayIndex.length <= 1) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setSelectedReplayTimestamp((current) => {
+        if (current === null) {
+          return processReplayIndex[0]?.timestamp ?? null;
+        }
+
+        const currentIndex = processReplayIndex.findIndex((point) => point.timestamp === current);
+        if (currentIndex < 0) {
+          return processReplayIndex[0]?.timestamp ?? null;
+        }
+
+        if (currentIndex >= processReplayIndex.length - 1) {
+          setProcessReplayPlaying(false);
+          return current;
+        }
+
+        return processReplayIndex[currentIndex + 1]!.timestamp;
+      });
+    }, 1200);
+
+    return () => window.clearInterval(timer);
+  }, [processMode, processReplayIndex, processReplayPlaying]);
 
   useEffect(() => {
     if (tab === 'history') {
@@ -279,7 +435,8 @@ export function ServerDetail() {
     { key: 'processes', label: '进程' },
     { key: 'docker', label: 'Docker' },
   ];
-  const statusVisual = getStatusVisual(status?.status ?? 'disconnected');
+  const statusVisual = getConnectionStatusVisual(status?.status ?? 'disconnected');
+  const internetVisual = getInternetStatusVisual(getInternetReachabilityState(metrics));
   const sourceVisual = getSourceVisual(server.sourceType);
 
   const cpuData = history.map(h => ({ time: h.timestamp, value: h.cpu.usagePercent }));
@@ -296,6 +453,23 @@ export function ServerDetail() {
     { name: '读取', data: diskReadData, color: '#06b6d4' },
     { name: '写入', data: diskWriteData, color: '#f59e0b' },
   ]);
+  const replayFrameIndex = selectedReplayTimestamp === null
+    ? -1
+    : processReplayIndex.findIndex((point) => point.timestamp === selectedReplayTimestamp);
+  const selectedReplayPoint = replayFrameIndex >= 0 ? processReplayIndex[replayFrameIndex] : null;
+  const processRows = processMode === 'replay'
+    ? (processReplayFrame?.processes ?? [])
+    : processAudit;
+
+  const stepReplayFrame = (direction: -1 | 1) => {
+    if (processReplayIndex.length === 0) {
+      return;
+    }
+
+    const currentIndex = replayFrameIndex >= 0 ? replayFrameIndex : processReplayIndex.length - 1;
+    const nextIndex = Math.min(Math.max(currentIndex + direction, 0), processReplayIndex.length - 1);
+    setSelectedReplayTimestamp(processReplayIndex[nextIndex]!.timestamp);
+  };
 
   return (
     <div className="p-6">
@@ -312,6 +486,10 @@ export function ServerDetail() {
               <span className={`node-badge-base ${statusVisual.badgeClassName}`}>
                 <span className={`h-2 w-2 rounded-full ${statusVisual.dotClassName}`} />
                 {statusVisual.label}
+              </span>
+              <span className={`node-badge-base ${internetVisual.badgeClassName}`}>
+                <span className={`h-2 w-2 rounded-full ${internetVisual.dotClassName}`} />
+                {internetVisual.label}
               </span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-400">
@@ -630,8 +808,140 @@ export function ServerDetail() {
       )}
 
       {tab === 'processes' && (
-        <div className="rounded-lg border border-dark-border bg-dark-card p-4">
-          <ProcessTable processes={processAudit} />
+        <div className="space-y-4">
+          <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-slate-200">进程视图</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  {processMode === 'live'
+                    ? '实时查看当前进程占用和风险归因。'
+                    : '按时间轴回放历史进程快照，表格排序与筛选保持一致。'}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProcessMode('live');
+                    setProcessReplayPlaying(false);
+                    setProcessReplayFrameError(null);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs transition-colors ${processMode === 'live' ? 'bg-accent-blue text-white' : 'border border-dark-border bg-dark-bg/30 text-slate-300 hover:text-slate-100'}`}
+                >
+                  实时
+                </button>
+                <button
+                  type="button"
+                  disabled={!supportsProcessReplay}
+                  onClick={() => {
+                    if (!supportsProcessReplay) {
+                      return;
+                    }
+                    setProcessMode('replay');
+                    setProcessReplayNotice(null);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-xs transition-colors ${processMode === 'replay' ? 'bg-emerald-500 text-white' : 'border border-dark-border bg-dark-bg/30 text-slate-300 hover:text-slate-100'} ${!supportsProcessReplay ? 'cursor-not-allowed opacity-50' : ''}`}
+                >
+                  历史回放
+                </button>
+              </div>
+            </div>
+
+            {processReplayNotice && (
+              <div className="mt-3 rounded-2xl border border-amber-400/20 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-100">
+                {processReplayNotice}
+              </div>
+            )}
+
+            {processMode === 'replay' && supportsProcessReplay && (
+              <div className="mt-4 space-y-4 rounded-2xl border border-dark-border/80 bg-dark-bg/30 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  {PROCESS_REPLAY_RANGES.map((range) => (
+                    <button
+                      key={range.key}
+                      type="button"
+                      onClick={() => setProcessReplayRange(range.key)}
+                      className={`rounded-full px-3 py-1 text-xs transition-colors ${processReplayRange === range.key ? 'bg-accent-blue text-white' : 'border border-dark-border bg-dark-card text-slate-400 hover:text-slate-200'}`}
+                    >
+                      {range.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setProcessReplayPlaying((current) => !current)}
+                    disabled={processReplayIndex.length <= 1}
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${processReplayPlaying ? 'bg-accent-red text-white' : 'border border-dark-border bg-dark-card text-slate-300 hover:text-slate-100'} ${processReplayIndex.length <= 1 ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    {processReplayPlaying ? '暂停' : '播放'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => stepReplayFrame(-1)}
+                    disabled={processReplayIndex.length === 0 || replayFrameIndex <= 0}
+                    className={`rounded-full border border-dark-border bg-dark-card px-3 py-1 text-xs text-slate-300 transition-colors hover:text-slate-100 ${processReplayIndex.length === 0 || replayFrameIndex <= 0 ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    上一帧
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => stepReplayFrame(1)}
+                    disabled={processReplayIndex.length === 0 || replayFrameIndex >= processReplayIndex.length - 1}
+                    className={`rounded-full border border-dark-border bg-dark-card px-3 py-1 text-xs text-slate-300 transition-colors hover:text-slate-100 ${processReplayIndex.length === 0 || replayFrameIndex >= processReplayIndex.length - 1 ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    下一帧
+                  </button>
+                  {processReplayLoading && <span className="text-xs text-slate-500">加载回放索引…</span>}
+                  {processReplayFrameLoading && <span className="text-xs text-slate-500">加载历史帧…</span>}
+                </div>
+
+                {processReplayIndex.length > 0 ? (
+                  <>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(processReplayIndex.length - 1, 0)}
+                      step={1}
+                      value={Math.max(replayFrameIndex, 0)}
+                      onChange={(event) => {
+                        const nextIndex = Number(event.target.value);
+                        setSelectedReplayTimestamp(processReplayIndex[nextIndex]?.timestamp ?? null);
+                        setProcessReplayPlaying(false);
+                      }}
+                      className="w-full accent-sky-400"
+                    />
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
+                      <span>{formatReplayTimestamp(processReplayIndex[0]?.timestamp ?? null)}</span>
+                      <span className="text-slate-200">当前 {formatReplayTimestamp(selectedReplayTimestamp)}</span>
+                      <span>{formatReplayTimestamp(processReplayIndex[processReplayIndex.length - 1]?.timestamp ?? null)}</span>
+                    </div>
+
+                    {selectedReplayPoint && (
+                      <div className="rounded-2xl border border-dark-border/80 bg-dark-card/70 px-3 py-2 text-xs text-slate-300">
+                        当前帧 {selectedReplayPoint.processCount} 个进程 · GPU 进程 {selectedReplayPoint.gpuProcessCount} 个 · 风险进程 {selectedReplayPoint.suspiciousProcessCount} 个
+                      </div>
+                    )}
+                  </>
+                ) : !processReplayLoading && (
+                  <div className="rounded-2xl border border-dashed border-dark-border px-4 py-6 text-center text-sm text-slate-500">
+                    所选时间范围内暂无可回放进程帧
+                  </div>
+                )}
+
+                {processReplayFrameError && (
+                  <div className="rounded-2xl border border-rose-400/20 bg-rose-500/[0.08] px-3 py-2 text-xs text-rose-100">
+                    {processReplayFrameError}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-dark-border bg-dark-card p-4">
+            <ProcessTable processes={processRows} />
+          </div>
         </div>
       )}
 

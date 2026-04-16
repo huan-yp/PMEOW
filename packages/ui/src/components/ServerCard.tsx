@@ -5,6 +5,11 @@ import { ProgressBar } from './ProgressBar.js';
 import { useStore } from '../store/useStore.js';
 import { formatBytesPerSecond } from '../utils/rates';
 import { formatVramPairGB } from '../utils/vram.js';
+import {
+  getConnectionStatusVisual,
+  getInternetReachabilityState,
+  getInternetStatusVisual,
+} from '../utils/nodeStatus.js';
 
 function getGpuUtilTextClass(utilizationPercent: number) {
   if (utilizationPercent >= 90) {
@@ -22,40 +27,6 @@ interface Props {
   server: ServerConfig;
   status?: ServerStatus;
   metrics?: MetricsSnapshot;
-}
-
-function getStatusVisual(status: string) {
-  switch (status) {
-    case 'connected':
-      return {
-        label: '在线',
-        badgeClassName: 'node-badge-status-online',
-        dotClassName: 'bg-sky-300',
-        surfaceClassName: 'node-surface-shell-online',
-      };
-    case 'connecting':
-      return {
-        label: '连接中',
-        badgeClassName: 'node-badge-status-connecting',
-        dotClassName: 'bg-amber-300 animate-pulse-dot',
-        surfaceClassName: 'node-surface-shell-connecting',
-      };
-    case 'error':
-      return {
-        label: '异常',
-        badgeClassName: 'node-badge-status-error',
-        dotClassName: 'bg-rose-300',
-        surfaceClassName: 'node-surface-shell-error',
-      };
-    case 'disconnected':
-    default:
-      return {
-        label: '离线',
-        badgeClassName: 'node-badge-status-offline',
-        dotClassName: 'bg-rose-300',
-        surfaceClassName: 'node-surface-shell-offline',
-      };
-  }
 }
 
 function getSourceVisual(sourceType: string) {
@@ -87,7 +58,8 @@ export function ServerCard({ server, status, metrics }: Props) {
   const isStale = connStatus !== 'connected' && metrics !== undefined;
   const taskQueueGroup = useStore((state) => state.taskQueueGroups.find((group) => group.serverId === server.id));
   const hasOpenSecurityEvent = useStore((state) => state.openSecurityEvents.some((event) => event.serverId === server.id && !event.resolved));
-  const statusVisual = getStatusVisual(connStatus);
+  const statusVisual = getConnectionStatusVisual(connStatus);
+  const internetVisual = getInternetStatusVisual(getInternetReachabilityState(metrics));
   const sourceVisual = getSourceVisual(server.sourceType);
 
   return (
@@ -106,6 +78,10 @@ export function ServerCard({ server, status, metrics }: Props) {
             <span className={`node-badge-base ${statusVisual.badgeClassName}`}>
               <span className={`h-2 w-2 rounded-full ${statusVisual.dotClassName}`} />
               {statusVisual.label}
+            </span>
+            <span className={`node-badge-base ${internetVisual.badgeClassName}`}>
+              <span className={`h-2 w-2 rounded-full ${internetVisual.dotClassName}`} />
+              {internetVisual.label}
             </span>
           </div>
         </div>

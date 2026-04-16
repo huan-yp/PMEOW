@@ -2,8 +2,26 @@ import { useState } from 'react';
 import { useStore } from '../store/useStore.js';
 import { GpuOverviewCard } from '../components/GpuOverviewCard.js';
 import { ServerCard } from '../components/ServerCard.js';
+import { getInternetReachabilityState } from '../utils/nodeStatus.js';
 
 type Panel = 'monitor' | 'nodes';
+
+type OverviewStatBadge = {
+  label: string;
+  value: string;
+  className: string;
+};
+
+type OverviewStatCard = {
+  key: string;
+  label: string;
+  value: string;
+  hint: string;
+  cardClassName: string;
+  valueClassName: string;
+  hintClassName: string;
+  badges: OverviewStatBadge[];
+};
 
 function formatSecurityEventType(eventType: string) {
   switch (eventType) {
@@ -40,8 +58,24 @@ export function Overview() {
   const [panel, setPanel] = useState<Panel>('monitor');
   const { servers, statuses, latestMetrics, taskQueueGroups, openSecurityEvents } = useStore();
 
-  const onlineCount = servers.filter((server) => statuses.get(server.id)?.status === 'connected').length;
-  const offlineCount = Math.max(servers.length - onlineCount, 0);
+  const connectionSummary = servers.reduce(
+    (summary, server) => {
+      const connectionState = statuses.get(server.id)?.status ?? 'disconnected';
+      if (connectionState === 'connected') {
+        summary.online += 1;
+      } else if (connectionState === 'connecting') {
+        summary.connecting += 1;
+      } else if (connectionState === 'error') {
+        summary.error += 1;
+      } else {
+        summary.offline += 1;
+      }
+      return summary;
+    },
+    { online: 0, offline: 0, connecting: 0, error: 0 },
+  );
+  const onlineCount = connectionSummary.online;
+  const offlineCount = connectionSummary.offline;
   const queuedCount = taskQueueGroups.reduce((sum, group) => sum + group.queued.length, 0);
   const runningCount = taskQueueGroups.reduce((sum, group) => sum + group.running.length, 0);
   const recentCount = taskQueueGroups.reduce((sum, group) => sum + group.recent.length, 0);
@@ -51,19 +85,21 @@ export function Overview() {
     0,
   );
 
-  // Internet reachability aggregation — only consider snapshots that carry
-  // probe results (the field is optional; SSH nodes with an older collector
-  // or Agents that have disabled the probe will not set it).
-  const networkSnapshots = Array.from(latestMetrics.values()).filter(
-    (s) => s.network.internetReachable !== undefined,
+  const internetSummary = servers.reduce(
+    (summary, server) => {
+      const state = getInternetReachabilityState(latestMetrics.get(server.id));
+      if (state === 'reachable') {
+        summary.reachable += 1;
+      } else if (state === 'unreachable') {
+        summary.unreachable += 1;
+      } else {
+        summary.unprobed += 1;
+      }
+      return summary;
+    },
+    { reachable: 0, unreachable: 0, unprobed: 0 },
   );
-  const internetReachableCount = networkSnapshots.filter(
-    (s) => s.network.internetReachable === true,
-  ).length;
-  const internetUnreachableCount = networkSnapshots.filter(
-    (s) => s.network.internetReachable === false,
-  ).length;
-  const hasInternetData = networkSnapshots.length > 0;
+  const hasInternetData = servers.length > 0 && internetSummary.unprobed < servers.length;
   const activeTaskGroups = [...taskQueueGroups]
     .sort((left, right) => (right.running.length + right.queued.length) - (left.running.length + left.queued.length))
     .slice(0, 3);
@@ -71,22 +107,7 @@ export function Overview() {
     .sort((left, right) => right.createdAt - left.createdAt)
     .slice(0, 3);
 
-  const stats = [
-    {
-      key: 'presence',
-      label: '在线节点',
-      value: servers.length === 0 ? '0' : `${onlineCount}/${servers.length}`,
-      hint: servers.length === 0 ? '等待节点接入' : offlineCount === 0 ? '当前全部在线' : `${offlineCount} 个节点离线`,
-      cardClassName: 'border-sky-400/20 bg-sky-500/[0.07] shadow-[0_18px_48px_rgba(14,165,233,0.08)]',
-      valueClassName: 'text-sky-100',
-      hintClassName: offlineCount > 0 ? 'text-rose-200/75' : 'text-sky-100/75',
-      badges: servers.length > 0
-        ? [
-            { label: '在线', value: String(onlineCount), className: 'node-badge-base node-badge-status-online' },
-            { label: '离线', value: String(offlineCount), className: 'node-badge-base node-badge-status-offline' },
-          ]
-        : [],
-    },
+  const stats: OverviewStatCard[] = [
     {
       key: 'load',
       label: '任务负载',
@@ -108,35 +129,6 @@ export function Overview() {
       badges: [],
     },
     {
-      key: 'internet',
-      label: '外网连通',
-      value: hasInternetData
-        ? `${internetReachableCount}/${networkSnapshots.length}`
-        : '--',
-      hint: !hasInternetData
-        ? '等待节点上报外网探测数据'
-        : internetUnreachableCount === 0
-          ? '所有上报节点外网畅通'
-          : `${internetUnreachableCount} 个节点外网不可达`,
-      cardClassName: !hasInternetData
-        ? 'border-white/10 bg-slate-950/30'
-        : internetUnreachableCount > 0
-          ? 'border-rose-400/20 bg-rose-500/[0.07]'
-          : 'border-emerald-400/20 bg-emerald-500/[0.06]',
-      valueClassName: 'text-slate-100',
-      hintClassName: !hasInternetData
-        ? 'text-slate-400'
-        : internetUnreachableCount > 0
-          ? 'text-rose-300/80'
-          : 'text-emerald-300/75',
-      badges: hasInternetData
-        ? [
-            { label: '可达', value: String(internetReachableCount), className: 'node-badge-base node-badge-status-online' },
-            { label: '不可达', value: String(internetUnreachableCount), className: 'node-badge-base node-badge-status-offline' },
-          ]
-        : [],
-    },
-    {
       key: 'sampling',
       label: '最新采样',
       value: latestMetricTimestamp > 0 ? formatTime(latestMetricTimestamp) : '--',
@@ -156,7 +148,45 @@ export function Overview() {
   return (
     <div className="p-6 space-y-6">
       <section>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-sky-400/20 bg-sky-500/[0.07] p-4 backdrop-blur-sm md:col-span-2">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-500">节点状态</p>
+                <p className="mt-3 text-2xl font-semibold text-sky-100">{servers.length}</p>
+                <p className="mt-2 text-xs text-slate-300/80">
+                  {servers.length === 0
+                    ? '等待节点接入'
+                    : hasInternetData
+                      ? `在线状态与外网探测按同一口径汇总，当前 ${internetSummary.unprobed} 个节点未探测。`
+                      : '当前节点尚未上报外网探测数据。'}
+                </p>
+              </div>
+              <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:max-w-xl">
+                <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">在线状态</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="node-badge-base node-badge-status-online">在线 {connectionSummary.online}</span>
+                    <span className="node-badge-base node-badge-status-offline">离线 {connectionSummary.offline}</span>
+                    {connectionSummary.connecting > 0 && (
+                      <span className="node-badge-base node-badge-status-connecting">连接中 {connectionSummary.connecting}</span>
+                    )}
+                    {connectionSummary.error > 0 && (
+                      <span className="node-badge-base node-badge-status-error">异常 {connectionSummary.error}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">外网状态</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="node-badge-base node-badge-status-online">可达 {internetSummary.reachable}</span>
+                    <span className="node-badge-base node-badge-status-offline">不可达 {internetSummary.unreachable}</span>
+                    <span className="node-badge-base node-badge-status-neutral">未探测 {internetSummary.unprobed}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           {stats.map((item) => (
             <div key={item.key} className={`rounded-2xl border p-4 backdrop-blur-sm ${item.cardClassName}`}>
               <p className="text-xs uppercase tracking-[0.22em] text-slate-500">{item.label}</p>

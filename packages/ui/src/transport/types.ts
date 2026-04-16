@@ -7,7 +7,7 @@ import type {
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
   AutoAddUnassignedPersonsReport,
   MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
-  MetricsHistoryResponse, GpuUsageHistoryResponse,
+  MetricsHistoryResponse, GpuUsageHistoryResponse, ProcessHistoryFrame, ProcessReplayIndexPoint,
 } from '@monitor/core';
 
 export interface SecurityEventQuery {
@@ -81,6 +81,8 @@ export interface TransportAdapter {
   getTaskQueue(): Promise<AgentTaskQueueGroup[]>;
   getTaskEvents?(serverId: string, taskId: string, afterId?: number): Promise<AgentTaskEventRecord[]>;
   getProcessAudit(serverId: string): Promise<ProcessAuditRow[]>;
+  getProcessHistoryIndex?(serverId: string, from: number, to: number): Promise<ProcessReplayIndexPoint[]>;
+  getProcessHistoryFrame?(serverId: string, timestamp: number): Promise<ProcessHistoryFrame>;
   getSecurityEvents(query?: SecurityEventQuery): Promise<SecurityEventRecord[]>;
   markSecurityEventSafe(id: number, reason?: string): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>;
   unresolveSecurityEvent(id: number, reason?: string): Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>;

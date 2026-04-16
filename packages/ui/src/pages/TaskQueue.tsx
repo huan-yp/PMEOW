@@ -3,6 +3,8 @@ import type { AgentTaskEventRecord, MirroredAgentTaskRecord } from '@monitor/cor
 import { useTransport } from '../transport/TransportProvider.js';
 import { useStore } from '../store/useStore.js';
 
+const RECENT_TASKS_PAGE_SIZE = 5;
+
 function getTaskBusyKey(task: MirroredAgentTaskRecord) {
   return `${task.serverId}:${task.taskId}`;
 }
@@ -112,6 +114,7 @@ function TaskSection({
   onCancel,
   onRaisePriority,
   onToggleReason,
+  pagination,
 }: {
   title: string;
   tasks: MirroredAgentTaskRecord[];
@@ -123,7 +126,21 @@ function TaskSection({
   onCancel: (task: MirroredAgentTaskRecord) => void;
   onRaisePriority: (task: MirroredAgentTaskRecord) => void;
   onToggleReason: (task: MirroredAgentTaskRecord) => void;
+  pagination?: {
+    page: number;
+    pageSize: number;
+    onPreviousPage: () => void;
+    onNextPage: () => void;
+  };
 }) {
+  const pageSize = pagination?.pageSize ?? (tasks.length || 1);
+  const pageCount = Math.max(1, Math.ceil(tasks.length / pageSize));
+  const currentPage = Math.min(Math.max(pagination?.page ?? 1, 1), pageCount);
+  const visibleTasks = pagination
+    ? tasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    : tasks;
+  const showPagination = Boolean(pagination) && tasks.length > pageSize;
+
   return (
     <section className="rounded-lg border border-dark-border bg-dark-bg/60 p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -147,7 +164,7 @@ function TaskSection({
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => {
+              {visibleTasks.map((task) => {
                 const taskKey = getTaskBusyKey(task);
                 const taskBusy = busyTaskKeys.includes(taskKey);
                 const canCancel = task.status === 'queued' || task.status === 'running';
@@ -218,6 +235,30 @@ function TaskSection({
           </table>
         </div>
       )}
+
+      {showPagination ? (
+        <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500">
+          <span>第 {currentPage} 页 / 共 {pageCount} 页</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={pagination?.onPreviousPage}
+              disabled={currentPage <= 1}
+              className="rounded border border-dark-border px-3 py-1.5 text-slate-400 transition-colors hover:bg-dark-hover disabled:opacity-30"
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              onClick={pagination?.onNextPage}
+              disabled={currentPage >= pageCount}
+              className="rounded border border-dark-border px-3 py-1.5 text-slate-400 transition-colors hover:bg-dark-hover disabled:opacity-30"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -227,6 +268,7 @@ export function TaskQueue() {
   const taskQueueGroups = useStore((state) => state.taskQueueGroups);
   const [busyServerIds, setBusyServerIds] = useState<string[]>([]);
   const [busyTaskKeys, setBusyTaskKeys] = useState<string[]>([]);
+  const [recentPagesByServerId, setRecentPagesByServerId] = useState<Record<string, number>>({});
   const [expandedTaskKey, setExpandedTaskKey] = useState<string | null>(null);
   const [loadingReasonTaskKeys, setLoadingReasonTaskKeys] = useState<string[]>([]);
   const [reasonEventsByTaskKey, setReasonEventsByTaskKey] = useState<Record<string, AgentTaskEventRecord[]>>({});
@@ -279,6 +321,13 @@ export function TaskQueue() {
 
   const handleResumeQueue = (serverId: string) => {
     void runServerAction(serverId, () => transport.resumeQueue(serverId));
+  };
+
+  const handleRecentPageChange = (serverId: string, nextPage: number) => {
+    setRecentPagesByServerId((current) => ({
+      ...current,
+      [serverId]: Math.max(1, nextPage),
+    }));
   };
 
   const handleCancelTask = (task: MirroredAgentTaskRecord) => {
@@ -341,76 +390,90 @@ export function TaskQueue() {
           暂无任务队列数据，等待节点开始上报。
         </div>
       ) : (
-        taskQueueGroups.map((group) => (
-          <section key={group.serverId} className="rounded-lg border border-dark-border bg-dark-card p-4 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-100">{group.serverName}</h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  节点 ID {group.serverId} · 排队 {group.queued.length} · 运行 {group.running.length} · 最近 {group.recent.length}
-                </p>
+        taskQueueGroups.map((group) => {
+          const recentPageCount = Math.max(1, Math.ceil(group.recent.length / RECENT_TASKS_PAGE_SIZE));
+          const currentRecentPage = Math.min(
+            Math.max(recentPagesByServerId[group.serverId] ?? 1, 1),
+            recentPageCount,
+          );
+
+          return (
+            <section key={group.serverId} className="rounded-lg border border-dark-border bg-dark-card p-4 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-100">{group.serverName}</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    节点 ID {group.serverId} · 排队 {group.queued.length} · 运行 {group.running.length} · 最近 {group.recent.length}（最多展示 20 条）
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePauseQueue(group.serverId)}
+                    disabled={busyServerIds.includes(group.serverId)}
+                    className="rounded border border-dark-border px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
+                  >
+                    暂停队列
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleResumeQueue(group.serverId)}
+                    disabled={busyServerIds.includes(group.serverId)}
+                    className="rounded border border-dark-border px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
+                  >
+                    恢复队列
+                  </button>
+                </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => handlePauseQueue(group.serverId)}
-                  disabled={busyServerIds.includes(group.serverId)}
-                  className="rounded border border-dark-border px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
-                >
-                  暂停队列
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleResumeQueue(group.serverId)}
-                  disabled={busyServerIds.includes(group.serverId)}
-                  className="rounded border border-dark-border px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-dark-hover disabled:opacity-50"
-                >
-                  恢复队列
-                </button>
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                <TaskSection
+                  title="排队中"
+                  tasks={group.queued}
+                  busyTaskKeys={busyTaskKeys}
+                  expandedTaskKey={expandedTaskKey}
+                  loadingReasonTaskKeys={loadingReasonTaskKeys}
+                  reasonEventsByTaskKey={reasonEventsByTaskKey}
+                  reasonErrorsByTaskKey={reasonErrorsByTaskKey}
+                  onCancel={handleCancelTask}
+                  onRaisePriority={handleRaisePriority}
+                  onToggleReason={handleToggleReason}
+                />
+                <TaskSection
+                  title="运行中"
+                  tasks={group.running}
+                  busyTaskKeys={busyTaskKeys}
+                  expandedTaskKey={expandedTaskKey}
+                  loadingReasonTaskKeys={loadingReasonTaskKeys}
+                  reasonEventsByTaskKey={reasonEventsByTaskKey}
+                  reasonErrorsByTaskKey={reasonErrorsByTaskKey}
+                  onCancel={handleCancelTask}
+                  onRaisePriority={handleRaisePriority}
+                  onToggleReason={handleToggleReason}
+                />
+                <TaskSection
+                  title="最近完成（最近 20 条）"
+                  tasks={group.recent}
+                  busyTaskKeys={busyTaskKeys}
+                  expandedTaskKey={expandedTaskKey}
+                  loadingReasonTaskKeys={loadingReasonTaskKeys}
+                  reasonEventsByTaskKey={reasonEventsByTaskKey}
+                  reasonErrorsByTaskKey={reasonErrorsByTaskKey}
+                  onCancel={handleCancelTask}
+                  onRaisePriority={handleRaisePriority}
+                  onToggleReason={handleToggleReason}
+                  pagination={{
+                    page: currentRecentPage,
+                    pageSize: RECENT_TASKS_PAGE_SIZE,
+                    onPreviousPage: () => handleRecentPageChange(group.serverId, currentRecentPage - 1),
+                    onNextPage: () => handleRecentPageChange(group.serverId, currentRecentPage + 1),
+                  }}
+                />
               </div>
-            </div>
-
-            <div className="mt-4 grid gap-4 xl:grid-cols-3">
-              <TaskSection
-                title="排队中"
-                tasks={group.queued}
-                busyTaskKeys={busyTaskKeys}
-                expandedTaskKey={expandedTaskKey}
-                loadingReasonTaskKeys={loadingReasonTaskKeys}
-                reasonEventsByTaskKey={reasonEventsByTaskKey}
-                reasonErrorsByTaskKey={reasonErrorsByTaskKey}
-                onCancel={handleCancelTask}
-                onRaisePriority={handleRaisePriority}
-                onToggleReason={handleToggleReason}
-              />
-              <TaskSection
-                title="运行中"
-                tasks={group.running}
-                busyTaskKeys={busyTaskKeys}
-                expandedTaskKey={expandedTaskKey}
-                loadingReasonTaskKeys={loadingReasonTaskKeys}
-                reasonEventsByTaskKey={reasonEventsByTaskKey}
-                reasonErrorsByTaskKey={reasonErrorsByTaskKey}
-                onCancel={handleCancelTask}
-                onRaisePriority={handleRaisePriority}
-                onToggleReason={handleToggleReason}
-              />
-              <TaskSection
-                title="最近完成"
-                tasks={group.recent}
-                busyTaskKeys={busyTaskKeys}
-                expandedTaskKey={expandedTaskKey}
-                loadingReasonTaskKeys={loadingReasonTaskKeys}
-                reasonEventsByTaskKey={reasonEventsByTaskKey}
-                reasonErrorsByTaskKey={reasonErrorsByTaskKey}
-                onCancel={handleCancelTask}
-                onRaisePriority={handleRaisePriority}
-                onToggleReason={handleToggleReason}
-              />
-            </div>
-          </section>
-        ))
+            </section>
+          );
+        })
       )}
     </div>
   );

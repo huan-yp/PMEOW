@@ -241,6 +241,13 @@ body {
   color: #ffe4e6;
 }
 
+.node-badge-status-neutral {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(71, 85, 105, 0.22);
+  box-shadow: inset 0 0 18px rgba(15, 23, 42, 0.08);
+  color: #e2e8f0;
+}
+
 .node-badge-risk {
   border-color: rgba(245, 158, 11, 0.24);
   background: rgba(245, 158, 11, 0.14);

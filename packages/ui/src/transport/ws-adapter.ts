@@ -9,7 +9,7 @@ import type {
   PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
   PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity, AutoAddUnassignedPersonsReport,
   MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord,
-  MetricsHistoryResponse, GpuUsageHistoryResponse,
+  MetricsHistoryResponse, GpuUsageHistoryResponse, ProcessHistoryFrame, ProcessReplayIndexPoint,
 } from '@monitor/core';
 import type { SecurityEventQuery, AlertQuery } from './types.js';
 
@@ -288,6 +288,16 @@ export class WebSocketAdapter implements TransportAdapter {
 
   async getProcessAudit(serverId: string): Promise<ProcessAuditRow[]> {
     return this.fetch(`/api/servers/${serverId}/process-audit`);
+  }
+
+  async getProcessHistoryIndex(serverId: string, from: number, to: number): Promise<ProcessReplayIndexPoint[]> {
+    const params = new URLSearchParams({ from: String(from), to: String(to) });
+    return this.fetch(`/api/servers/${serverId}/process-history/index?${params.toString()}`);
+  }
+
+  async getProcessHistoryFrame(serverId: string, timestamp: number): Promise<ProcessHistoryFrame> {
+    const params = new URLSearchParams({ timestamp: String(timestamp) });
+    return this.fetch(`/api/servers/${serverId}/process-history/frame?${params.toString()}`);
   }
 
   async getSecurityEvents(query: SecurityEventQuery = {}): Promise<SecurityEventRecord[]> {

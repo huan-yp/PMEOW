@@ -164,6 +164,7 @@ function createMockTransport(): TransportAdapter {
     testConnection: vi.fn<(input: ServerInput) => Promise<{ success: boolean; error?: string }>>(async (_input) => ({ success: true })),
     getLatestMetrics: vi.fn<(serverId: string) => Promise<MetricsSnapshot | null>>(async (_serverId) => null),
     getMetricsHistory: vi.fn<(serverId: string, from: number, to: number) => Promise<MetricsSnapshot[]>>(async (_serverId, _from, _to) => []),
+    getMetricsHistoryBucketed: vi.fn(async () => ({ serverId: 'server-agent-1', from: 0, to: 0, bucketMs: 60_000, source: 'raw' as const, buckets: [] })),
     getServerStatuses: vi.fn<() => Promise<ServerStatus[]>>(async () => []),
     getHooks: vi.fn<() => Promise<HookRule[]>>(async () => []),
     createHook: vi.fn<(input: HookRuleInput) => Promise<HookRule>>(async (_input) => { throw new Error('not implemented'); }),
@@ -204,8 +205,15 @@ function createMockTransport(): TransportAdapter {
         suspiciousReasons: ['命中安全关键词 xmrig'],
       },
     ]),
+    getProcessHistoryIndex: vi.fn(async (_serverId, _from, _to) => []),
+    getProcessHistoryFrame: vi.fn(async (_serverId, timestamp) => ({
+      serverId: 'server-agent-1',
+      timestamp,
+      processes: [],
+    })),
     getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async (_query) => []),
     markSecurityEventSafe: vi.fn<(id: number, reason?: string) => Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>>(async (_id, _reason) => { throw new Error('not implemented'); }),
+    unresolveSecurityEvent: vi.fn(async (_id, _reason) => { throw new Error('not implemented'); }),
     getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({
       generatedAt: 1_710_000_000_000,
       users: [
@@ -216,6 +224,7 @@ function createMockTransport(): TransportAdapter {
     })),
     getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
     getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<{ bucketStart: number; user: string; totalVramMB: number; taskVramMB: number; nonTaskVramMB: number; }[]>>(async (_user, _hours) => []),
+    getGpuUsageByUserBucketed: vi.fn(async () => ({ user: 'alice', from: 0, to: 0, bucketMs: 60_000, source: 'raw' as const, buckets: [] })),
     cancelTask: vi.fn<(serverId: string, taskId: string) => Promise<void>>(async (_serverId, _taskId) => undefined),
     setTaskPriority: vi.fn<(serverId: string, taskId: string, priority: number) => Promise<void>>(async (_serverId, _taskId, _priority) => undefined),
     pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
@@ -295,7 +304,7 @@ describe('overview detail settings', () => {
     });
   });
 
-  it('shows internet reachability card with placeholder when no data', async () => {
+  it('shows combined node status card with unprobed placeholder when no data', async () => {
     const transport = createMockTransport();
     const server = createServer();
 
@@ -307,13 +316,14 @@ describe('overview detail settings', () => {
 
     renderWithProviders(<Overview />, transport);
 
-    // Card label should be visible
-    expect(screen.getByText('外网连通')).toBeTruthy();
-    // No internet data → value should be '--'
-    expect(screen.getByText('等待节点上报外网探测数据')).toBeTruthy();
+    const statusCard = screen.getByText('节点状态').closest('.rounded-2xl') as HTMLElement;
+    expect(statusCard).toBeTruthy();
+    expect(within(statusCard).getByText('外网状态')).toBeTruthy();
+    expect(within(statusCard).getByText('未探测 1')).toBeTruthy();
+    expect(within(statusCard).getByText('当前节点尚未上报外网探测数据。')).toBeTruthy();
   });
 
-  it('shows internet reachability card with all-reachable state', async () => {
+  it('shows combined node status card with all-reachable state', async () => {
     const transport = createMockTransport();
     const server = createServer();
     const metrics = createMetricsSnapshot(server.id);
@@ -330,21 +340,15 @@ describe('overview detail settings', () => {
 
     renderWithProviders(<Overview />, transport);
 
-    const internetLabel = screen.getByText('外网连通');
-    expect(internetLabel).toBeTruthy();
-    // Find the specific card container for internet reachability
-    const internetCard = internetLabel.closest('.rounded-2xl') as HTMLElement;
-    expect(internetCard).toBeTruthy();
-    expect(within(internetCard).getByText('所有上报节点外网畅通')).toBeTruthy();
-    // Badges render as "可达 1" and "不可达 0" (label + value in one span).
-    // Both contain "可达" as a substring, so we use getAllByText for the
-    // positive match and getByText with a start-anchor for the negative.
-    const reachBadges = within(internetCard).getAllByText(/可达/);
-    expect(reachBadges.length).toBe(2); // "可达 1" + "不可达 0"
-    expect(within(internetCard).getByText(/^不可达/)).toBeTruthy();
+    const statusCard = screen.getByText('节点状态').closest('.rounded-2xl') as HTMLElement;
+    expect(statusCard).toBeTruthy();
+    expect(within(statusCard).getByText('可达 1')).toBeTruthy();
+    expect(within(statusCard).getByText('不可达 0')).toBeTruthy();
+    expect(within(statusCard).getByText('未探测 0')).toBeTruthy();
+    expect(within(statusCard).getByText('在线 1')).toBeTruthy();
   });
 
-  it('shows internet reachability card with unreachable node', async () => {
+  it('shows combined node status card with unreachable node', async () => {
     const transport = createMockTransport();
     const serverA = createServer({ id: 'srv-a', name: 'node-a' });
     const serverB = createServer({ id: 'srv-b', name: 'node-b' });
@@ -373,9 +377,11 @@ describe('overview detail settings', () => {
 
     renderWithProviders(<Overview />, transport);
 
-    expect(screen.getByText('外网连通')).toBeTruthy();
-    expect(screen.getByText('1/2')).toBeTruthy();
-    expect(screen.getByText('1 个节点外网不可达')).toBeTruthy();
+    const statusCard = screen.getByText('节点状态').closest('.rounded-2xl') as HTMLElement;
+    expect(statusCard).toBeTruthy();
+    expect(within(statusCard).getByText('可达 1')).toBeTruthy();
+    expect(within(statusCard).getByText('不可达 1')).toBeTruthy();
+    expect(within(statusCard).getByText('未探测 0')).toBeTruthy();
   });
 
   it('shows distinct source and presence badges on overview cards', async () => {
@@ -687,8 +693,151 @@ describe('overview detail settings', () => {
 
     expect(await screen.findByRole('columnheader', { name: 'RSS GB' })).toBeTruthy();
     expect(await screen.findByRole('columnheader', { name: 'VRAM GB' })).toBeTruthy();
+    expect(await screen.findByRole('columnheader', { name: 'GPU%' })).toBeTruthy();
     expect(screen.getByText('0.1 GB')).toBeTruthy();
     expect(screen.getByText('1.0 GB')).toBeTruthy();
+  });
+
+  it('supports process sorting and filtering in the process table', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+
+    transport.getProcessAudit = vi.fn(async () => [
+      {
+        pid: 111,
+        user: 'alice',
+        command: 'python gpu-job.py',
+        cpuPercent: 65,
+        memPercent: 8,
+        rss: 1024 * 1024,
+        gpuMemoryMB: 4096,
+        gpuUtilPercent: 70,
+        ownerType: 'user' as const,
+        taskId: null,
+        suspiciousReasons: ['gpu risk'],
+        resolvedPersonId: 'person-1',
+        resolvedPersonName: 'Alice',
+      },
+      {
+        pid: 222,
+        user: 'bob',
+        command: 'python cpu-job.py',
+        cpuPercent: 20,
+        memPercent: 25,
+        rss: 512 * 1024,
+        gpuMemoryMB: 0,
+        ownerType: 'none' as const,
+        taskId: null,
+        suspiciousReasons: [],
+      },
+    ]);
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    await user.click(await screen.findByRole('button', { name: '进程' }));
+
+    const rowsBeforeFilter = screen.getAllByRole('row');
+    expect(rowsBeforeFilter[1]?.textContent).toContain('python gpu-job.py');
+
+    await user.click(screen.getByRole('button', { name: '仅风险进程' }));
+    expect(screen.getByText('python gpu-job.py')).toBeTruthy();
+    expect(screen.queryByText('python cpu-job.py')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '仅已绑定人员' }));
+    expect(screen.getByText('Alice')).toBeTruthy();
+
+    await user.selectOptions(screen.getByRole('combobox'), 'memPercent');
+    expect(screen.getByDisplayValue('内存占用')).toBeTruthy();
+  });
+
+  it('loads replay index and switches replay frames in process tab', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const server = createServer();
+    const metrics = createMetricsSnapshot(server.id);
+    const replayIndex = [
+      { timestamp: 1_710_000_000_000, processCount: 2, gpuProcessCount: 1, suspiciousProcessCount: 1 },
+      { timestamp: 1_710_000_060_000, processCount: 1, gpuProcessCount: 0, suspiciousProcessCount: 0 },
+    ];
+
+    transport.getProcessHistoryIndex = vi.fn(async () => replayIndex);
+    transport.getProcessHistoryFrame = vi.fn(async (_serverId, timestamp) => ({
+      serverId: server.id,
+      timestamp,
+      processes: timestamp === replayIndex[0]!.timestamp
+        ? [
+            {
+              pid: 333,
+              user: 'alice',
+              command: 'python old-frame.py',
+              cpuPercent: 30,
+              memPercent: 5,
+              rss: 128 * 1024,
+              gpuMemoryMB: 512,
+              ownerType: 'unknown' as const,
+              taskId: null,
+              suspiciousReasons: ['old frame'],
+            },
+          ]
+        : [
+            {
+              pid: 444,
+              user: 'bob',
+              command: 'python newer-frame.py',
+              cpuPercent: 10,
+              memPercent: 3,
+              rss: 64 * 1024,
+              gpuMemoryMB: 0,
+              ownerType: 'none' as const,
+              taskId: null,
+              suspiciousReasons: [],
+            },
+          ],
+    }));
+
+    useStore.setState({
+      servers: [server],
+      statuses: new Map([[server.id, createStatus(server.id)]]),
+      latestMetrics: new Map([[server.id, metrics]]),
+      taskQueueGroups: [],
+    });
+
+    renderWithProviders(
+      <Routes>
+        <Route path="/server/:id" element={<ServerDetail />} />
+      </Routes>,
+      transport,
+      `/server/${server.id}`
+    );
+
+    await user.click(await screen.findByRole('button', { name: '进程' }));
+    await user.click(screen.getByRole('button', { name: '历史回放' }));
+
+    expect(await screen.findByText(/当前帧 1 个进程/)).toBeTruthy();
+    expect(await screen.findByText('python newer-frame.py')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '上一帧' }));
+
+    expect(await screen.findByText('python old-frame.py')).toBeTruthy();
+    await waitFor(() => {
+      expect(transport.getProcessHistoryIndex).toHaveBeenCalledWith(server.id, expect.any(Number), expect.any(Number));
+      expect(transport.getProcessHistoryFrame).toHaveBeenCalled();
+    });
   });
 
   it('keeps server detail stable when history and process audit requests fail', async () => {

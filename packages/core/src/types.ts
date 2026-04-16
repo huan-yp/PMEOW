@@ -170,11 +170,25 @@ export interface ProcessAuditRow {
   memPercent: number;
   rss: number;
   gpuMemoryMB: number;
+  gpuUtilPercent?: number;
   ownerType: 'task' | 'user' | 'unknown' | 'none';
   taskId?: string | null;
   suspiciousReasons: string[];
   resolvedPersonId?: string;
   resolvedPersonName?: string;
+}
+
+export interface ProcessReplayIndexPoint {
+  timestamp: number;
+  processCount: number;
+  gpuProcessCount: number;
+  suspiciousProcessCount: number;
+}
+
+export interface ProcessHistoryFrame {
+  serverId: string;
+  timestamp: number;
+  processes: ProcessAuditRow[];
 }
 
 export interface AgentTaskQueueGroup {
@@ -602,6 +616,7 @@ export interface PersonBindingCandidate {
   lastSeenAt: number;
   activeBinding: PersonBindingCandidateActiveBinding | null;
 }
+
 export type AutoAddUnassignedPersonsItemResult =
   | 'created-person'
   | 'reused-person'

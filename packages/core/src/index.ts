@@ -32,6 +32,7 @@ export { upsertAgentTask, getAgentTask, getAgentTasksByServerId, deleteAgentTask
 export {
 	saveGpuUsageRows,
 	getLatestGpuUsageByServerId,
+	getGpuUsageByServerIdAndTimestamp,
 	getGpuOverview,
 	getGpuUsageSummary,
 	getGpuUsageTimelineByUser,
@@ -107,7 +108,7 @@ export {
   createPerson,
   getPersonById,
   listPersons,
-  autoAddUnassignedPersons,
+	autoAddUnassignedPersons,
   updatePerson,
   archivePerson,
   createPersonBinding,

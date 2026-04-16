@@ -1,12 +1,14 @@
 import {
   buildProcessAuditRows,
   getAgentTaskQueueGroups,
+  getGpuUsageByServerIdAndTimestamp,
   getGpuOverview,
   getGpuUsageSummary,
   getGpuUsageTimelineByUser,
   getGpuUsageBucketed,
   getLatestGpuUsageByServerId,
   getLatestMetrics,
+  getMetricsHistory,
   getLatestUnownedGpuDurationMinutes,
   getSettings,
   getServerById,
@@ -19,6 +21,7 @@ import {
 } from '@monitor/core';
 import type { Express, Request, Response } from 'express';
 import type { Namespace } from 'socket.io';
+import type { MetricsSnapshot, ProcessAuditRow, ProcessReplayIndexPoint } from '@monitor/core';
 
 interface OperatorRouteOptions {
   scheduler: Scheduler;
@@ -27,6 +30,94 @@ interface OperatorRouteOptions {
 
 interface AuthenticatedRequest extends Request {
   user?: Record<string, unknown>;
+}
+
+const EPOCH_MS_THRESHOLD = 1_000_000_000_000;
+
+function normalizeEpochMs(timestamp: number): number {
+  if (!Number.isFinite(timestamp)) {
+    return 0;
+  }
+
+  return timestamp >= EPOCH_MS_THRESHOLD
+    ? Math.round(timestamp)
+    : Math.round(timestamp * 1000);
+}
+
+function getReplaySnapshots(serverId: string, from: number, to: number): MetricsSnapshot[] {
+  const rawMs = getMetricsHistory(serverId, from, to);
+  if (rawMs.length > 0 || from < EPOCH_MS_THRESHOLD) {
+    return rawMs;
+  }
+
+  return getMetricsHistory(serverId, from / 1000, to / 1000);
+}
+
+function findReplaySnapshot(serverId: string, timestamp: number): MetricsSnapshot | undefined {
+  const exactMs = getMetricsHistory(serverId, timestamp, timestamp);
+  if (exactMs.length > 0) {
+    return exactMs[0];
+  }
+
+  const aroundMs = getMetricsHistory(serverId, timestamp - 1000, timestamp + 1000);
+  if (aroundMs.length > 0) {
+    return aroundMs.sort((left, right) => Math.abs(left.timestamp - timestamp) - Math.abs(right.timestamp - timestamp))[0];
+  }
+
+  const targetSeconds = timestamp / 1000;
+  const aroundSeconds = getMetricsHistory(serverId, targetSeconds - 1, targetSeconds + 1);
+  if (aroundSeconds.length > 0) {
+    return aroundSeconds.sort(
+      (left, right) => Math.abs(normalizeEpochMs(left.timestamp) - timestamp) - Math.abs(normalizeEpochMs(right.timestamp) - timestamp),
+    )[0];
+  }
+
+  return undefined;
+}
+
+function resolveProcessRows(serverId: string, snapshot: MetricsSnapshot, mode: 'live' | 'replay'): ProcessAuditRow[] {
+  const gpuRows = mode === 'live'
+    ? getLatestGpuUsageByServerId(serverId)
+    : getGpuUsageByServerIdAndTimestamp(serverId, snapshot.timestamp);
+  const settings = getSettings();
+  const taskGroup = mode === 'live'
+    ? getAgentTaskQueueGroups().find((group) => group.serverId === serverId)
+    : undefined;
+  const hasRunningPmeowTasks = mode === 'live' ? (taskGroup?.running.length ?? 0) > 0 : false;
+  const unownedGpuMinutes = mode === 'live' ? getLatestUnownedGpuDurationMinutes(serverId) : 0;
+  const highGpuUtilizationActive = mode === 'live'
+    ? snapshot.gpu.utilizationPercent > settings.securityHighGpuUtilizationPercent && !hasRunningPmeowTasks
+    : false;
+
+  const rows = buildProcessAuditRows(snapshot, gpuRows, {
+    securityMiningKeywords: settings.securityMiningKeywords,
+    unownedGpuMinutes,
+    hasRunningPmeowTasks,
+    highGpuUtilizationActive,
+  });
+
+  const resolutionTimestamp = mode === 'live' ? Date.now() : normalizeEpochMs(snapshot.timestamp);
+  for (const row of rows) {
+    const { person } = resolveRawUserPerson(serverId, row.user, resolutionTimestamp);
+    if (person) {
+      row.resolvedPersonId = person.id;
+      row.resolvedPersonName = person.displayName;
+    }
+  }
+
+  return rows;
+}
+
+function buildReplayIndex(serverId: string, snapshots: MetricsSnapshot[]): ProcessReplayIndexPoint[] {
+  return snapshots.map((snapshot) => {
+    const rows = resolveProcessRows(serverId, snapshot, 'replay');
+    return {
+      timestamp: normalizeEpochMs(snapshot.timestamp),
+      processCount: rows.length,
+      gpuProcessCount: rows.filter((row) => row.gpuMemoryMB > 0 || row.gpuUtilPercent !== undefined).length,
+      suspiciousProcessCount: rows.filter((row) => row.suspiciousReasons.length > 0).length,
+    };
+  });
 }
 
 function parseHours(value: unknown, defaultHours: number): number {
@@ -133,34 +224,52 @@ export function setupOperatorRoutes(app: Express, options: OperatorRouteOptions)
       return;
     }
 
-    const gpuRows = getLatestGpuUsageByServerId(serverId);
-    const settings = getSettings();
-    const taskGroups = getAgentTaskQueueGroups();
-    const taskGroup = taskGroups.find((group) => group.serverId === serverId);
-    const hasRunningPmeowTasks = (taskGroup?.running.length ?? 0) > 0;
-    const unownedGpuMinutes = getLatestUnownedGpuDurationMinutes(serverId);
+    res.json(resolveProcessRows(serverId, snapshot, 'live'));
+  });
 
-    const highGpuUtilizationActive =
-      snapshot.gpu.utilizationPercent > settings.securityHighGpuUtilizationPercent
-      && !hasRunningPmeowTasks;
-
-    const rows = buildProcessAuditRows(snapshot, gpuRows, {
-      securityMiningKeywords: settings.securityMiningKeywords,
-      unownedGpuMinutes,
-      hasRunningPmeowTasks,
-      highGpuUtilizationActive,
-    });
-
-    const now = Date.now();
-    for (const row of rows) {
-      const { person } = resolveRawUserPerson(serverId, row.user, now);
-      if (person) {
-        row.resolvedPersonId = person.id;
-        row.resolvedPersonName = person.displayName;
-      }
+  app.get('/api/servers/:id/process-history/index', (req: Request, res: Response) => {
+    const serverId = getRouteParam(req, 'id');
+    if (!serverId || !getServerById(serverId)) {
+      res.status(404).json({ error: '服务器不存在' });
+      return;
     }
 
-    res.json(rows);
+    const now = Date.now();
+    const from = req.query.from ? Number(req.query.from) : now - 24 * 3_600_000;
+    const to = req.query.to ? Number(req.query.to) : now;
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
+      res.status(400).json({ error: '非法时间范围' });
+      return;
+    }
+
+    const snapshots = getReplaySnapshots(serverId, from, to);
+    res.json(buildReplayIndex(serverId, snapshots));
+  });
+
+  app.get('/api/servers/:id/process-history/frame', (req: Request, res: Response) => {
+    const serverId = getRouteParam(req, 'id');
+    if (!serverId || !getServerById(serverId)) {
+      res.status(404).json({ error: '服务器不存在' });
+      return;
+    }
+
+    const timestamp = Number(req.query.timestamp);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      res.status(400).json({ error: '缺少有效时间戳' });
+      return;
+    }
+
+    const snapshot = findReplaySnapshot(serverId, timestamp);
+    if (!snapshot) {
+      res.status(404).json({ error: '历史帧不存在' });
+      return;
+    }
+
+    res.json({
+      serverId,
+      timestamp: normalizeEpochMs(snapshot.timestamp),
+      processes: resolveProcessRows(serverId, snapshot, 'replay'),
+    });
   });
 
   app.get('/api/security/events', (req: Request, res: Response) => {

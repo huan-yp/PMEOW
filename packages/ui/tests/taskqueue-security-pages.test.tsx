@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
@@ -14,6 +14,7 @@ import type {
   HookRule,
   HookRuleInput,
   MetricsSnapshot,
+  MirroredAgentTaskRecord,
   ProcessAuditRow,
   SecurityEventRecord,
   ServerConfig,
@@ -69,6 +70,20 @@ function createSecurityEvent(overrides: Partial<SecurityEventRecord> = {}): Secu
     resolvedBy: null,
     createdAt: 1_710_000_000_000,
     resolvedAt: null,
+    ...overrides,
+  };
+}
+
+function createTask(overrides: Partial<MirroredAgentTaskRecord> = {}): MirroredAgentTaskRecord {
+  return {
+    serverId: 'server-1',
+    taskId: 'task-1',
+    status: 'completed',
+    command: 'python done.py',
+    priority: 0,
+    user: 'alice',
+    createdAt: 1_710_000_000_000,
+    finishedAt: 1_710_000_100_000,
     ...overrides,
   };
 }
@@ -319,6 +334,75 @@ describe('task queue and security pages', () => {
 
     expect(await screen.findByText('被更高优先级任务占用')).toBeTruthy();
     expect(screen.getByText('task-a')).toBeTruthy();
+  });
+
+  it('paginates recent tasks per server without affecting other servers', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    transport.getTaskQueue = vi.fn(async () => [
+      {
+        serverId: 'server-1',
+        serverName: 'gpu-agent-01',
+        queued: [],
+        running: [],
+        recent: Array.from({ length: 7 }, (_, index) => createTask({
+          serverId: 'server-1',
+          taskId: `task-recent-${index + 1}`,
+          command: `python recent-${index + 1}.py`,
+          user: 'alice',
+          finishedAt: 1_710_000_100_000 - index,
+        })),
+      },
+      {
+        serverId: 'server-2',
+        serverName: 'gpu-agent-02',
+        queued: [],
+        running: [],
+        recent: Array.from({ length: 6 }, (_, index) => createTask({
+          serverId: 'server-2',
+          taskId: `task-other-${index + 1}`,
+          command: `python other-${index + 1}.py`,
+          user: 'bob',
+          finishedAt: 1_710_000_200_000 - index,
+        })),
+      },
+    ]);
+
+    renderApp(transport, '/tasks');
+
+    const firstServerHeading = await screen.findByText('gpu-agent-01');
+    const secondServerHeading = await screen.findByText('gpu-agent-02');
+    const firstServerSection = firstServerHeading.closest('section');
+    const secondServerSection = secondServerHeading.closest('section');
+
+    expect(firstServerSection).toBeTruthy();
+    expect(secondServerSection).toBeTruthy();
+
+    const firstServer = within(firstServerSection as HTMLElement);
+    const secondServer = within(secondServerSection as HTMLElement);
+
+    expect(firstServer.getByText('第 1 页 / 共 2 页')).toBeTruthy();
+    expect(secondServer.getByText('第 1 页 / 共 2 页')).toBeTruthy();
+    expect(firstServer.getByText('task-recent-1')).toBeTruthy();
+    expect(firstServer.queryByText('task-recent-6')).toBeNull();
+    expect(secondServer.getByText('task-other-1')).toBeTruthy();
+    expect(secondServer.queryByText('task-other-6')).toBeNull();
+    expect((firstServer.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(true);
+
+    await user.click(firstServer.getByRole('button', { name: '下一页' }));
+
+    await waitFor(() => {
+      expect(firstServer.getByText('第 2 页 / 共 2 页')).toBeTruthy();
+      expect(firstServer.getByText('task-recent-6')).toBeTruthy();
+      expect(firstServer.getByText('task-recent-7')).toBeTruthy();
+      expect(firstServer.queryByText('task-recent-1')).toBeNull();
+      expect((firstServer.getByRole('button', { name: '下一页' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    expect(secondServer.getByText('第 1 页 / 共 2 页')).toBeTruthy();
+    expect(secondServer.getByText('task-other-1')).toBeTruthy();
+    expect(secondServer.queryByText('task-other-6')).toBeNull();
   });
 
   it('queries security events with filters and marks events safe', async () => {
