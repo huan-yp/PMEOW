@@ -1,71 +1,75 @@
-import { randomUUID } from 'crypto';
 import { getDatabase } from './database.js';
-import type { ServerConfig, ServerInput } from '../types.js';
+import { ServerRecord, ServerInput } from '../types.js';
+import { randomUUID } from 'crypto';
 
-export function getAllServers(): ServerConfig[] {
+export function getAllServers(): ServerRecord[] {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM servers ORDER BY createdAt ASC').all() as ServerConfig[];
+  const rows = db.prepare('SELECT * FROM servers ORDER BY name ASC').all();
+  return (rows as any[]).map(r => ({
+    id: r.id,
+    name: r.name,
+    agentId: r.agent_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
 }
 
-export function getServerById(id: string): ServerConfig | undefined {
+export function getServerById(id: string): ServerRecord | undefined {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM servers WHERE id = ?').get(id) as ServerConfig | undefined;
-}
-
-export function getServerByAgentId(agentId: string): ServerConfig | undefined {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM servers WHERE agentId = ? ORDER BY updatedAt DESC LIMIT 1').get(agentId) as ServerConfig | undefined;
-}
-
-export function getServersByHost(hostname: string): ServerConfig[] {
-  const db = getDatabase();
-  return db.prepare('SELECT * FROM servers WHERE host = ? ORDER BY createdAt ASC, id ASC').all(hostname) as ServerConfig[];
-}
-
-export function createServer(input: ServerInput): ServerConfig {
-  const db = getDatabase();
-  const now = Date.now();
-  const server: ServerConfig = {
-    id: randomUUID(),
-    ...input,
-    sourceType: input.sourceType ?? 'ssh',
-    agentId: input.agentId ?? null,
-    createdAt: now,
-    updatedAt: now,
+  const row = db.prepare('SELECT * FROM servers WHERE id = ?').get(id);
+  if (!row) return undefined;
+  const r = row as any;
+  return {
+    id: r.id,
+    name: r.name,
+    agentId: r.agent_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
   };
-  db.prepare(
-    'INSERT INTO servers (id, name, host, port, username, privateKeyPath, sourceType, agentId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(server.id, server.name, server.host, server.port, server.username, server.privateKeyPath, server.sourceType, server.agentId, server.createdAt, server.updatedAt);
-  return server;
 }
 
-export function updateServer(id: string, input: Partial<ServerInput>): ServerConfig | undefined {
+export function getServerByAgentId(agentId: string): ServerRecord | undefined {
+  const db = getDatabase();
+  const row = db.prepare('SELECT * FROM servers WHERE agent_id = ?').get(agentId);
+  if (!row) return undefined;
+  const r = row as any;
+  return {
+    id: r.id,
+    name: r.name,
+    agentId: r.agent_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  };
+}
+
+export function createServer(input: ServerInput): ServerRecord {
+  const db = getDatabase();
+  const id = randomUUID();
+  const now = Date.now();
+  db.prepare('INSERT INTO servers (id, name, agent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(
+    id, input.name, input.agentId, now, now
+  );
+  return { id, ...input, createdAt: now, updatedAt: now };
+}
+
+export function updateServer(id: string, input: Partial<ServerInput>): ServerRecord | undefined {
   const db = getDatabase();
   const existing = getServerById(id);
   if (!existing) return undefined;
 
-  const updated: ServerConfig = {
-    ...existing,
-    ...input,
-    sourceType: input.sourceType ?? existing.sourceType,
-    agentId: input.agentId !== undefined ? input.agentId : existing.agentId,
-    updatedAt: Date.now(),
-  };
-  db.prepare(
-    'UPDATE servers SET name = ?, host = ?, port = ?, username = ?, privateKeyPath = ?, sourceType = ?, agentId = ?, updatedAt = ? WHERE id = ?'
-  ).run(updated.name, updated.host, updated.port, updated.username, updated.privateKeyPath, updated.sourceType, updated.agentId, updated.updatedAt, id);
-  return updated;
-}
+  const name = input.name ?? existing.name;
+  const agentId = input.agentId ?? existing.agentId;
+  const now = Date.now();
 
-export function bindAgentToServer(serverId: string, agentId: string): ServerConfig | undefined {
-  return updateServer(serverId, {
-    sourceType: 'agent',
-    agentId,
-  });
+  db.prepare('UPDATE servers SET name = ?, agent_id = ?, updated_at = ? WHERE id = ?').run(
+    name, agentId, now, id
+  );
+
+  return { ...existing, name, agentId, updatedAt: now };
 }
 
 export function deleteServer(id: string): boolean {
   const db = getDatabase();
-  const result = db.prepare('DELETE FROM servers WHERE id = ?').run(id);
-  return result.changes > 0;
+  const info = db.prepare('DELETE FROM servers WHERE id = ?').run(id);
+  return info.changes > 0;
 }

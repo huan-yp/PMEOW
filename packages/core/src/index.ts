@@ -1,169 +1,48 @@
-// Core package - public API
-export * from './types.js';
-export type {
-	AgentTaskEventRecord,
-	AgentTaskQueueGroup,
-	GpuOverviewResponse,
-	GpuOverviewServerSummary,
-	GpuOverviewUserSummary,
-	GpuUsageSummaryItem,
-	GpuUsageTimelinePoint,
-	ProcessAuditRow,
-	SecurityEventDetails,
-	SecurityEventRecord,
-	SecurityEventType,
-	ServerStatusEvent,
-} from './types.js';
-export * from './agent/protocol.js';
-export { resolveAgentBinding, autoCreateAgentServer } from './agent/binding.js';
-export type {
-	AgentBindingResolution,
-	BoundAgentBindingResolution,
-	ConflictAgentBindingResolution,
-	UnmatchedAgentBindingResolution,
-} from './agent/binding.js';
-export { AgentSessionRegistry } from './agent/registry.js';
-export type { AgentLiveSession } from './agent/registry.js';
-export { AgentCommandError, isAgentCommandError } from './agent/errors.js';
-export type { AgentCommandErrorCode } from './agent/errors.js';
-export { AgentCommandService } from './agent/command-service.js';
-export type { AgentCommandServiceOptions } from './agent/command-service.js';
-export { ingestAgentMetrics, ingestAgentLocalUsers, flattenGpuAllocation } from './agent/ingest.js';
-export { getTaskQueueCache, setTaskQueueCache, clearTaskQueueCache, getAllCachedTaskQueueGroups, diffTaskQueue } from './agent/task-queue-cache.js';
-export { SSHManager } from './ssh/manager.js';
-export * as collectors from './ssh/collectors/index.js';
-export { getDatabase, closeDatabase } from './db/database.js';
-export { deleteAgentTasksByServerId } from './db/agent-tasks.js';
-export {
-	saveGpuUsageRows,
-	getLatestGpuUsageByServerId,
-	getGpuUsageByServerIdAndTimestamp,
-	getGpuOverview,
-	getGpuUsageSummary,
-	getGpuUsageTimelineByUser,
-	getLatestUnownedGpuDurationMinutes,
-	cleanOldGpuUsage,
-	cleanOldGpuUsageAgg,
-	aggregateGpuUsage,
-	aggregateGpuUsage15mFrom1m,
-	getGpuUsageBucketed,
-} from './db/gpu-usage.js';
-export type { GpuUsageRowInput, StoredGpuUsageRow } from './db/gpu-usage.js';
-export {
-	createSecurityEvent,
-	findOpenSecurityEvent,
-	listSecurityEvents,
-	markSecurityEventSafe,
-	unresolveSecurityEvent,
-} from './db/security-events.js';
-export type { SecurityEventInput, SecurityEventQuery } from './db/security-events.js';
-export {
-	getAllServers,
-	getServerById,
-	getServerByAgentId,
-	getServersByHost,
-	createServer,
-	updateServer,
-	bindAgentToServer,
-	deleteServer,
-} from './db/servers.js';
-export {
-	saveMetrics,
-	getLatestMetrics,
-	getMetricsHistory,
-	getMetricsBucketed,
-	cleanOldMetrics,
-	cleanOldMetricsAgg,
-	aggregateMetrics,
-	aggregateMetrics15mFrom1m,
-	getAggregationCursor,
-	setAggregationCursor,
-} from './db/metrics.js';
-export { replaceServerLocalUsers, listServerLocalUsers } from './db/server-local-users.js';
-export { getAllHooks, getHookById, getHooksByServerId, createHook, updateHook, deleteHook, getHookLogs, addHookLog } from './db/hooks.js';
-export {
-	getSettings,
-	saveSetting,
-	saveSettings,
-} from './db/settings.js';
-export { insertServerStatusEvent, listServerStatusEvents } from './db/server-status-events.js';
-export { Scheduler } from './scheduler.js';
-export { setAlertCallback } from './alerts.js';
-export { saveAlert, getAlerts, suppressAlert, unsuppressAlert, batchSuppressAlerts, batchUnsuppressAlerts, getActiveSuppressions, cleanExpiredAlerts } from './db/alerts.js';
-export type { AlertQuery } from './db/alerts.js';
-export { setNotifyCallback } from './hooks/actions.js';
-export { setHookTriggeredCallback, resetHookState } from './hooks/engine.js';
-export { evaluateCondition, getGpuIdleMinutes, resetIdleTracking } from './hooks/conditions.js';
-export { executeAction } from './hooks/actions.js';
-export type { NodeDataSource, AgentCommandDataSource } from './datasource/types.js';
-export { isAgentCommandDataSource } from './datasource/types.js';
-export { SSHDataSource } from './datasource/ssh-datasource.js';
-export { AgentDataSource } from './datasource/agent-datasource.js';
-export { createDataSource } from './datasource/factory.js';
-export { buildProcessAuditRows } from './security/audit.js';
-export {
-  buildSecurityFingerprint,
-  analyzeSecuritySnapshot,
-  checkHighGpuUtilization,
-  resetHighGpuUtilizationCounters,
-} from './security/analyzer.js';
-export type { CheckHighGpuUtilizationInput } from './security/analyzer.js';
-export { processSecuritySnapshot } from './security/pipeline.js';
-export {
-  createPerson,
-  getPersonById,
-  listPersons,
-	autoAddUnassignedPersons,
-  updatePerson,
-  archivePerson,
-  createPersonBinding,
-  listPersonBindings,
-  updatePersonBinding,
-  getActivePersonBinding,
-  setTaskOwnerOverride,
-  getTaskOwnerOverride,
-  getActiveTaskOwnerOverride,
-} from './db/persons.js';
-export { resolveTaskPerson, resolveRawUserPerson } from './person/resolve.js';
-export { writeAttributionFacts } from './person/attribution.js';
-export {
-  insertPersonAttributionFacts,
-  recordGpuAttributionFacts,
-  recordTaskAttributionFact,
-  estimateSnapshotIntervalMs,
-  queryPersonCumulativeStats,
-  getPersonSummaries,
-  getPersonTimeline,
-  getPersonTasks,
-  getServerPersonActivity,
-  getPersonNodeDistribution,
-  getPersonPeakPeriods,
-	listPersonBindingCandidates,
-  listPersonBindingSuggestions,
-} from './db/person-attribution.js';
-export { getResolvedGpuAllocation } from './agent/gpu-allocation-resolver.js';
-export {
-  createPersonMobileToken,
-  rotatePersonMobileToken,
-  revokePersonMobileToken,
-  resolvePersonMobileToken,
-  getPersonMobileTokenStatus,
-} from './db/person-mobile-tokens.js';
-export type { CreatePersonMobileTokenResult } from './db/person-mobile-tokens.js';
-export {
-  getPersonMobilePreferences,
-  updatePersonMobilePreferences,
-} from './db/person-mobile-preferences.js';
-export {
-  createPersonMobileNotification,
-  getPersonMobileNotifications,
-  getPersonUnreadNotificationCount,
-  markPersonNotificationRead,
-} from './db/person-mobile-notifications.js';
-export type { CreateNotificationInput } from './db/person-mobile-notifications.js';
-export {
-  buildTaskNotificationEvent,
-  buildNodeStatusNotificationEvent,
-  buildGpuAvailabilityNotificationEvent,
-  shouldNotifyForTask,
-} from './mobile/notification-policies.js';
+// Types
+export * from "./types.js";
+
+// DB
+export { getDatabase, closeDatabase } from "./db/database.js";
+export { getAllServers, getServerById, getServerByAgentId, createServer, updateServer, deleteServer } from "./db/servers.js";
+export { saveSnapshot, deleteOldRecentSnapshots, getSnapshotHistory, getLatestSnapshot } from "./db/snapshots.js";
+export type { SnapshotWithGpus } from "./db/snapshots.js";
+export { upsertTask, endTask, getTasks, getTaskById, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
+export { upsertAlert, getAlerts, suppressAlert, unsuppressAlert, deleteAlertsByServerId } from "./db/alerts.js";
+export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "./db/security-events.js";
+export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";
+export { createPerson, getPersonById, listPersons, updatePerson } from "./db/persons.js";
+export { createBinding, updateBinding, getBindingsByPersonId, getActiveBinding, listBindingCandidates } from "./db/person-bindings.js";
+export { getSettings, saveSetting, saveSettings } from "./db/settings.js";
+
+// Agent
+export { AGENT_EVENT, SERVER_COMMAND, isAgentRegisterPayload, isUnifiedReport } from "./agent/protocol.js";
+export type { AgentRegisterPayload } from "./agent/protocol.js";
+export { AgentCommandError, isAgentCommandError } from "./agent/errors.js";
+export type { AgentCommandErrorCode } from "./agent/errors.js";
+
+// Node
+export { AgentSessionRegistry } from "./node/registry.js";
+export type { AgentSession } from "./node/registry.js";
+export { createAgentSession } from "./node/session.js";
+
+// Ingest
+export { IngestPipeline } from "./ingest/pipeline.js";
+export type { IngestCallbacks } from "./ingest/pipeline.js";
+export { diffTasks } from "./ingest/task-differ.js";
+export { SnapshotScheduler } from "./ingest/snapshot-scheduler.js";
+
+// Task
+export { listTasks, getTask, cancelTask, setPriority } from "./task/service.js";
+export type { TaskEvent, TaskEventType } from "./task/events.js";
+
+// Alert
+export { checkAlerts, checkOffline } from "./alert/service.js";
+
+// Security
+export { analyzeReport } from "./security/analyzer.js";
+export type { SecurityFinding } from "./security/analyzer.js";
+export { processSecurityCheck } from "./security/pipeline.js";
+
+// Person
+export { getPersonTimeline, getPersonTasks } from "./person/service.js";
+export { resolveRawUserPerson } from "./person/resolve.js";

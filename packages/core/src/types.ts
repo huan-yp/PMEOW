@@ -1,139 +1,169 @@
 // ========================
-// Server Configuration
+// Server
 // ========================
 
-export type SourceType = 'ssh' | 'agent';
-
-export interface ServerConfig {
+export interface ServerRecord {
   id: string;
   name: string;
-  host: string;
-  port: number;
-  username: string;
-  privateKeyPath: string;
-  sourceType: SourceType;
-  agentId: string | null;
+  agentId: string;
   createdAt: number;
   updatedAt: number;
 }
 
-export type ServerInput = Omit<ServerConfig, 'id' | 'createdAt' | 'updatedAt' | 'sourceType' | 'agentId'> & {
-  sourceType?: SourceType;
-  agentId?: string | null;
+export type ServerInput = {
+  name: string;
+  agentId: string;
 };
 
 // ========================
-// Metrics Data
+// Unified Report (from agent)
 // ========================
 
-export interface CpuMetrics {
-  usagePercent: number;      // Overall CPU usage %
-  coreCount: number;
-  modelName: string;
-  frequencyMhz: number;
-  perCoreUsage: number[];    // Per-core usage %
+export interface UnifiedReport {
+  agentId: string;
+  timestamp: number;
+  seq: number;
+  resourceSnapshot: {
+    gpuCards: GpuCardReport[];
+    cpu: { usage: number; cores: number; frequency: number };
+    memory: { totalMb: number; usedMb: number; percent: number };
+    disks: { mountpoint: string; totalMb: number; usedMb: number }[];
+    network: { interface: string; rxBytesPerSec: number; txBytesPerSec: number }[];
+    processes: ProcessInfo[];
+    internet: { reachable: boolean; targets: string[] };
+    localUsers: string[];
+  };
+  taskQueue: {
+    queued: TaskInfo[];
+    running: TaskInfo[];
+  };
 }
 
-export interface MemoryMetrics {
-  totalMB: number;
-  usedMB: number;
-  availableMB: number;
-  usagePercent: number;
-  swapTotalMB: number;
-  swapUsedMB: number;
-  swapPercent: number;
+export interface GpuCardReport {
+  index: number;
+  name: string;
+  temperature: number;
+  utilizationGpu: number;
+  utilizationMemory: number;
+  memoryTotalMb: number;
+  memoryUsedMb: number;
+  managedReservedMb: number;
+  unmanagedPeakMb: number;
+  effectiveFreeMb: number;
+  taskAllocations: { taskId: string; declaredVramMb: number }[];
+  userProcesses: { pid: number; user: string; vramMb: number }[];
+  unknownProcesses: { pid: number; vramMb: number }[];
 }
 
-export interface DiskInfo {
-  filesystem: string;
-  mountPoint: string;
-  totalGB: number;
-  usedGB: number;
-  availableGB: number;
-  usagePercent: number;
+export interface TaskInfo {
+  id: string;
+  status: 'queued' | 'running';
+  command: string;
+  cwd: string;
+  user: string;
+  launchMode: 'daemon_shell' | 'attached_python';
+  requireVramMb: number;
+  requireGpuCount: number;
+  gpuIds: number[] | null;
+  priority: number;
+  createdAt: number;
+  startedAt: number | null;
+  pid: number | null;
+  assignedGpus: number[] | null;
+  declaredVramPerGpu: number | null;
+  scheduleHistory: ScheduleEvaluation[];
 }
 
-export interface DiskMetrics {
-  disks: DiskInfo[];
-  ioReadKBs: number;       // Read KB/s
-  ioWriteKBs: number;      // Write KB/s
+export interface ScheduleEvaluation {
+  timestamp: number;
+  result: 'scheduled' | 'blocked_by_priority' | 'insufficient_gpu' | 'sustained_window_not_met';
+  gpuSnapshot: Record<string, number>;
+  detail: string;
 }
 
-export interface NetworkMetrics {
-  rxBytesPerSec: number;    // Download bytes/s
-  txBytesPerSec: number;    // Upload bytes/s
-  interfaces: {
-    name: string;
-    rxBytes: number;
-    txBytes: number;
-  }[];
-  // Internet reachability probe result (optional; populated by sources that support it).
-  // Unset on snapshots where the probe is unavailable or has not yet produced a sample.
-  internetReachable?: boolean;            // overall reachability decision
-  internetLatencyMs?: number | null;      // latency in ms to the first successful target; null when unreachable
-  internetProbeTarget?: string;           // target that was probed, e.g. "1.1.1.1:443"
-  internetProbeCheckedAt?: number;        // ms epoch when the probe result was produced
-}
-
-export interface GpuMetrics {
-  available: boolean;
-  totalMemoryMB: number;
-  usedMemoryMB: number;
-  memoryUsagePercent: number;
-  utilizationPercent: number;
-  temperatureC: number;
-  gpuCount: number;
-}
-
-// ========================
-// Agent Runtime Data
-// ========================
-
-export type AgentTaskStatus = 'queued' | 'launching' | 'running' | 'completed' | 'failed' | 'cancelled';
-
-export interface GpuTaskAllocation {
-  taskId: string;
-  gpuIndex: number;
-  declaredVramMB: number;
-  actualVramMB: number;
-}
-
-export interface GpuUserProcess {
+export interface ProcessInfo {
   pid: number;
   user: string;
-  gpuIndex: number;
-  usedMemoryMB: number;
+  cpuPercent: number;
+  memPercent: number;
+  rss: number;
   command: string;
 }
 
-export interface GpuUnknownProcess {
-  pid: number;
-  gpuIndex: number;
-  usedMemoryMB: number;
-  command?: string;
+// ========================
+// DB Records
+// ========================
+
+export interface SnapshotRecord {
+  id: number;
+  serverId: string;
+  timestamp: number;
+  tier: 'recent' | 'archive';
+  seq: number | null;
+  cpu: string;  // JSON
+  memory: string;
+  disks: string;
+  network: string;
+  processes: string;
+  internet: string;
+  localUsers: string;
 }
 
-export interface PerGpuAllocationSummary {
+export interface GpuSnapshotRecord {
+  id: number;
+  snapshotId: number;
+  serverId: string;
   gpuIndex: number;
-  totalMemoryMB: number;
-  usedMemoryMB?: number;
-  pmeowTasks: GpuTaskAllocation[];
-  userProcesses: GpuUserProcess[];
-  unknownProcesses: GpuUnknownProcess[];
-  effectiveFreeMB: number;
+  name: string;
+  temperature: number;
+  utilizationGpu: number;
+  utilizationMemory: number;
+  memoryTotalMb: number;
+  memoryUsedMb: number;
+  managedReservedMb: number;
+  unmanagedPeakMb: number;
+  effectiveFreeMb: number;
+  taskAllocations: string;  // JSON
+  userProcesses: string;
+  unknownProcesses: string;
 }
 
-export interface UserGpuUsageSummary {
+export interface TaskRecord {
+  id: string;
+  serverId: string;
+  status: string;
+  command: string;
+  cwd: string;
   user: string;
-  totalVramMB: number;
-  gpuIndices: number[];
+  launchMode: string;
+  requireVramMb: number;
+  requireGpuCount: number;
+  gpuIds: string | null;  // JSON
+  priority: number;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  pid: number | null;
+  exitCode: number | null;
+  assignedGpus: string | null;  // JSON
+  declaredVramPerGpu: number | null;
+  scheduleHistory: string | null;  // JSON
 }
 
-export interface GpuAllocationSummary {
-  perGpu: PerGpuAllocationSummary[];
-  byUser: UserGpuUsageSummary[];
+export interface AlertRecord {
+  id: number;
+  serverId: string;
+  alertType: string;
+  value: number | null;
+  threshold: number | null;
+  createdAt: number;
+  updatedAt: number;
+  suppressedUntil: number | null;
 }
 
+export type AlertType = 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline';
+
+// Security types
 export type SecurityEventType = 'suspicious_process' | 'unowned_gpu' | 'high_gpu_utilization' | 'marked_safe' | 'unresolve';
 
 export interface SecurityEventDetails {
@@ -162,420 +192,15 @@ export interface SecurityEventRecord {
   resolvedAt: number | null;
 }
 
-export interface ProcessAuditRow {
-  pid: number;
-  user: string;
-  command: string;
-  cpuPercent: number;
-  memPercent: number;
-  rss: number;
-  gpuMemoryMB: number;
-  gpuUtilPercent?: number;
-  ownerType: 'task' | 'user' | 'unknown' | 'none';
-  taskId?: string | null;
-  suspiciousReasons: string[];
-  resolvedPersonId?: string;
-  resolvedPersonName?: string;
-}
-
-export interface ProcessReplayIndexPoint {
-  timestamp: number;
-  processCount: number;
-  gpuProcessCount: number;
-  suspiciousProcessCount: number;
-}
-
-export interface ProcessHistoryFrame {
-  serverId: string;
-  timestamp: number;
-  processes: ProcessAuditRow[];
-}
-
-export interface AgentTaskQueueGroup {
-  serverId: string;
-  serverName: string;
-  queued: MirroredAgentTaskRecord[];
-  running: MirroredAgentTaskRecord[];
-  recent: MirroredAgentTaskRecord[];
-}
-
-export interface AgentTaskQueueResponse {
-  queued: MirroredAgentTaskRecord[];
-  running: MirroredAgentTaskRecord[];
-  recent: MirroredAgentTaskRecord[];
-}
-
-export interface AgentTaskEventRecord {
-  id: number;
-  taskId: string;
-  eventType: string;
-  timestamp: number;
-  details: Record<string, unknown> | null;
-}
-
-export interface AgentTaskRuntimeSummary {
-  launchMode: string;
-  rootPid: number | null;
-  rootCreatedAt: number | null;
-  runtimePhase: string;
-  firstStartedAt: number | null;
-  lastSeenAt: number | null;
-  finalizeSource: string | null;
-  finalizeReasonCode: string | null;
-  lastObservedExitCode: number | null;
-}
-
-export interface AgentTaskAuditDetail {
-  task: MirroredAgentTaskRecord;
-  events: AgentTaskEventRecord[];
-  runtime?: AgentTaskRuntimeSummary;
-}
-
-export interface GpuOverviewUserSummary {
-  user: string;
-  totalVramMB: number;
-  taskCount: number;
-  processCount: number;
-  serverIds: string[];
-}
-
-export interface GpuOverviewServerSummary {
-  serverId: string;
-  serverName: string;
-  totalUsedMB: number;
-  totalTaskMB: number;
-  totalNonTaskMB: number;
-}
-
-export interface GpuOverviewResponse {
-  generatedAt: number;
-  users: GpuOverviewUserSummary[];
-  servers: GpuOverviewServerSummary[];
-}
-
-export interface GpuUsageSummaryItem {
-  user: string;
-  totalVramMB: number;
-  taskVramMB: number;
-  nonTaskVramMB: number;
-}
-
-export interface GpuUsageTimelinePoint {
-  bucketStart: number;
-  user: string;
-  totalVramMB: number;
-  taskVramMB: number;
-  nonTaskVramMB: number;
-}
-
-export interface AgentRegisterPayload {
-  agentId: string;
-  hostname: string;
-  version: string;
-}
-
-export interface AgentHeartbeatPayload {
-  agentId: string;
-  timestamp: number;
-}
-
-export interface AgentTaskUpdatePayload {
-  serverId: string;
-  taskId: string;
-  status: AgentTaskStatus;
-  command?: string;
-  cwd?: string;
-  user?: string;
-  requireVramMB?: number;
-  requireGpuCount?: number;
-  gpuIds?: number[] | null;
-  priority?: number;
-  createdAt?: number;
-  startedAt?: number | null;
-  finishedAt?: number | null;
-  exitCode?: number | null;
-  pid?: number | null;
-}
-
-export interface AgentLocalUserRecord {
-  username: string;
-  uid: number;
-  gid: number;
-  gecos: string;
-  home: string;
-  shell: string;
-}
-
-export interface AgentLocalUsersPayload {
-  serverId: string;
-  agentId: string;
-  timestamp: number;
-  users: AgentLocalUserRecord[];
-}
-
-export interface MirroredAgentTaskRecord {
-  serverId: string;
-  taskId: string;
-  status: AgentTaskStatus;
-  command?: string;
-  cwd?: string;
-  user?: string;
-  requireVramMB?: number;
-  requireGpuCount?: number;
-  gpuIds?: number[] | null;
-  priority?: number;
-  createdAt?: number;
-  startedAt?: number | null;
-  finishedAt?: number | null;
-  exitCode?: number | null;
-  pid?: number | null;
-}
-
-export interface ProcessInfo {
-  pid: number;
-  user: string;
-  cpuPercent: number;
-  memPercent: number;
-  rss: number;              // Resident memory KB
-  command: string;
-}
-
-export interface DockerContainer {
-  id: string;
-  name: string;
-  image: string;
-  status: string;
-  state: string;
-  ports: string;
-  createdAt: string;
-}
-
-export interface SystemMetrics {
-  hostname: string;
-  uptime: string;
-  loadAvg1: number;
-  loadAvg5: number;
-  loadAvg15: number;
-  kernelVersion: string;
-}
-
-export interface MetricsSnapshot {
-  serverId: string;
-  timestamp: number;
-  cpu: CpuMetrics;
-  memory: MemoryMetrics;
-  disk: DiskMetrics;
-  network: NetworkMetrics;
-  gpu: GpuMetrics;
-  processes: ProcessInfo[];
-  docker: DockerContainer[];
-  system: SystemMetrics;
-  gpuAllocation?: GpuAllocationSummary;
-}
-
-// ========================
-// Server Status
-// ========================
-
-export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting' | 'error';
-
-export interface ServerStatus {
-  serverId: string;
-  status: ConnectionStatus;
-  lastSeen: number;
-  error?: string;
-  latestMetrics?: MetricsSnapshot;
-  agentVersion?: string;
-}
-
-export interface ServerStatusEvent {
-  id?: number;
-  serverId: string;
-  fromStatus: ConnectionStatus;
-  toStatus: ConnectionStatus;
-  reason?: string;
-  lastSeen: number;
-  createdAt: number;
-}
-
-// ========================
-// Hook System
-// ========================
-
-export type HookConditionType = 'gpu_mem_below' | 'gpu_util_below' | 'gpu_idle_duration';
-
-export interface HookCondition {
-  type: HookConditionType;
-  threshold: number;         // percent (0-100) or minutes
-  serverId: string;
-}
-
-export type HookActionType = 'exec_local' | 'http_request' | 'desktop_notify';
-
-export interface ExecLocalAction {
-  type: 'exec_local';
-  command: string;
-}
-
-export interface HttpRequestAction {
-  type: 'http_request';
-  url: string;
-  method: 'GET' | 'POST' | 'PUT';
-  headers: Record<string, string>;
-  body: string;
-}
-
-export interface DesktopNotifyAction {
-  type: 'desktop_notify';
-  title: string;
-  body: string;
-}
-
-export type HookAction = ExecLocalAction | HttpRequestAction | DesktopNotifyAction;
-
-export interface HookRule {
-  id: string;
-  name: string;
-  enabled: boolean;
-  condition: HookCondition;
-  action: HookAction;
-  lastTriggeredAt: number | null;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export type HookRuleInput = Omit<HookRule, 'id' | 'lastTriggeredAt' | 'createdAt' | 'updatedAt'>;
-
-export interface HookLog {
-  id: string;
-  hookId: string;
-  triggeredAt: number;
-  success: boolean;
-  result: string;
-  error: string | null;
-}
-
-// ========================
-// Settings
-// ========================
-
-export interface AppSettings {
-  refreshIntervalMs: number;
-  alertCpuThreshold: number;
-  alertMemoryThreshold: number;
-  alertDiskThreshold: number;
-  alertDiskMountPoints: string[];   // which mount points to check, default ["/"]
-  alertSuppressDefaultDays: number; // default suppress duration in days
-  apiEnabled: boolean;
-  apiPort: number;
-  apiToken: string;
-  historyRetentionDays: number;
-  rawRetentionDays: number;              // raw snapshot retention (days), default 7
-  aggregationRetentionDays: number;      // online aggregation retention (days), default 90
-  archiveEnabled: boolean;               // whether to export archives before deleting
-  archivePath: string;                   // directory for archive exports, empty = data/archive
-  securityMiningKeywords: string[];
-  securityUnownedGpuMinutes: number;
-  securityHighGpuUtilizationPercent: number;
-  securityHighGpuDurationMinutes: number;
-  password: string;           // bcrypt hash, for web mode
-  agentMetricsTimeoutMs: number;
-}
-
-export const DEFAULT_SETTINGS: AppSettings = {
-  refreshIntervalMs: 5000,
-  alertCpuThreshold: 90,
-  alertMemoryThreshold: 90,
-  alertDiskThreshold: 90,
-  alertDiskMountPoints: ['/'],
-  alertSuppressDefaultDays: 7,
-  apiEnabled: true,
-  apiPort: 17210,
-  apiToken: '',
-  historyRetentionDays: 7,
-  rawRetentionDays: 7,
-  aggregationRetentionDays: 90,
-  archiveEnabled: false,
-  archivePath: '',
-  securityMiningKeywords: ['xmrig', 'ethminer', 'nbminer'],
-  securityUnownedGpuMinutes: 30,
-  securityHighGpuUtilizationPercent: 90,
-  securityHighGpuDurationMinutes: 120,
-  password: '',
-  agentMetricsTimeoutMs: 15_000,
-};
-
-// ========================
-// Events
-// ========================
-
-export interface CoreEvents {
-  metricsUpdate: (data: MetricsSnapshot) => void;
-  serverStatus: (status: ServerStatus) => void;
-  alert: (alert: AlertEvent) => void;
-  securityEvent: (event: SecurityEventRecord) => void;
-  hookTriggered: (log: HookLog) => void;
-  notify: (title: string, body: string) => void;
-}
-
-export interface AlertEvent {
-  id?: string;                // alert record ID (if persisted)
-  serverId: string;
-  serverName: string;
-  metric: string;
-  value: number;
-  threshold: number;
-  timestamp: number;
-}
-
-export interface AlertRecord {
-  id: string;
-  serverId: string;
-  serverName: string;
-  metric: string;
-  value: number;
-  threshold: number;
-  timestamp: number;
-  suppressedUntil: number | null;
-}
-
-// ========================
-// Template Variables (for hooks)
-// ========================
-
-export interface TemplateContext {
-  serverName: string;
-  serverHost: string;
-  gpuMemUsage: number;
-  gpuUtil: number;
-  gpuIdleMinutes: number;
-  timestamp: string;
-  cpuUsage: number;
-  memUsage: number;
-  personId: string;
-  personName: string;
-  personEmail: string;
-  personQQ: string;
-  personNote: string;
-  personCustomFieldsJson: string;
-  rawUser: string;
-  taskId: string;
-  resolutionSource: string;
-}
-
-// ========================
-// Person Attribution
-// ========================
-
+// Person types
 export type PersonStatus = 'active' | 'archived';
-export type PersonResolutionSource = 'override' | 'binding' | 'unassigned' | 'unknown';
 
 export interface PersonRecord {
   id: string;
   displayName: string;
-  email: string;
-  qq: string;
-  note: string;
+  email: string | null;
+  qq: string | null;
+  note: string | null;
   customFields: Record<string, string>;
   status: PersonStatus;
   createdAt: number;
@@ -583,329 +208,65 @@ export interface PersonRecord {
 }
 
 export interface PersonBindingRecord {
-  id: string;
+  id: number;
   personId: string;
   serverId: string;
   systemUser: string;
   source: 'manual' | 'suggested' | 'synced';
   enabled: boolean;
-  effectiveFrom: number;
+  effectiveFrom: number | null;
   effectiveTo: number | null;
   createdAt: number;
   updatedAt: number;
 }
 
-export interface TaskOwnerOverrideRecord {
-  id: string;
-  taskId: string;
-  serverId: string;
-  personId: string;
-  source: 'manual' | 'synced';
-  effectiveFrom: number;
-  effectiveTo: number | null;
-  createdAt: number;
-  updatedAt: number;
+// Settings
+export interface AppSettings {
+  alertCpuThreshold: number;
+  alertMemoryThreshold: number;
+  alertDiskThreshold: number;
+  alertGpuTempThreshold: number;
+  alertOfflineSeconds: number;
+  alertDiskMountPoints: string[];
+  alertSuppressDefaultDays: number;
+  securityMiningKeywords: string[];
+  securityUnownedGpuMinutes: number;
+  snapshotRecentIntervalSeconds: number;
+  snapshotArchiveIntervalSeconds: number;
+  snapshotRecentKeepCount: number;
+  password: string;
 }
 
+export const DEFAULT_SETTINGS: AppSettings = {
+  alertCpuThreshold: 90,
+  alertMemoryThreshold: 90,
+  alertDiskThreshold: 90,
+  alertGpuTempThreshold: 85,
+  alertOfflineSeconds: 30,
+  alertDiskMountPoints: ['/'],
+  alertSuppressDefaultDays: 7,
+  securityMiningKeywords: ['xmrig', 'ethminer', 'nbminer'],
+  securityUnownedGpuMinutes: 30,
+  snapshotRecentIntervalSeconds: 60,
+  snapshotArchiveIntervalSeconds: 1800,
+  snapshotRecentKeepCount: 120,
+  password: '',
+};
+
+// Resolved person summary (for person resolution)
 export interface ResolvedPersonSummary {
   id: string;
   displayName: string;
-  email: string;
-  qq: string;
+  email: string | null;
+  qq: string | null;
 }
 
-export interface PersonSummaryItem {
-  personId: string;
-  displayName: string;
-  currentVramMB: number;
-  runningTaskCount: number;
-  queuedTaskCount: number;
-  activeServerCount: number;
-  lastActivityAt: number;
-  vramOccupancyHours: number;
-  vramGigabyteHours: number;
-  taskRuntimeHours: number;
-}
+export type PersonResolutionSource = 'binding' | 'unassigned' | 'unknown';
 
-export interface PersonTimelinePoint {
-  bucketStart: number;
-  personId: string;
-  totalVramMB: number;
-  taskVramMB: number;
-  nonTaskVramMB: number;
-}
-
-export interface PersonBindingSuggestion {
-  serverId: string;
-  serverName: string;
-  systemUser: string;
-  lastSeenAt: number;
-}
-
-export interface PersonBindingCandidateActiveBinding {
-  bindingId: string;
-  personId: string;
-  personDisplayName: string;
-}
-
+// Person binding candidate
 export interface PersonBindingCandidate {
   serverId: string;
   serverName: string;
   systemUser: string;
-  lastSeenAt: number;
-  activeBinding: PersonBindingCandidateActiveBinding | null;
-}
-
-export type AutoAddUnassignedPersonsItemResult =
-  | 'created-person'
-  | 'reused-person'
-  | 'skipped-root'
-  | 'skipped-ambiguous'
-  | 'skipped-already-bound'
-  | 'failed';
-
-export interface AutoAddUnassignedPersonsReportBinding {
-  serverId: string;
-  serverName: string;
-  systemUser: string;
-}
-
-export interface AutoAddUnassignedPersonsReportItem {
-  username: string;
-  normalizedUsername: string;
-  result: AutoAddUnassignedPersonsItemResult;
-  personId: string | null;
-  personDisplayName: string | null;
-  bindingCount: number;
-  bindings: AutoAddUnassignedPersonsReportBinding[];
-  message: string;
-}
-
-export interface AutoAddUnassignedPersonsSummary {
-  candidateUserCount: number;
-  createdPersonCount: number;
-  reusedPersonCount: number;
-  createdBindingCount: number;
-  skippedRootCount: number;
-  skippedAmbiguousCount: number;
-  skippedAlreadyBoundCount: number;
-  failedCount: number;
-}
-
-export interface AutoAddUnassignedPersonsReport {
-  generatedAt: number;
-  summary: AutoAddUnassignedPersonsSummary;
-  items: AutoAddUnassignedPersonsReportItem[];
-}
-
-export interface ServerPersonActivity {
-  serverId: string;
-  people: Array<{ personId: string; displayName: string; currentVramMB: number; runningTaskCount: number }>;
-  unassignedVramMB: number;
-  unassignedUsers: string[];
-}
-
-export interface PersonNodeDistributionGpu {
-  gpuIndex: number;
-  avgVramMB: number;
-  maxVramMB: number;
-  sampleCount: number;
-}
-
-export interface PersonNodeDistribution {
-  serverId: string;
-  serverName: string;
-  avgVramMB: number;
-  maxVramMB: number;
-  sampleCount: number;
-  gpus: PersonNodeDistributionGpu[];
-}
-
-export interface PersonPeakPeriod {
-  bucketStart: number;
-  totalVramMB: number;
-}
-
-// ========================
-// Person Mobile
-// ========================
-
-export interface PersonMobileTokenRecord {
-  id: string;
-  personId: string;
-  label: string;
-  tokenHash: string;
-  createdAt: number;
-  rotatedAt: number | null;
-  revokedAt: number | null;
-  lastUsedAt: number | null;
-}
-
-export interface PersonMobilePreferenceRecord {
-  personId: string;
-  notifyTaskStarted: boolean;
-  notifyTaskCompleted: boolean;
-  notifyTaskFailed: boolean;
-  notifyTaskCancelled: boolean;
-  notifyNodeStatus: boolean;
-  notifyGpuAvailable: boolean;
-  minAvailableGpuCount: number;
-  minAvailableVramGB: number | null;
-  updatedAt: number;
-}
-
-export type PersonMobileNotificationCategory = 'task' | 'node' | 'gpu';
-
-export interface PersonMobileNotificationRecord {
-  id: string;
-  personId: string;
-  category: PersonMobileNotificationCategory;
-  eventType: string;
-  title: string;
-  body: string;
-  payloadJson: string;
-  dedupeKey: string;
-  createdAt: number;
-  readAt: number | null;
-}
-
-export interface MobileAdminSummary {
-  serverCount: number;
-  onlineServerCount: number;
-  totalRunningTasks: number;
-  totalQueuedTasks: number;
-  unreadNotificationCount: number;
-}
-
-export interface MobilePersonBootstrap {
-  person: PersonRecord;
-  runningTaskCount: number;
-  queuedTaskCount: number;
-  boundNodeCount: number;
-  unreadNotificationCount: number;
-}
-
-// ========================
-// Resolved GPU Allocation
-// ========================
-
-export interface ResolvedGpuAllocationSegment {
-  ownerKey: string;
-  ownerKind: 'person' | 'user' | 'unknown';
-  displayName: string;
-  usedMemoryMB: number;
-  personId?: string;
-  rawUser?: string;
-  sourceKinds: Array<'task' | 'user_process' | 'unknown_process'>;
-}
-
-export interface ResolvedPerGpuAllocation {
-  gpuIndex: number;
-  totalMemoryMB: number;
-  freeMB: number;
-  segments: ResolvedGpuAllocationSegment[];
-}
-
-export interface ResolvedGpuAllocationResponse {
-  serverId: string;
-  snapshotTimestamp: number;
-  perGpu: ResolvedPerGpuAllocation[];
-}
-
-// ========================
-// Person Attribution Fact
-// ========================
-
-export interface PersonAttributionFact {
-  personId: string | null;
-  rawUser: string | null;
-  taskId: string | null;
-  serverId: string;
-  gpuIndex: number;
-  vramMB: number;
-  timestamp: number;
-  sourceType: 'gpu_task' | 'gpu_user' | 'gpu_unknown';
-  resolutionSource: 'binding' | 'override' | 'unassigned';
-}
-
-// ========================
-// Metrics Aggregation (History)
-// ========================
-
-export type BucketSize = 60_000 | 900_000;  // 1min or 15min in ms
-
-export interface MetricsBucketRow {
-  serverId: string;
-  bucketStart: number;     // ms epoch, aligned to bucket boundary
-  bucketSize: number;      // 60000 or 900000
-  cpuAvg: number;
-  cpuMax: number;
-  memUsedAvgMB: number;
-  memUsedMaxMB: number;
-  memTotalMB: number;
-  memPercAvg: number;
-  swapUsedAvgMB: number;
-  swapPercAvg: number;
-  gpuUtilAvg: number;
-  gpuUtilMax: number;
-  gpuMemUsedAvgMB: number;
-  gpuMemUsedMaxMB: number;
-  gpuMemTotalMB: number;
-  gpuMemPercAvg: number;
-  gpuTempAvg: number;
-  gpuTempMax: number;
-  netRxAvgBps: number;
-  netTxAvgBps: number;
-  diskReadAvgKBs: number;
-  diskWriteAvgKBs: number;
-  diskUsageJson: string;   // JSON array of { mountPoint, avgPercent, maxPercent }
-  internetReachableRatio: number;
-  internetLatencyAvgMs: number | null;
-  sampleCount: number;
-}
-
-export interface GpuUsageBucketRow {
-  serverId: string;
-  userName: string;
-  personId: string | null;
-  bucketStart: number;
-  bucketSize: number;
-  totalVramAvgMB: number;
-  totalVramMaxMB: number;
-  taskVramAvgMB: number;
-  nonTaskVramAvgMB: number;
-  sampleCount: number;
-}
-
-export interface MetricsHistoryQuery {
-  serverId: string;
-  from: number;
-  to: number;
-  bucketMs?: number;       // requested bucket granularity; auto-selected if omitted
-}
-
-export interface MetricsHistoryResponse {
-  serverId: string;
-  from: number;
-  to: number;
-  bucketMs: number;        // actual bucket granularity used
-  source: 'raw' | 'agg';  // whether data came from raw snapshots or aggregation table
-  buckets: MetricsBucketRow[];
-}
-
-export interface GpuUsageHistoryQuery {
-  userName?: string;
-  personId?: string;
-  serverId?: string;
-  from: number;
-  to: number;
-  bucketMs?: number;
-}
-
-export interface GpuUsageHistoryResponse {
-  from: number;
-  to: number;
-  bucketMs: number;
-  source: 'raw' | 'agg';
-  buckets: GpuUsageBucketRow[];
+  activeBinding: PersonBindingRecord | null;
 }

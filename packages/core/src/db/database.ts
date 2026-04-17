@@ -2,17 +2,11 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
-interface SchemaColumn {
-  name: string;
-  definition: string;
-}
-
 let db: Database.Database | null = null;
 
 export function getDatabase(dataDir?: string): Database.Database {
   if (db) return db;
 
-  // Support MONITOR_DB_PATH env for Docker deployments
   const envDbPath = process.env.MONITOR_DB_PATH;
   let dbPath: string;
 
@@ -39,438 +33,127 @@ function initSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS servers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      host TEXT NOT NULL,
-      port INTEGER NOT NULL DEFAULT 22,
-      username TEXT NOT NULL,
-      privateKeyPath TEXT NOT NULL,
-      sourceType TEXT NOT NULL DEFAULT 'ssh',
-      agentId TEXT,
-      createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL
+      agent_id TEXT UNIQUE NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS metrics (
+    CREATE TABLE IF NOT EXISTS snapshots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      serverId TEXT NOT NULL,
+      server_id TEXT NOT NULL,
       timestamp INTEGER NOT NULL,
-      data TEXT NOT NULL,
-      FOREIGN KEY (serverId) REFERENCES servers(id) ON DELETE CASCADE
+      tier TEXT NOT NULL,
+      seq INTEGER,
+      cpu TEXT NOT NULL,
+      memory TEXT NOT NULL,
+      disks TEXT NOT NULL,
+      network TEXT NOT NULL,
+      processes TEXT NOT NULL,
+      internet TEXT NOT NULL,
+      local_users TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_snapshots_query ON snapshots (server_id, tier, timestamp);
 
-    CREATE INDEX IF NOT EXISTS idx_metrics_server_time
-      ON metrics(serverId, timestamp);
-
-    CREATE TABLE IF NOT EXISTS hooks (
-      id TEXT PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS gpu_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+      server_id TEXT NOT NULL,
+      gpu_index INTEGER NOT NULL,
       name TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      conditionJson TEXT NOT NULL,
-      actionJson TEXT NOT NULL,
-      lastTriggeredAt INTEGER,
-      createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL
+      temperature INTEGER NOT NULL,
+      utilization_gpu INTEGER NOT NULL,
+      utilization_memory INTEGER NOT NULL,
+      memory_total_mb INTEGER NOT NULL,
+      memory_used_mb INTEGER NOT NULL,
+      managed_reserved_mb INTEGER NOT NULL,
+      unmanaged_peak_mb INTEGER NOT NULL,
+      effective_free_mb INTEGER NOT NULL,
+      task_allocations TEXT NOT NULL,
+      user_processes TEXT NOT NULL,
+      unknown_processes TEXT NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS idx_gpu_snapshots_query ON gpu_snapshots (server_id, gpu_index, snapshot_id);
 
-    CREATE TABLE IF NOT EXISTS hook_logs (
+    CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
-      hookId TEXT NOT NULL,
-      triggeredAt INTEGER NOT NULL,
-      success INTEGER NOT NULL,
-      result TEXT NOT NULL DEFAULT '',
-      error TEXT,
-      FOREIGN KEY (hookId) REFERENCES hooks(id) ON DELETE CASCADE
+      server_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      command TEXT NOT NULL,
+      cwd TEXT NOT NULL,
+      user TEXT NOT NULL,
+      launch_mode TEXT NOT NULL,
+      require_vram_mb INTEGER NOT NULL,
+      require_gpu_count INTEGER NOT NULL,
+      gpu_ids TEXT,
+      priority INTEGER NOT NULL DEFAULT 10,
+      created_at REAL NOT NULL,
+      started_at REAL,
+      finished_at REAL,
+      pid INTEGER,
+      exit_code INTEGER,
+      assigned_gpus TEXT,
+      declared_vram_per_gpu INTEGER,
+      schedule_history TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_tasks_server_status ON tasks (server_id, status);
+    CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks (user, created_at);
+
+    CREATE TABLE IF NOT EXISTS alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id TEXT NOT NULL,
+      alert_type TEXT NOT NULL,
+      value REAL,
+      threshold REAL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      suppressed_until INTEGER,
+      UNIQUE (server_id, alert_type)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_hook_logs_hook_time
-      ON hook_logs(hookId, triggeredAt);
+    CREATE TABLE IF NOT EXISTS security_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      details TEXT NOT NULL,
+      resolved INTEGER NOT NULL DEFAULT 0,
+      resolved_by TEXT,
+      created_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_security_active ON security_events (server_id, event_type, fingerprint) WHERE resolved = 0;
+
+    CREATE TABLE IF NOT EXISTS persons (
+      id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      email TEXT,
+      qq TEXT,
+      note TEXT,
+      custom_fields TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS person_bindings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      person_id TEXT NOT NULL REFERENCES persons(id),
+      server_id TEXT NOT NULL,
+      system_user TEXT NOT NULL,
+      source TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      effective_from INTEGER,
+      effective_to INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (server_id, system_user)
+    );
 
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
-
-    CREATE TABLE IF NOT EXISTS alert_history (
-      id TEXT PRIMARY KEY,
-      serverId TEXT NOT NULL,
-      serverName TEXT NOT NULL,
-      metric TEXT NOT NULL,
-      value REAL NOT NULL,
-      threshold REAL NOT NULL,
-      timestamp INTEGER NOT NULL,
-      suppressedUntil INTEGER
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_alert_history_time
-      ON alert_history(timestamp);
-
-    CREATE TABLE IF NOT EXISTS agent_tasks (
-      taskId TEXT PRIMARY KEY,
-      serverId TEXT NOT NULL,
-      status TEXT NOT NULL,
-      command TEXT,
-      cwd TEXT,
-      user TEXT,
-      requireVramMB INTEGER,
-      requireGpuCount INTEGER,
-      gpuIdsJson TEXT,
-      priority INTEGER,
-      createdAt INTEGER,
-      startedAt INTEGER,
-      finishedAt INTEGER,
-      exitCode INTEGER,
-      pid INTEGER,
-      updatedAt INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_agent_tasks_server_updated_at
-      ON agent_tasks(serverId, updatedAt DESC);
-
-    CREATE TABLE IF NOT EXISTS gpu_usage_stats (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      serverId TEXT NOT NULL,
-      timestamp INTEGER NOT NULL,
-      gpuIndex INTEGER NOT NULL,
-      ownerType TEXT NOT NULL,
-      ownerId TEXT,
-      userName TEXT,
-      taskId TEXT,
-      pid INTEGER,
-      command TEXT,
-      usedMemoryMB REAL NOT NULL,
-      declaredVramMB REAL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_server_time
-      ON gpu_usage_stats(serverId, timestamp DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_server_gpu_time
-      ON gpu_usage_stats(serverId, gpuIndex, timestamp DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_user_time
-      ON gpu_usage_stats(userName, timestamp DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_task_time
-      ON gpu_usage_stats(taskId, timestamp DESC);
-
-    CREATE TABLE IF NOT EXISTS security_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      serverId TEXT NOT NULL,
-      eventType TEXT NOT NULL,
-      fingerprint TEXT NOT NULL,
-      detailsJson TEXT NOT NULL,
-      resolved INTEGER NOT NULL DEFAULT 0,
-      resolvedBy TEXT,
-      createdAt INTEGER NOT NULL,
-      resolvedAt INTEGER
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_security_events_server_created_at
-      ON security_events(serverId, createdAt DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_security_events_resolved_created_at
-      ON security_events(resolved, createdAt DESC);
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_security_events_open_fingerprint
-      ON security_events(serverId, eventType, fingerprint)
-      WHERE resolved = 0;
-
-    CREATE TABLE IF NOT EXISTS persons (
-      id TEXT PRIMARY KEY,
-      displayName TEXT NOT NULL,
-      email TEXT NOT NULL DEFAULT '',
-      qq TEXT NOT NULL DEFAULT '',
-      note TEXT NOT NULL DEFAULT '',
-      customFieldsJson TEXT NOT NULL DEFAULT '{}',
-      status TEXT NOT NULL DEFAULT 'active',
-      createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS person_bindings (
-      id TEXT PRIMARY KEY,
-      personId TEXT NOT NULL,
-      serverId TEXT NOT NULL,
-      systemUser TEXT NOT NULL,
-      source TEXT NOT NULL,
-      enabled INTEGER NOT NULL DEFAULT 1,
-      effectiveFrom INTEGER NOT NULL,
-      effectiveTo INTEGER,
-      createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL,
-      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique
-      ON person_bindings(serverId, systemUser)
-      WHERE enabled = 1 AND effectiveTo IS NULL;
-
-    CREATE TABLE IF NOT EXISTS task_owner_overrides (
-      id TEXT PRIMARY KEY,
-      taskId TEXT NOT NULL,
-      serverId TEXT NOT NULL,
-      personId TEXT NOT NULL,
-      source TEXT NOT NULL,
-      effectiveFrom INTEGER NOT NULL,
-      effectiveTo INTEGER,
-      createdAt INTEGER NOT NULL,
-      updatedAt INTEGER NOT NULL,
-      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS person_attribution_facts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      timestamp INTEGER NOT NULL,
-      sourceType TEXT NOT NULL,
-      serverId TEXT NOT NULL,
-      personId TEXT,
-      rawUser TEXT,
-      taskId TEXT,
-      gpuIndex INTEGER,
-      vramMB REAL,
-      taskStatus TEXT,
-      resolutionSource TEXT NOT NULL,
-      metadataJson TEXT NOT NULL DEFAULT '{}'
-    );
-
-    CREATE TABLE IF NOT EXISTS server_local_users (
-      serverId TEXT NOT NULL,
-      username TEXT NOT NULL,
-      uid INTEGER NOT NULL,
-      gid INTEGER NOT NULL,
-      gecos TEXT NOT NULL DEFAULT '',
-      home TEXT NOT NULL DEFAULT '',
-      shell TEXT NOT NULL DEFAULT '',
-      updatedAt INTEGER NOT NULL,
-      PRIMARY KEY (serverId, username),
-      FOREIGN KEY (serverId) REFERENCES servers(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_server_local_users_server_updated
-      ON server_local_users(serverId, updatedAt DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_server_local_users_username
-      ON server_local_users(username);
-
-    CREATE TABLE IF NOT EXISTS person_mobile_tokens (
-      id TEXT PRIMARY KEY,
-      personId TEXT NOT NULL,
-      label TEXT NOT NULL DEFAULT '',
-      tokenHash TEXT NOT NULL,
-      createdAt INTEGER NOT NULL,
-      rotatedAt INTEGER,
-      revokedAt INTEGER,
-      lastUsedAt INTEGER,
-      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS person_mobile_preferences (
-      personId TEXT PRIMARY KEY,
-      notifyTaskStarted INTEGER NOT NULL DEFAULT 1,
-      notifyTaskCompleted INTEGER NOT NULL DEFAULT 1,
-      notifyTaskFailed INTEGER NOT NULL DEFAULT 1,
-      notifyTaskCancelled INTEGER NOT NULL DEFAULT 1,
-      notifyNodeStatus INTEGER NOT NULL DEFAULT 1,
-      notifyGpuAvailable INTEGER NOT NULL DEFAULT 0,
-      minAvailableGpuCount INTEGER NOT NULL DEFAULT 1,
-      minAvailableVramGB REAL,
-      updatedAt INTEGER NOT NULL,
-      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS person_mobile_notifications (
-      id TEXT PRIMARY KEY,
-      personId TEXT NOT NULL,
-      category TEXT NOT NULL,
-      eventType TEXT NOT NULL,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL DEFAULT '',
-      payloadJson TEXT NOT NULL DEFAULT '{}',
-      dedupeKey TEXT NOT NULL DEFAULT '',
-      createdAt INTEGER NOT NULL,
-      readAt INTEGER,
-      FOREIGN KEY (personId) REFERENCES persons(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_person_mobile_notifications_person_created
-      ON person_mobile_notifications(personId, createdAt DESC);
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_person_mobile_notifications_dedupe
-      ON person_mobile_notifications(personId, dedupeKey)
-      WHERE dedupeKey != '';
-
-    CREATE TABLE IF NOT EXISTS server_status_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      serverId TEXT NOT NULL,
-      fromStatus TEXT NOT NULL,
-      toStatus TEXT NOT NULL,
-      reason TEXT,
-      lastSeen INTEGER NOT NULL,
-      createdAt INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_server_status_events_server_created
-      ON server_status_events(serverId, createdAt DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_server_status_events_created
-      ON server_status_events(createdAt DESC);
-
-    CREATE TABLE IF NOT EXISTS metrics_agg (
-      serverId TEXT NOT NULL,
-      bucketStart INTEGER NOT NULL,
-      bucketSize INTEGER NOT NULL,
-      cpuAvg REAL NOT NULL DEFAULT 0,
-      cpuMax REAL NOT NULL DEFAULT 0,
-      memUsedAvgMB REAL NOT NULL DEFAULT 0,
-      memUsedMaxMB REAL NOT NULL DEFAULT 0,
-      memTotalMB REAL NOT NULL DEFAULT 0,
-      memPercAvg REAL NOT NULL DEFAULT 0,
-      swapUsedAvgMB REAL NOT NULL DEFAULT 0,
-      swapPercAvg REAL NOT NULL DEFAULT 0,
-      gpuUtilAvg REAL NOT NULL DEFAULT 0,
-      gpuUtilMax REAL NOT NULL DEFAULT 0,
-      gpuMemUsedAvgMB REAL NOT NULL DEFAULT 0,
-      gpuMemUsedMaxMB REAL NOT NULL DEFAULT 0,
-      gpuMemTotalMB REAL NOT NULL DEFAULT 0,
-      gpuMemPercAvg REAL NOT NULL DEFAULT 0,
-      gpuTempAvg REAL NOT NULL DEFAULT 0,
-      gpuTempMax REAL NOT NULL DEFAULT 0,
-      netRxAvgBps REAL NOT NULL DEFAULT 0,
-      netTxAvgBps REAL NOT NULL DEFAULT 0,
-      diskReadAvgKBs REAL NOT NULL DEFAULT 0,
-      diskWriteAvgKBs REAL NOT NULL DEFAULT 0,
-      diskUsageJson TEXT NOT NULL DEFAULT '[]',
-      internetReachableRatio REAL NOT NULL DEFAULT 0,
-      internetLatencyAvgMs REAL,
-      sampleCount INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (serverId, bucketStart, bucketSize)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_metrics_agg_server_bucket
-      ON metrics_agg(serverId, bucketSize, bucketStart);
-
-    CREATE TABLE IF NOT EXISTS gpu_usage_agg (
-      serverId TEXT NOT NULL,
-      userName TEXT NOT NULL,
-      personId TEXT,
-      bucketStart INTEGER NOT NULL,
-      bucketSize INTEGER NOT NULL,
-      totalVramAvgMB REAL NOT NULL DEFAULT 0,
-      totalVramMaxMB REAL NOT NULL DEFAULT 0,
-      taskVramAvgMB REAL NOT NULL DEFAULT 0,
-      nonTaskVramAvgMB REAL NOT NULL DEFAULT 0,
-      sampleCount INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (serverId, userName, bucketStart, bucketSize)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_agg_user_bucket
-      ON gpu_usage_agg(userName, bucketSize, bucketStart);
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_agg_person_bucket
-      ON gpu_usage_agg(personId, bucketSize, bucketStart);
-
-    CREATE TABLE IF NOT EXISTS aggregation_cursor (
-      id TEXT PRIMARY KEY,
-      lastAggregatedAt INTEGER NOT NULL
-    );
   `);
-
-  ensureColumns(db, 'servers', [
-    { name: 'sourceType', definition: "TEXT NOT NULL DEFAULT 'ssh'" },
-    { name: 'agentId', definition: 'TEXT' },
-  ]);
-
-  ensureColumns(db, 'agent_tasks', [
-    { name: 'serverId', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'status', definition: "TEXT NOT NULL DEFAULT 'queued'" },
-    { name: 'command', definition: 'TEXT' },
-    { name: 'cwd', definition: 'TEXT' },
-    { name: 'user', definition: 'TEXT' },
-    { name: 'requireVramMB', definition: 'INTEGER' },
-    { name: 'requireGpuCount', definition: 'INTEGER' },
-    { name: 'gpuIdsJson', definition: 'TEXT' },
-    { name: 'priority', definition: 'INTEGER' },
-    { name: 'createdAt', definition: 'INTEGER' },
-    { name: 'startedAt', definition: 'INTEGER' },
-    { name: 'finishedAt', definition: 'INTEGER' },
-    { name: 'exitCode', definition: 'INTEGER' },
-    { name: 'pid', definition: 'INTEGER' },
-    { name: 'updatedAt', definition: 'INTEGER NOT NULL DEFAULT 0' },
-  ]);
-
-  ensureColumns(db, 'gpu_usage_stats', [
-    { name: 'serverId', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'timestamp', definition: 'INTEGER NOT NULL DEFAULT 0' },
-    { name: 'gpuIndex', definition: 'INTEGER NOT NULL DEFAULT 0' },
-    { name: 'ownerType', definition: "TEXT NOT NULL DEFAULT 'unknown'" },
-    { name: 'ownerId', definition: 'TEXT' },
-    { name: 'userName', definition: 'TEXT' },
-    { name: 'taskId', definition: 'TEXT' },
-    { name: 'pid', definition: 'INTEGER' },
-    { name: 'command', definition: 'TEXT' },
-    { name: 'usedMemoryMB', definition: 'REAL NOT NULL DEFAULT 0' },
-    { name: 'declaredVramMB', definition: 'REAL' },
-  ]);
-
-  ensureColumns(db, 'security_events', [
-    { name: 'serverId', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'eventType', definition: "TEXT NOT NULL DEFAULT 'suspicious_process'" },
-    { name: 'fingerprint', definition: "TEXT NOT NULL DEFAULT ''" },
-    { name: 'detailsJson', definition: "TEXT NOT NULL DEFAULT '{}'" },
-    { name: 'resolved', definition: 'INTEGER NOT NULL DEFAULT 0' },
-    { name: 'resolvedBy', definition: 'TEXT' },
-    { name: 'createdAt', definition: 'INTEGER NOT NULL DEFAULT 0' },
-    { name: 'resolvedAt', definition: 'INTEGER' },
-  ]);
-
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_user_time
-      ON gpu_usage_stats(userName, timestamp DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_gpu_usage_stats_task_time
-      ON gpu_usage_stats(taskId, timestamp DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_security_events_server_created_at
-      ON security_events(serverId, createdAt DESC);
-
-    CREATE INDEX IF NOT EXISTS idx_security_events_resolved_created_at
-      ON security_events(resolved, createdAt DESC);
-
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_security_events_open_fingerprint
-      ON security_events(serverId, eventType, fingerprint)
-      WHERE resolved = 0;
-  `);
-
-  // Fix historical marked_safe audit events that were incorrectly left as unresolved.
-  // Each marked_safe event references the original event via targetEventId in detailsJson.
-  // We resolve them by copying resolvedBy/resolvedAt from the original event.
-  db.exec(`
-    UPDATE security_events
-    SET resolved = 1,
-        resolvedBy = (
-          SELECT se2.resolvedBy
-          FROM security_events se2
-          WHERE se2.id = CAST(json_extract(security_events.detailsJson, '$.targetEventId') AS INTEGER)
-        ),
-        resolvedAt = (
-          SELECT se2.resolvedAt
-          FROM security_events se2
-          WHERE se2.id = CAST(json_extract(security_events.detailsJson, '$.targetEventId') AS INTEGER)
-        )
-    WHERE eventType = 'marked_safe'
-      AND resolved = 0
-  `);
-}
-
-function ensureColumns(db: Database.Database, tableName: string, columns: SchemaColumn[]): void {
-  const existingColumns = new Set(
-    (db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[]).map(column => column.name)
-  );
-
-  for (const column of columns) {
-    if (!existingColumns.has(column.name)) {
-      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${column.name} ${column.definition}`);
-    }
-  }
 }
 
 export function closeDatabase(): void {

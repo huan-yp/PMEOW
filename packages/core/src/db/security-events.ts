@@ -1,5 +1,5 @@
 import { getDatabase } from './database.js';
-import type { SecurityEventDetails, SecurityEventRecord, SecurityEventType } from '../types.js';
+import type { SecurityEventRecord, SecurityEventDetails, SecurityEventType } from '../types.js';
 
 export interface SecurityEventInput {
   serverId: string;
@@ -12,104 +12,60 @@ export interface SecurityEventQuery {
   serverId?: string;
   resolved?: boolean;
   eventType?: SecurityEventType;
-  fingerprint?: string;
   limit?: number;
-}
-
-interface RawSecurityEventRow {
-  id: number;
-  serverId: string;
-  eventType: SecurityEventType;
-  fingerprint: string;
-  detailsJson: string;
-  resolved: number;
-  resolvedBy: string | null;
-  createdAt: number;
-  resolvedAt: number | null;
 }
 
 export function createSecurityEvent(input: SecurityEventInput): SecurityEventRecord {
   const db = getDatabase();
-  const createdAt = Date.now();
-  const result = db.prepare(`
-    INSERT INTO security_events (
-      serverId,
-      eventType,
-      fingerprint,
-      detailsJson,
-      resolved,
-      resolvedBy,
-      createdAt,
-      resolvedAt
-    )
-    VALUES (?, ?, ?, ?, 0, NULL, ?, NULL)
-  `).run(
-    input.serverId,
-    input.eventType,
-    input.fingerprint,
-    JSON.stringify(input.details),
-    createdAt,
-  );
+  const now = Date.now();
+  const res = db.prepare(
+    `INSERT INTO security_events (server_id, event_type, fingerprint, details, resolved, created_at)
+     VALUES (?, ?, ?, ?, 0, ?)`
+  ).run(input.serverId, input.eventType, input.fingerprint, JSON.stringify(input.details), now);
 
-  return getSecurityEventById(Number(result.lastInsertRowid))!;
+  return getSecurityEventById(Number(res.lastInsertRowid))!;
 }
 
-export function findOpenSecurityEvent(
-  serverId: string,
-  eventType: SecurityEventType,
-  fingerprint: string,
-): SecurityEventRecord | undefined {
+export function findOpenSecurityEvent(serverId: string, eventType: string, fingerprint: string): SecurityEventRecord | undefined {
   const db = getDatabase();
-  const row = db.prepare(`
-    SELECT *
-    FROM security_events
-    WHERE serverId = ? AND eventType = ? AND fingerprint = ? AND resolved = 0
-    LIMIT 1
-  `).get(serverId, eventType, fingerprint) as RawSecurityEventRow | undefined;
-
-  return row ? rowToSecurityEvent(row) : undefined;
+  const row = db.prepare(
+    `SELECT * FROM security_events
+     WHERE server_id = ? AND event_type = ? AND fingerprint = ? AND resolved = 0`
+  ).get(serverId, eventType, fingerprint) as Record<string, unknown> | undefined;
+  return row ? mapRow(row) : undefined;
 }
 
 export function listSecurityEvents(query: SecurityEventQuery = {}): SecurityEventRecord[] {
   const db = getDatabase();
   const conditions: string[] = [];
-  const values: Array<string | number> = [];
+  const params: unknown[] = [];
 
-  if (query.serverId !== undefined) {
-    conditions.push('serverId = ?');
-    values.push(query.serverId);
+  if (query.serverId) {
+    conditions.push('server_id = ?');
+    params.push(query.serverId);
   }
-
   if (query.resolved !== undefined) {
     conditions.push('resolved = ?');
-    values.push(query.resolved ? 1 : 0);
+    params.push(query.resolved ? 1 : 0);
+  }
+  if (query.eventType) {
+    conditions.push('event_type = ?');
+    params.push(query.eventType);
   }
 
-  if (query.eventType !== undefined) {
-    conditions.push('eventType = ?');
-    values.push(query.eventType);
+  let sql = 'SELECT * FROM security_events';
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  sql += ' ORDER BY created_at DESC';
+
+  if (query.limit) {
+    sql += ' LIMIT ?';
+    params.push(query.limit);
   }
 
-  if (query.fingerprint !== undefined) {
-    conditions.push('fingerprint = ?');
-    values.push(query.fingerprint);
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limitClause = query.limit !== undefined ? 'LIMIT ?' : '';
-  if (query.limit !== undefined) {
-    values.push(query.limit);
-  }
-
-  const rows = db.prepare(`
-    SELECT *
-    FROM security_events
-    ${whereClause}
-    ORDER BY createdAt DESC, id DESC
-    ${limitClause}
-  `).all(...values) as RawSecurityEventRow[];
-
-  return rows.map(rowToSecurityEvent);
+  const rows = db.prepare(sql).all(...params) as Record<string, unknown>[];
+  return rows.map(mapRow);
 }
 
 export function markSecurityEventSafe(
@@ -119,32 +75,18 @@ export function markSecurityEventSafe(
 ): { resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord } | undefined {
   const db = getDatabase();
   const existing = getSecurityEventById(id);
-  if (!existing) {
-    return undefined;
-  }
-
-  if (existing.resolved) {
-    return { resolvedEvent: existing };
-  }
+  if (!existing) return undefined;
+  if (existing.resolved) return { resolvedEvent: existing };
 
   const resolvedAt = Date.now();
 
-  const runUpdate = db.prepare(`
-    UPDATE security_events
-    SET resolved = 1, resolvedBy = ?, resolvedAt = ?
-    WHERE id = ?
-  `);
-
-  const resolveAuditEvent = db.prepare(`
-    UPDATE security_events
-    SET resolved = 1, resolvedBy = ?, resolvedAt = ?
-    WHERE id = ?
-  `);
-
   const transact = db.transaction(() => {
-    runUpdate.run(resolvedBy, resolvedAt, id);
+    db.prepare(
+      'UPDATE security_events SET resolved = 1, resolved_by = ?, resolved_at = ? WHERE id = ?'
+    ).run(resolvedBy, resolvedAt, id);
 
     const resolvedEvent = getSecurityEventById(id)!;
+
     const auditEvent = createSecurityEvent({
       serverId: existing.serverId,
       eventType: 'marked_safe',
@@ -159,8 +101,10 @@ export function markSecurityEventSafe(
       },
     });
 
-    // Mark the audit event as resolved so it does not show up as an unresolved issue
-    resolveAuditEvent.run(resolvedBy, resolvedAt, auditEvent.id);
+    // Mark audit event as resolved so it doesn't show up as unresolved
+    db.prepare(
+      'UPDATE security_events SET resolved = 1, resolved_by = ?, resolved_at = ? WHERE id = ?'
+    ).run(resolvedBy, resolvedAt, auditEvent.id);
     const finalAuditEvent = getSecurityEventById(auditEvent.id)!;
 
     return { resolvedEvent, auditEvent: finalAuditEvent };
@@ -179,7 +123,6 @@ export function unresolveSecurityEvent(
   if (!existing || existing.eventType === 'marked_safe' || existing.eventType === 'unresolve') {
     return { error: 'not_found' };
   }
-
   if (!existing.resolved) {
     return { error: 'not_resolved' };
   }
@@ -191,22 +134,13 @@ export function unresolveSecurityEvent(
 
   const now = Date.now();
 
-  const runUpdate = db.prepare(`
-    UPDATE security_events
-    SET resolved = 0, resolvedBy = NULL, resolvedAt = NULL
-    WHERE id = ?
-  `);
-
-  const resolveAuditEvent = db.prepare(`
-    UPDATE security_events
-    SET resolved = 1, resolvedBy = ?, resolvedAt = ?
-    WHERE id = ?
-  `);
-
   const transact = db.transaction(() => {
-    runUpdate.run(id);
+    db.prepare(
+      'UPDATE security_events SET resolved = 0, resolved_by = NULL, resolved_at = NULL WHERE id = ?'
+    ).run(id);
 
     const reopenedEvent = getSecurityEventById(id)!;
+
     const auditEvent = createSecurityEvent({
       serverId: existing.serverId,
       eventType: 'unresolve',
@@ -221,7 +155,9 @@ export function unresolveSecurityEvent(
       },
     });
 
-    resolveAuditEvent.run(actor, now, auditEvent.id);
+    db.prepare(
+      'UPDATE security_events SET resolved = 1, resolved_by = ?, resolved_at = ? WHERE id = ?'
+    ).run(actor, now, auditEvent.id);
     const finalAuditEvent = getSecurityEventById(auditEvent.id)!;
 
     return { reopenedEvent, auditEvent: finalAuditEvent };
@@ -232,20 +168,20 @@ export function unresolveSecurityEvent(
 
 function getSecurityEventById(id: number): SecurityEventRecord | undefined {
   const db = getDatabase();
-  const row = db.prepare('SELECT * FROM security_events WHERE id = ?').get(id) as RawSecurityEventRow | undefined;
-  return row ? rowToSecurityEvent(row) : undefined;
+  const row = db.prepare('SELECT * FROM security_events WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  return row ? mapRow(row) : undefined;
 }
 
-function rowToSecurityEvent(row: RawSecurityEventRow): SecurityEventRecord {
+function mapRow(r: Record<string, unknown>): SecurityEventRecord {
   return {
-    id: row.id,
-    serverId: row.serverId,
-    eventType: row.eventType,
-    fingerprint: row.fingerprint,
-    details: JSON.parse(row.detailsJson) as SecurityEventDetails,
-    resolved: row.resolved === 1,
-    resolvedBy: row.resolvedBy,
-    createdAt: row.createdAt,
-    resolvedAt: row.resolvedAt,
+    id: r.id as number,
+    serverId: r.server_id as string,
+    eventType: r.event_type as SecurityEventType,
+    fingerprint: r.fingerprint as string,
+    details: JSON.parse(r.details as string) as SecurityEventDetails,
+    resolved: (r.resolved as number) === 1,
+    resolvedBy: r.resolved_by as string | null,
+    createdAt: r.created_at as number,
+    resolvedAt: r.resolved_at as number | null,
   };
 }
