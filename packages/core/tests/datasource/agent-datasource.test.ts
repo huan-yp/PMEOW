@@ -7,12 +7,18 @@ import type { MetricsSnapshot } from '../../src/types.js';
 
 function createSession(agentId = 'agent-1') {
   const emitCommand = vi.fn();
+  const requestTaskEvents = vi.fn().mockResolvedValue([]);
+  const requestTaskAuditDetail = vi.fn().mockResolvedValue(null);
+  const requestTaskQueue = vi.fn().mockResolvedValue({ queued: [], running: [], recent: [] });
   const session: AgentLiveSession = {
     agentId,
     emitCommand,
+    requestTaskEvents,
+    requestTaskAuditDetail,
+    requestTaskQueue,
   };
 
-  return { session, emitCommand };
+  return { session, emitCommand, requestTaskEvents, requestTaskAuditDetail, requestTaskQueue };
 }
 
 function createSnapshot(): MetricsSnapshot {
@@ -174,5 +180,124 @@ describe('AgentDataSource', () => {
 
     expect(events).toEqual([]);
     expect(ds.isConnected()).toBe(true);
+  });
+
+  it('normalizes snake_case task events from the agent session', async () => {
+    const ds = new AgentDataSource('srv-1', 'agent-1');
+    const { session, requestTaskEvents } = createSession();
+    ds.attachSession(session);
+
+    requestTaskEvents.mockResolvedValue([
+      {
+        id: 7,
+        task_id: 'task-7',
+        event_type: 'schedule_blocked',
+        timestamp: 1_710_000_000,
+        details: {
+          reason_code: 'blocked_by_higher_priority',
+        },
+      },
+    ]);
+
+    await expect(ds.getTaskEvents('task-7')).resolves.toEqual([
+      {
+        id: 7,
+        taskId: 'task-7',
+        eventType: 'schedule_blocked',
+        timestamp: 1_710_000_000,
+        details: {
+          reason_code: 'blocked_by_higher_priority',
+        },
+      },
+    ]);
+  });
+
+  it('normalizes snake_case audit detail from the agent session', async () => {
+    const ds = new AgentDataSource('srv-1', 'agent-1');
+    const { session, requestTaskAuditDetail } = createSession();
+    ds.attachSession(session);
+
+    requestTaskAuditDetail.mockResolvedValue({
+      task: {
+        id: 'task-9',
+        command: 'python train.py',
+        cwd: '/srv/jobs',
+        user: 'alice',
+        require_vram_mb: 4096,
+        require_gpu_count: 2,
+        gpu_ids: [0, 1],
+        priority: 3,
+        status: 'queued',
+        created_at: 100,
+        started_at: null,
+        finished_at: null,
+        exit_code: null,
+        pid: null,
+      },
+      events: [
+        {
+          id: 1,
+          task_id: 'task-9',
+          event_type: 'submitted',
+          timestamp: 100,
+          details: {
+            require_gpu_count: 2,
+          },
+        },
+      ],
+      runtime: {
+        launch_mode: 'daemon_shell',
+        root_pid: 1234,
+        root_created_at: 101,
+        runtime_phase: 'running',
+        first_started_at: 101,
+        last_seen_at: 110,
+        finalize_source: null,
+        finalize_reason_code: null,
+        last_observed_exit_code: null,
+      },
+    });
+
+    await expect(ds.getTaskAuditDetail('task-9')).resolves.toEqual({
+      task: {
+        serverId: 'srv-1',
+        taskId: 'task-9',
+        command: 'python train.py',
+        cwd: '/srv/jobs',
+        user: 'alice',
+        requireVramMB: 4096,
+        requireGpuCount: 2,
+        gpuIds: [0, 1],
+        priority: 3,
+        status: 'queued',
+        createdAt: 100,
+        startedAt: null,
+        finishedAt: null,
+        exitCode: null,
+        pid: null,
+      },
+      events: [
+        {
+          id: 1,
+          taskId: 'task-9',
+          eventType: 'submitted',
+          timestamp: 100,
+          details: {
+            require_gpu_count: 2,
+          },
+        },
+      ],
+      runtime: {
+        launchMode: 'daemon_shell',
+        rootPid: 1234,
+        rootCreatedAt: 101,
+        runtimePhase: 'running',
+        firstStartedAt: 101,
+        lastSeenAt: 110,
+        finalizeSource: null,
+        finalizeReasonCode: null,
+        lastObservedExitCode: null,
+      },
+    });
   });
 });

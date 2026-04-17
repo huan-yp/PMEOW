@@ -312,8 +312,8 @@ describe('agent control routes', () => {
       callback([
         {
           id: 7,
-          taskId: payload.taskId,
-          eventType: 'schedule_blocked',
+          task_id: payload.taskId,
+          event_type: 'schedule_blocked',
           timestamp: 1_710_000_000,
           details: {
             message: 'schedule blocked',
@@ -440,9 +440,43 @@ describe('agent control routes', () => {
     await registerAgent(client, runtime, server.id, 'agent-audit', 'gpu-audit');
 
     const auditResponse = {
-      task: { id: mirroredTask.taskId, command: 'python train.py', status: 'completed' },
-      events: [],
-      runtime: null,
+      task: {
+        id: mirroredTask.taskId,
+        command: 'python train.py',
+        cwd: '/srv/jobs/train',
+        user: 'alice',
+        require_vram_mb: 4096,
+        require_gpu_count: 2,
+        gpu_ids: [0, 1],
+        priority: 5,
+        status: 'completed',
+        created_at: 100,
+        started_at: 200,
+        finished_at: 300,
+        exit_code: 0,
+        pid: 4321,
+      },
+      events: [{
+        id: 1,
+        task_id: mirroredTask.taskId,
+        event_type: 'submitted',
+        timestamp: 100,
+        details: {
+          require_gpu_count: 2,
+          require_vram_mb: 4096,
+        },
+      }],
+      runtime: {
+        launch_mode: 'daemon_shell',
+        root_pid: 4321,
+        root_created_at: 100,
+        runtime_phase: 'completed',
+        first_started_at: 200,
+        last_seen_at: 300,
+        finalize_source: 'process_exit',
+        finalize_reason_code: null,
+        last_observed_exit_code: 0,
+      },
     };
 
     client.on(SERVER_COMMAND.getTaskAuditDetail, (_payload, callback) => {
@@ -454,7 +488,46 @@ describe('agent control routes', () => {
       .set('Authorization', `Bearer ${token}`);
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual(auditResponse);
+    expect(response.body).toEqual({
+      task: {
+        serverId: server.id,
+        taskId: mirroredTask.taskId,
+        command: 'python train.py',
+        cwd: '/srv/jobs/train',
+        user: 'alice',
+        requireVramMB: 4096,
+        requireGpuCount: 2,
+        gpuIds: [0, 1],
+        priority: 5,
+        status: 'completed',
+        createdAt: 100,
+        startedAt: 200,
+        finishedAt: 300,
+        exitCode: 0,
+        pid: 4321,
+      },
+      events: [{
+        id: 1,
+        taskId: mirroredTask.taskId,
+        eventType: 'submitted',
+        timestamp: 100,
+        details: {
+          require_gpu_count: 2,
+          require_vram_mb: 4096,
+        },
+      }],
+      runtime: {
+        launchMode: 'daemon_shell',
+        rootPid: 4321,
+        rootCreatedAt: 100,
+        runtimePhase: 'completed',
+        firstStartedAt: 200,
+        lastSeenAt: 300,
+        finalizeSource: 'process_exit',
+        finalizeReasonCode: null,
+        lastObservedExitCode: 0,
+      },
+    });
   });
 
   it('audit detail returns 409 when Agent is offline', async () => {
