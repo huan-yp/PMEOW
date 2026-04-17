@@ -1,71 +1,58 @@
 import { create } from 'zustand';
-import type {
-  MetricsSnapshot, ServerConfig, ServerStatus, HookRule, AppSettings, AlertEvent,
-  AgentTaskQueueGroup, SecurityEventRecord,
-} from '@monitor/core';
-
-interface Toast {
-  id: string;
-  title: string;
-  body: string;
-  type: 'info' | 'success' | 'warning' | 'error';
-  timestamp: number;
-  alertId?: string;
-  onAction?: () => void;
-}
+import type { Server, ServerStatus, UnifiedReport, Task, Alert, SecurityEvent, Toast } from '../transport/types.js';
 
 interface AppState {
-  // Servers
-  servers: ServerConfig[];
-  setServers: (servers: ServerConfig[]) => void;
-  addServer: (server: ServerConfig) => void;
-  removeServer: (id: string) => void;
-  updateServerInList: (server: ServerConfig) => void;
+  // Auth
+  authenticated: boolean;
+  setAuthenticated: (v: boolean) => void;
 
-  // Server statuses
+  // Servers
+  servers: Server[];
+  setServers: (servers: Server[]) => void;
+  addServer: (server: Server) => void;
+  removeServer: (id: string) => void;
+
+  // Statuses
   statuses: Map<string, ServerStatus>;
   setStatus: (status: ServerStatus) => void;
-  setStatuses: (statuses: ServerStatus[]) => void;
+  setStatuses: (statuses: Record<string, ServerStatus>) => void;
 
-  // Realtime metrics
-  latestMetrics: Map<string, MetricsSnapshot>;
-  setLatestMetrics: (snapshot: MetricsSnapshot) => void;
+  // Realtime snapshots (in-memory, from WebSocket)
+  latestSnapshots: Map<string, UnifiedReport>;
+  setLatestSnapshot: (serverId: string, report: UnifiedReport) => void;
 
-  // Hooks
-  hooks: HookRule[];
-  setHooks: (hooks: HookRule[]) => void;
+  // Tasks
+  tasks: Task[];
+  taskTotal: number;
+  setTasks: (tasks: Task[], total: number) => void;
+  upsertTask: (task: Task) => void;
 
-  // Settings
-  settings: AppSettings | null;
-  setSettings: (settings: AppSettings) => void;
+  // Alerts
+  alerts: Alert[];
+  setAlerts: (alerts: Alert[]) => void;
 
-  // Operator data
-  taskQueueGroups: AgentTaskQueueGroup[];
-  setTaskQueueGroups: (groups: AgentTaskQueueGroup[]) => void;
-  openSecurityEvents: SecurityEventRecord[];
-  setOpenSecurityEvents: (events: SecurityEventRecord[]) => void;
+  // Security Events
+  securityEvents: SecurityEvent[];
+  setSecurityEvents: (events: SecurityEvent[]) => void;
 
   // Toasts
   toasts: Toast[];
-  addToast: (title: string, body: string, type?: Toast['type'], extra?: { alertId?: string; onAction?: () => void }) => void;
+  addToast: (title: string, body: string, type?: Toast['type']) => void;
   dismissToast: (id: string) => void;
-
-  // Auth (web mode)
-  authenticated: boolean;
-  setAuthenticated: (v: boolean) => void;
 }
 
 let toastCounter = 0;
 
 export const useStore = create<AppState>((set) => ({
+  // Auth
+  authenticated: false,
+  setAuthenticated: (v) => set({ authenticated: v }),
+
   // Servers
   servers: [],
   setServers: (servers) => set({ servers }),
   addServer: (server) => set((s) => ({ servers: [...s.servers, server] })),
   removeServer: (id) => set((s) => ({ servers: s.servers.filter(srv => srv.id !== id) })),
-  updateServerInList: (server) => set((s) => ({
-    servers: s.servers.map(srv => srv.id === server.id ? server : srv),
-  })),
 
   // Statuses
   statuses: new Map(),
@@ -76,46 +63,49 @@ export const useStore = create<AppState>((set) => ({
   }),
   setStatuses: (statuses) => set(() => {
     const map = new Map<string, ServerStatus>();
-    statuses.forEach(s => map.set(s.serverId, s));
+    for (const [k, v] of Object.entries(statuses)) map.set(k, v);
     return { statuses: map };
   }),
 
-  // Metrics
-  latestMetrics: new Map(),
-  setLatestMetrics: (snapshot) => set((s) => {
-    const next = new Map(s.latestMetrics);
-    next.set(snapshot.serverId, snapshot);
-    return { latestMetrics: next };
+  // Realtime snapshots
+  latestSnapshots: new Map(),
+  setLatestSnapshot: (serverId, report) => set((s) => {
+    const next = new Map(s.latestSnapshots);
+    next.set(serverId, report);
+    return { latestSnapshots: next };
   }),
 
-  // Hooks
-  hooks: [],
-  setHooks: (hooks) => set({ hooks }),
+  // Tasks
+  tasks: [],
+  taskTotal: 0,
+  setTasks: (tasks, total) => set({ tasks, taskTotal: total }),
+  upsertTask: (task) => set((s) => {
+    const idx = s.tasks.findIndex(t => t.id === task.id);
+    if (idx >= 0) {
+      const next = [...s.tasks];
+      next[idx] = task;
+      return { tasks: next };
+    }
+    return { tasks: [task, ...s.tasks], taskTotal: s.taskTotal + 1 };
+  }),
 
-  // Settings
-  settings: null,
-  setSettings: (settings) => set({ settings }),
+  // Alerts
+  alerts: [],
+  setAlerts: (alerts) => set({ alerts }),
 
-  // Operator data
-  taskQueueGroups: [],
-  setTaskQueueGroups: (taskQueueGroups) => set({ taskQueueGroups }),
-  openSecurityEvents: [],
-  setOpenSecurityEvents: (openSecurityEvents) => set({ openSecurityEvents }),
+  // Security Events
+  securityEvents: [],
+  setSecurityEvents: (securityEvents) => set({ securityEvents }),
 
   // Toasts
   toasts: [],
-  addToast: (title, body, type = 'info', extra) => set((s) => {
+  addToast: (title, body, type = 'info') => set((s) => {
     const id = `toast-${++toastCounter}`;
-    const toast: Toast = { id, title, body, type, timestamp: Date.now(), alertId: extra?.alertId, onAction: extra?.onAction };
-    // Auto-dismiss after 8 seconds via a timeout (side effect OK in zustand)
+    const toast: Toast = { id, title, body, type, timestamp: Date.now() };
     setTimeout(() => {
-      set((s2) => ({ toasts: s2.toasts.filter(t => t.id !== id) }));
+      useStore.setState((s2) => ({ toasts: s2.toasts.filter(t => t.id !== id) }));
     }, 8000);
     return { toasts: [...s.toasts, toast] };
   }),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter(t => t.id !== id) })),
-
-  // Auth
-  authenticated: false,
-  setAuthenticated: (v) => set({ authenticated: v }),
 }));

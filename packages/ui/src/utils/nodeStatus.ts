@@ -1,10 +1,9 @@
-import type { MetricsSnapshot } from '@monitor/core';
-
 export type InternetReachabilityState = 'reachable' | 'unreachable' | 'unprobed';
 
 export function getConnectionStatusVisual(status: string) {
   switch (status) {
     case 'connected':
+    case 'online':
       return {
         label: '在线',
         badgeClassName: 'node-badge-status-online',
@@ -26,6 +25,7 @@ export function getConnectionStatusVisual(status: string) {
         surfaceClassName: 'node-surface-shell-error',
       };
     case 'disconnected':
+    case 'offline':
     default:
       return {
         label: '离线',
@@ -36,13 +36,9 @@ export function getConnectionStatusVisual(status: string) {
   }
 }
 
-export function getInternetReachabilityState(metrics?: MetricsSnapshot): InternetReachabilityState {
-  if (metrics?.network.internetReachable === true) {
-    return 'reachable';
-  }
-  if (metrics?.network.internetReachable === false) {
-    return 'unreachable';
-  }
+export function getInternetReachabilityState(reachable?: boolean): InternetReachabilityState {
+  if (reachable === true) return 'reachable';
+  if (reachable === false) return 'unreachable';
   return 'unprobed';
 }
 

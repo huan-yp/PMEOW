@@ -32,18 +32,6 @@ export function ToastContainer() {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-200">{toast.title}</p>
               <p className="text-xs text-slate-400 mt-0.5 break-words">{toast.body}</p>
-              {toast.type === 'warning' && toast.onAction && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toast.onAction!();
-                    dismissToast(toast.id);
-                  }}
-                  className="mt-1.5 px-2 py-0.5 text-xs border border-accent-yellow/30 text-accent-yellow rounded hover:bg-accent-yellow/10 transition-colors"
-                >
-                  忽略一周
-                </button>
-              )}
             </div>
             <button
               onClick={() => dismissToast(toast.id)}

@@ -1,20 +1,11 @@
 import { io, Socket } from 'socket.io-client';
-import { getServerUrl } from '../mobile/session/server-url.js';
-import type { TransportAdapter } from './types.js';
 import type {
-  ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
-  HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
-  AgentTaskQueueGroup, GpuOverviewResponse,
-  GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
-  PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
-  PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity, AutoAddUnassignedPersonsReport,
-  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord, AgentTaskAuditDetail,
-  MetricsHistoryResponse, GpuUsageHistoryResponse, ProcessHistoryFrame, ProcessReplayIndexPoint,
-} from '@monitor/core';
-import type { SecurityEventQuery, AlertQuery } from './types.js';
+  TransportAdapter, Server, ServerStatus, UnifiedReport, Task, Alert,
+  SecurityEvent, Person, PersonBinding, PersonTimelinePoint, SnapshotWithGpu,
+  GpuOverviewResponse, Settings, TaskEvent, AlertEvent,
+} from './types.js';
 
 export class WebSocketAdapter implements TransportAdapter {
-  readonly isElectron = false;
   private socket: Socket | null = null;
   private token: string | null = null;
 
@@ -24,8 +15,7 @@ export class WebSocketAdapter implements TransportAdapter {
 
   connect(): void {
     if (this.socket?.connected) return;
-    const serverUrl = getServerUrl();
-    this.socket = io(serverUrl ?? undefined, {
+    this.socket = io(undefined as unknown as string, {
       auth: { token: this.token },
       reconnection: true,
       reconnectionDelay: 1000,
@@ -39,7 +29,7 @@ export class WebSocketAdapter implements TransportAdapter {
   }
 
   // Subscriptions
-  onMetricsUpdate(cb: (data: MetricsSnapshot) => void): () => void {
+  onMetricsUpdate(cb: (data: { serverId: string; snapshot: UnifiedReport }) => void): () => void {
     this.socket?.on('metricsUpdate', cb);
     return () => { this.socket?.off('metricsUpdate', cb); };
   }
@@ -49,27 +39,17 @@ export class WebSocketAdapter implements TransportAdapter {
     return () => { this.socket?.off('serverStatus', cb); };
   }
 
+  onTaskEvent(cb: (event: TaskEvent) => void): () => void {
+    this.socket?.on('taskEvent', cb);
+    return () => { this.socket?.off('taskEvent', cb); };
+  }
+
   onAlert(cb: (alert: AlertEvent) => void): () => void {
     this.socket?.on('alert', cb);
     return () => { this.socket?.off('alert', cb); };
   }
 
-  onHookTriggered(cb: (log: HookLog) => void): () => void {
-    this.socket?.on('hookTriggered', cb);
-    return () => { this.socket?.off('hookTriggered', cb); };
-  }
-
-  onNotify(cb: (title: string, body: string) => void): () => void {
-    this.socket?.on('notify', (data: { title: string; body: string }) => cb(data.title, data.body));
-    return () => { this.socket?.off('notify'); };
-  }
-
-  onTaskChanged(cb: () => void): () => void {
-    this.socket?.on('taskChanged', cb);
-    return () => { this.socket?.off('taskChanged', cb); };
-  }
-
-  onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void {
+  onSecurityEvent(cb: (event: SecurityEvent) => void): () => void {
     this.socket?.on('securityEvent', cb);
     return () => { this.socket?.off('securityEvent', cb); };
   }
@@ -79,7 +59,7 @@ export class WebSocketAdapter implements TransportAdapter {
     return () => { this.socket?.off('serversChanged', cb); };
   }
 
-  // REST helpers
+  // REST helper
   private async fetch<T>(url: string, options?: RequestInit): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -88,8 +68,7 @@ export class WebSocketAdapter implements TransportAdapter {
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
-    const base = getServerUrl() ?? '';
-    const res = await window.fetch(`${base}${url}`, { ...options, headers });
+    const res = await window.fetch(url, { ...options, headers });
     if (res.status === 401) {
       localStorage.removeItem('auth_token');
       this.token = null;
@@ -100,348 +79,140 @@ export class WebSocketAdapter implements TransportAdapter {
       const text = await res.text();
       throw new Error(`HTTP ${res.status}: ${text}`);
     }
+    if (res.status === 204) return undefined as T;
     return res.json();
   }
 
   // Servers
-  async getServers(): Promise<ServerConfig[]> {
-    return this.fetch('/api/servers');
+  async getServers(): Promise<Server[]> { return this.fetch('/api/servers'); }
+  async addServer(input: { name: string; agentId: string }): Promise<Server> {
+    return this.fetch('/api/servers', { method: 'POST', body: JSON.stringify(input) });
+  }
+  async deleteServer(id: string): Promise<void> {
+    await this.fetch(`/api/servers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+  async getStatuses(): Promise<Record<string, ServerStatus>> { return this.fetch('/api/statuses'); }
+
+  // Snapshots
+  async getLatestMetrics(): Promise<Record<string, { snapshot: SnapshotWithGpu }>> { return this.fetch('/api/metrics/latest'); }
+  async getMetricsHistory(serverId: string, query: { from?: number; to?: number; tier?: 'recent' | 'archive' } = {}): Promise<{ snapshots: SnapshotWithGpu[] }> {
+    const params = new URLSearchParams();
+    if (query.from !== undefined) params.set('from', String(query.from));
+    if (query.to !== undefined) params.set('to', String(query.to));
+    if (query.tier) params.set('tier', query.tier);
+    return this.fetch(`/api/metrics/${encodeURIComponent(serverId)}/history?${params}`);
   }
 
-  async addServer(input: ServerInput): Promise<ServerConfig> {
-    return this.fetch('/api/servers', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
+  // Tasks
+  async getTasks(query: { serverId?: string; status?: string; user?: string; page?: number; limit?: number } = {}): Promise<{ tasks: Task[]; total: number }> {
+    const params = new URLSearchParams();
+    if (query.serverId) params.set('serverId', query.serverId);
+    if (query.status) params.set('status', query.status);
+    if (query.user) params.set('user', query.user);
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    return this.fetch(`/api/tasks?${params}`);
+  }
+  async getTask(taskId: string): Promise<Task> { return this.fetch(`/api/tasks/${encodeURIComponent(taskId)}`); }
+  async cancelTask(serverId: string, taskId: string): Promise<void> {
+    await this.fetch(`/api/servers/${encodeURIComponent(serverId)}/tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' });
+  }
+  async setTaskPriority(serverId: string, taskId: string, priority: number): Promise<void> {
+    await this.fetch(`/api/servers/${encodeURIComponent(serverId)}/tasks/${encodeURIComponent(taskId)}/priority`, { method: 'POST', body: JSON.stringify({ priority }) });
   }
 
-  async updateServer(id: string, input: Partial<ServerInput>): Promise<ServerConfig> {
-    return this.fetch(`/api/servers/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(input),
-    });
-  }
+  // GPU Overview
+  async getGpuOverview(): Promise<GpuOverviewResponse> { return this.fetch('/api/gpu-overview'); }
 
-  async deleteServer(id: string): Promise<boolean> {
-    const res = await this.fetch<{ success: boolean }>(`/api/servers/${id}`, { method: 'DELETE' });
-    return res.success;
+  // Persons
+  async getPersons(): Promise<Person[]> { return this.fetch('/api/persons'); }
+  async createPerson(input: { displayName: string; email?: string; qq?: string; note?: string }): Promise<Person> {
+    return this.fetch('/api/persons', { method: 'POST', body: JSON.stringify(input) });
   }
-
-  async testConnection(input: ServerInput): Promise<{ success: boolean; error?: string }> {
-    // testConnection on WebSocket uses existing server ID via POST to /api/servers/:id/test
-    // But we may also get called with raw input for not-yet-saved servers
-    return this.fetch('/api/servers/test', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
+  async getPerson(id: string): Promise<Person> { return this.fetch(`/api/persons/${encodeURIComponent(id)}`); }
+  async updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; status: string }>): Promise<Person> {
+    return this.fetch(`/api/persons/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) });
   }
-
-  // Metrics
-  async getLatestMetrics(serverId: string): Promise<MetricsSnapshot | null> {
-    const all = await this.fetch<Record<string, MetricsSnapshot>>('/api/metrics/latest');
-    return all[serverId] ?? null;
+  async getPersonBindings(personId: string): Promise<PersonBinding[]> { return this.fetch(`/api/persons/${encodeURIComponent(personId)}/bindings`); }
+  async createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source?: string }): Promise<PersonBinding> {
+    return this.fetch('/api/person-bindings', { method: 'POST', body: JSON.stringify(input) });
   }
-
-  async getMetricsHistory(serverId: string, from: number, to: number, fields?: string[]): Promise<MetricsSnapshot[]> {
-    const params = new URLSearchParams({ from: String(from), to: String(to) });
-    if (fields?.length) params.set('fields', fields.join(','));
-    return this.fetch(`/api/metrics/${serverId}/history?${params}`);
+  async updatePersonBinding(id: number, input: Partial<{ enabled: boolean; effectiveFrom: number; effectiveTo: number }>): Promise<PersonBinding> {
+    return this.fetch(`/api/person-bindings/${id}`, { method: 'PUT', body: JSON.stringify(input) });
   }
-
-  async getMetricsHistoryBucketed(serverId: string, from: number, to: number, bucketMs?: number): Promise<MetricsHistoryResponse> {
-    const params = new URLSearchParams({ from: String(from), to: String(to) });
-    if (bucketMs) params.set('bucket', String(bucketMs));
-    return this.fetch(`/api/metrics/${serverId}/history/bucketed?${params}`);
+  async getPersonTimeline(personId: string, query: { from?: number; to?: number } = {}): Promise<{ points: PersonTimelinePoint[] }> {
+    const params = new URLSearchParams();
+    if (query.from !== undefined) params.set('from', String(query.from));
+    if (query.to !== undefined) params.set('to', String(query.to));
+    return this.fetch(`/api/persons/${encodeURIComponent(personId)}/timeline?${params}`);
   }
-
-  async getGpuUsageByUserBucketed(user: string, from: number, to: number, bucketMs?: number): Promise<GpuUsageHistoryResponse> {
-    const params = new URLSearchParams({ user, from: String(from), to: String(to) });
-    if (bucketMs) params.set('bucket', String(bucketMs));
-    return this.fetch(`/api/gpu-usage/by-user/bucketed?${params}`);
+  async getPersonTasks(personId: string, query: { page?: number; limit?: number } = {}): Promise<{ tasks: Task[]; total: number }> {
+    const params = new URLSearchParams();
+    if (query.page !== undefined) params.set('page', String(query.page));
+    if (query.limit !== undefined) params.set('limit', String(query.limit));
+    return this.fetch(`/api/persons/${encodeURIComponent(personId)}/tasks?${params}`);
   }
-
-  async getServerStatuses(): Promise<ServerStatus[]> {
-    return this.fetch('/api/statuses');
-  }
-
-  // Hooks
-  async getHooks(): Promise<HookRule[]> {
-    return this.fetch('/api/hooks');
-  }
-
-  async createHook(input: HookRuleInput): Promise<HookRule> {
-    return this.fetch('/api/hooks', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  }
-
-  async updateHook(id: string, input: Partial<HookRuleInput>): Promise<HookRule> {
-    return this.fetch(`/api/hooks/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(input),
-    });
-  }
-
-  async deleteHook(id: string): Promise<boolean> {
-    const res = await this.fetch<{ success: boolean }>(`/api/hooks/${id}`, { method: 'DELETE' });
-    return res.success;
-  }
-
-  async getHookLogs(hookId: string): Promise<HookLog[]> {
-    return this.fetch(`/api/hooks/${hookId}/logs`);
-  }
-
-  async testHookAction(hookId: string): Promise<{ success: boolean; result?: string; error?: string }> {
-    return this.fetch(`/api/hooks/${hookId}/test`, { method: 'POST' });
-  }
-
-  // Settings
-  async getSettings(): Promise<AppSettings> {
-    return this.fetch('/api/settings');
-  }
-
-  async saveSettings(settings: Partial<AppSettings>): Promise<void> {
-    await this.fetch('/api/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
-  }
-
-  // Auth
-  async login(password: string): Promise<{ success: boolean; token?: string; error?: string }> {
-    try {
-      const res = await window.fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      });
-      const data = await res.json();
-      if (res.ok && data.token) {
-        this.token = data.token;
-        localStorage.setItem('auth_token', data.token);
-        this.disconnect();
-        this.connect();
-        return { success: true, token: data.token };
-      }
-      return { success: false, error: data.error || '登录失败' };
-    } catch {
-      return { success: false, error: '网络错误' };
-    }
-  }
-
-  async setPassword(password: string): Promise<{ success: boolean }> {
-    return this.login(password);
-  }
-
-  async checkAuth(): Promise<{ authenticated: boolean; needsSetup: boolean }> {
-    if (!this.token) return { authenticated: false, needsSetup: false };
-    try {
-      await this.fetch('/api/settings');
-      return { authenticated: true, needsSetup: false };
-    } catch {
-      return { authenticated: false, needsSetup: false };
-    }
-  }
+  async getPersonBindingCandidates(): Promise<{ candidates: { serverId: string; systemUser: string }[] }> { return this.fetch('/api/person-binding-candidates'); }
 
   // Alerts
-  async getAlerts(query: AlertQuery = {}): Promise<AlertRecord[]> {
+  async getAlerts(query: { serverId?: string } = {}): Promise<Alert[]> {
     const params = new URLSearchParams();
-    params.set('limit', String(query.limit ?? 50));
-    params.set('offset', String(query.offset ?? 0));
-    if (query.suppressed !== undefined) params.set('suppressed', String(query.suppressed));
-    return this.fetch(`/api/alerts?${params.toString()}`);
+    if (query.serverId) params.set('serverId', query.serverId);
+    return this.fetch(`/api/alerts?${params}`);
+  }
+  async suppressAlert(id: number, until: number): Promise<void> {
+    await this.fetch(`/api/alerts/${id}/suppress`, { method: 'POST', body: JSON.stringify({ until }) });
+  }
+  async unsuppressAlert(id: number): Promise<void> {
+    await this.fetch(`/api/alerts/${id}/unsuppress`, { method: 'POST' });
   }
 
-  async suppressAlert(id: string, days?: number): Promise<void> {
-    await this.fetch(`/api/alerts/${id}/suppress`, {
-      method: 'POST',
-      body: JSON.stringify({ days }),
-    });
-  }
-
-  async unsuppressAlert(id: string): Promise<void> {
-    await this.fetch(`/api/alerts/${id}/unsuppress`, {
-      method: 'POST',
-    });
-  }
-
-  async batchSuppressAlerts(ids: string[], days?: number): Promise<void> {
-    await this.fetch('/api/alerts/batch/suppress', {
-      method: 'POST',
-      body: JSON.stringify({ ids, days }),
-    });
-  }
-
-  async batchUnsuppressAlerts(ids: string[]): Promise<void> {
-    await this.fetch('/api/alerts/batch/unsuppress', {
-      method: 'POST',
-      body: JSON.stringify({ ids }),
-    });
-  }
-
-  async getTaskQueue(): Promise<AgentTaskQueueGroup[]> {
-    return this.fetch('/api/task-queue');
-  }
-
-  async getTaskEvents(serverId: string, taskId: string, afterId = 0): Promise<AgentTaskEventRecord[]> {
-    return this.fetch(`/api/servers/${serverId}/tasks/${taskId}/events?afterId=${afterId}`);
-  }
-
-  async getTaskAuditDetail(serverId: string, taskId: string): Promise<AgentTaskAuditDetail | null> {
-    return this.fetch(`/api/servers/${serverId}/tasks/${taskId}/audit`);
-  }
-
-  async getProcessAudit(serverId: string): Promise<ProcessAuditRow[]> {
-    return this.fetch(`/api/servers/${serverId}/process-audit`);
-  }
-
-  async getProcessHistoryIndex(serverId: string, from: number, to: number): Promise<ProcessReplayIndexPoint[]> {
-    const params = new URLSearchParams({ from: String(from), to: String(to) });
-    return this.fetch(`/api/servers/${serverId}/process-history/index?${params.toString()}`);
-  }
-
-  async getProcessHistoryFrame(serverId: string, timestamp: number): Promise<ProcessHistoryFrame> {
-    const params = new URLSearchParams({ timestamp: String(timestamp) });
-    return this.fetch(`/api/servers/${serverId}/process-history/frame?${params.toString()}`);
-  }
-
-  async getSecurityEvents(query: SecurityEventQuery = {}): Promise<SecurityEventRecord[]> {
+  // Security
+  async getSecurityEvents(query: { serverId?: string; resolved?: boolean } = {}): Promise<SecurityEvent[]> {
     const params = new URLSearchParams();
     if (query.serverId) params.set('serverId', query.serverId);
     if (query.resolved !== undefined) params.set('resolved', String(query.resolved));
-    if (query.hours !== undefined) params.set('hours', String(query.hours));
-    const suffix = params.size > 0 ? `?${params.toString()}` : '';
-    return this.fetch(`/api/security/events${suffix}`);
+    return this.fetch(`/api/security/events?${params}`);
+  }
+  async markSecurityEventSafe(id: number): Promise<void> {
+    await this.fetch(`/api/security/events/${id}/mark-safe`, { method: 'POST' });
+  }
+  async unresolveSecurityEvent(id: number): Promise<void> {
+    await this.fetch(`/api/security/events/${id}/unresolve`, { method: 'POST' });
   }
 
-  async markSecurityEventSafe(
-    id: number,
-    reason?: string,
-  ): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }> {
-    return this.fetch(`/api/security/events/${id}/mark-safe`, {
+  // Settings
+  async getSettings(): Promise<Settings> { return this.fetch('/api/settings'); }
+  async saveSettings(settings: Partial<Settings>): Promise<void> {
+    await this.fetch('/api/settings', { method: 'PUT', body: JSON.stringify(settings) });
+  }
+
+  // Auth
+  async login(password: string): Promise<{ token: string }> {
+    const res = await window.fetch('/api/login', {
       method: 'POST',
-      body: JSON.stringify({ reason }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
     });
-  }
-
-  async unresolveSecurityEvent(
-    id: number,
-    reason?: string,
-  ): Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }> {
-    return this.fetch(`/api/security/events/${id}/unresolve`, {
-      method: 'POST',
-      body: JSON.stringify({ reason }),
-    });
-  }
-
-  async getGpuOverview(): Promise<GpuOverviewResponse> {
-    return this.fetch('/api/gpu-overview');
-  }
-
-  async getGpuUsageSummary(hours = 168): Promise<GpuUsageSummaryItem[]> {
-    return this.fetch(`/api/gpu-usage/summary?hours=${hours}`);
-  }
-
-  async getGpuUsageByUser(user: string, hours = 168): Promise<GpuUsageTimelinePoint[]> {
-    const params = new URLSearchParams({ user, hours: String(hours) });
-    return this.fetch(`/api/gpu-usage/by-user?${params.toString()}`);
-  }
-
-  async cancelTask(serverId: string, taskId: string): Promise<void> {
-    await this.fetch(`/api/servers/${serverId}/tasks/${taskId}/cancel`, { method: 'POST' });
-  }
-
-  async setTaskPriority(serverId: string, taskId: string, priority: number): Promise<void> {
-    await this.fetch(`/api/servers/${serverId}/tasks/${taskId}/priority`, {
-      method: 'POST',
-      body: JSON.stringify({ priority }),
-    });
-  }
-
-  async pauseQueue(serverId: string): Promise<void> {
-    await this.fetch(`/api/servers/${serverId}/queue/pause`, { method: 'POST' });
-  }
-
-  async resumeQueue(serverId: string): Promise<void> {
-    await this.fetch(`/api/servers/${serverId}/queue/resume`, { method: 'POST' });
-  }
-
-  // Key upload
-  async uploadKey(file: File): Promise<{ path: string }> {
-    const formData = new FormData();
-    formData.append('key', file);
-    const headers: Record<string, string> = {};
-    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
-    const res = await window.fetch('/api/keys/upload', {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
-    if (res.status === 401) {
-      localStorage.removeItem('auth_token');
-      this.token = null;
-      window.location.href = '/login';
-      throw new Error('Unauthorized');
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || '登录失败');
     }
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    const data = await res.json();
+    this.token = data.token;
+    localStorage.setItem('auth_token', data.token);
+    this.disconnect();
+    this.connect();
+    return data;
   }
 
-  // Person attribution
-  async getPersons(): Promise<PersonRecord[]> {
-    return this.fetch('/api/persons');
-  }
-
-  async createPerson(input: { displayName: string; email?: string; qq?: string; note?: string; customFields: Record<string, string> }): Promise<PersonRecord> {
-    return this.fetch('/api/persons', { method: 'POST', body: JSON.stringify(input) });
-  }
-
-  async updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; customFields: Record<string, string> }>): Promise<PersonRecord> {
-    return this.fetch(`/api/persons/${id}`, { method: 'PUT', body: JSON.stringify(input) });
-  }
-
-  async getPersonBindings(personId: string): Promise<PersonBindingRecord[]> {
-    return this.fetch(`/api/persons/${personId}/bindings`);
-  }
-
-  async createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source: string; effectiveFrom: number }): Promise<PersonBindingRecord> {
-    return this.fetch('/api/person-bindings', { method: 'POST', body: JSON.stringify(input) });
-  }
-
-  async updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord> {
-    return this.fetch(`/api/person-bindings/${id}`, { method: 'PUT', body: JSON.stringify(input) });
-  }
-
-  async getPersonBindingCandidates(): Promise<PersonBindingCandidate[]> {
-    return this.fetch('/api/person-binding-candidates');
-  }
-
-  async getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]> {
-    return this.fetch('/api/person-binding-suggestions');
-  }
-
-  async autoAddUnassignedPersons(): Promise<AutoAddUnassignedPersonsReport> {
-    return this.fetch('/api/persons/auto-add-unassigned', { method: 'POST', body: JSON.stringify({}) });
-  }
-
-  async getPersonSummary(hours = 168): Promise<PersonSummaryItem[]> {
-    return this.fetch(`/api/persons/summary?hours=${hours}`);
-  }
-
-  async getPersonTimeline(personId: string, hours = 168): Promise<PersonTimelinePoint[]> {
-    return this.fetch(`/api/persons/${personId}/timeline?hours=${hours}`);
-  }
-
-  async getPersonTasks(personId: string, hours = 168): Promise<MirroredAgentTaskRecord[]> {
-    return this.fetch(`/api/persons/${personId}/tasks?hours=${hours}`);
-  }
-
-  async getServerPersonActivity(serverId: string): Promise<ServerPersonActivity> {
-    return this.fetch(`/api/servers/${serverId}/person-activity`);
-  }
-
-  async getResolvedGpuAllocation(serverId: string): Promise<ResolvedGpuAllocationResponse | null> {
-    return this.fetch(`/api/servers/${serverId}/gpu-allocation/resolved`);
+  async checkAuth(): Promise<{ authenticated: boolean }> {
+    if (!this.token) return { authenticated: false };
+    try {
+      await this.fetch('/api/settings');
+      return { authenticated: true };
+    } catch {
+      return { authenticated: false };
+    }
   }
 }

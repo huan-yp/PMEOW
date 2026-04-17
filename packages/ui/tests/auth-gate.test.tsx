@@ -1,26 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  AgentTaskQueueGroup,
-  AlertEvent,
-  AlertRecord,
-  AppSettings,
-  GpuOverviewResponse,
-  GpuUsageSummaryItem,
-  GpuUsageTimelinePoint,
-  HookLog,
-  HookRule,
-  HookRuleInput,
-  MetricsSnapshot,
-  ProcessAuditRow,
-  SecurityEventRecord,
-  ServerConfig,
-  ServerInput,
-  ServerStatus,
-} from '@monitor/core';
-import { DEFAULT_SETTINGS } from '@monitor/core';
 import App from '../src/App.js';
-import type { SecurityEventQuery, TransportAdapter } from '../src/transport/types.js';
+import type { TransportAdapter } from '../src/transport/types.js';
 import { AUTHOR_GITHUB_URL, PROJECT_REPO_URL } from '../src/utils/branding.js';
 import { useStore } from '../src/store/useStore.js';
 
@@ -38,66 +19,41 @@ function createDeferred<T>() {
 
 function createMockTransport(overrides: Partial<TransportAdapter> = {}): TransportAdapter {
   return {
-    isElectron: false,
     connect: vi.fn(),
     disconnect: vi.fn(),
     onMetricsUpdate: vi.fn(() => () => undefined),
     onServerStatus: vi.fn(() => () => undefined),
-    onAlert: vi.fn((_cb: (alert: AlertEvent) => void) => () => undefined),
-    onHookTriggered: vi.fn((_cb: (log: HookLog) => void) => () => undefined),
-    onNotify: vi.fn((_cb: (title: string, body: string) => void) => () => undefined),
-    onTaskChanged: vi.fn(() => () => undefined),
+    onTaskEvent: vi.fn(() => () => undefined),
+    onAlert: vi.fn(() => () => undefined),
     onSecurityEvent: vi.fn(() => () => undefined),
-    getServers: vi.fn<() => Promise<ServerConfig[]>>(async () => []),
-    addServer: vi.fn<(input: ServerInput) => Promise<ServerConfig>>(async (_input) => {
-      throw new Error('not implemented');
-    }),
-    updateServer: vi.fn<(id: string, input: Partial<ServerInput>) => Promise<ServerConfig>>(async (_id, _input) => {
-      throw new Error('not implemented');
-    }),
-    deleteServer: vi.fn<(id: string) => Promise<boolean>>(async (_id) => true),
-    testConnection: vi.fn<(input: ServerInput) => Promise<{ success: boolean; error?: string }>>(async (_input) => ({ success: true })),
-    getLatestMetrics: vi.fn<(serverId: string) => Promise<MetricsSnapshot | null>>(async (_serverId) => null),
-    getMetricsHistory: vi.fn<(serverId: string, from: number, to: number) => Promise<MetricsSnapshot[]>>(async (_serverId, _from, _to) => []),
-    getServerStatuses: vi.fn<() => Promise<ServerStatus[]>>(async () => []),
-    getHooks: vi.fn<() => Promise<HookRule[]>>(async () => []),
-    createHook: vi.fn<(input: HookRuleInput) => Promise<HookRule>>(async (_input) => {
-      throw new Error('not implemented');
-    }),
-    updateHook: vi.fn<(id: string, input: Partial<HookRuleInput>) => Promise<HookRule>>(async (_id, _input) => {
-      throw new Error('not implemented');
-    }),
-    deleteHook: vi.fn<(id: string) => Promise<boolean>>(async (_id) => true),
-    getHookLogs: vi.fn<(hookId: string) => Promise<HookLog[]>>(async (_hookId) => []),
-    testHookAction: vi.fn<(hookId: string) => Promise<{ success: boolean; result?: string; error?: string }>>(async (_hookId) => ({ success: true })),
-    getSettings: vi.fn<() => Promise<AppSettings>>(async () => DEFAULT_SETTINGS),
-    saveSettings: vi.fn<(settings: Partial<AppSettings>) => Promise<void>>(async (_settings) => undefined),
-    login: vi.fn<(password: string) => Promise<{ success: boolean; token?: string; error?: string }>>(async (_password) => ({ success: true, token: 'token' })),
-    setPassword: vi.fn<(password: string) => Promise<{ success: boolean }>>(async (_password) => ({ success: true })),
-    checkAuth: vi.fn<() => Promise<{ authenticated: boolean; needsSetup: boolean }>>(async () => ({ authenticated: false, needsSetup: false })),
-    getAlerts: vi.fn<(query?: unknown) => Promise<AlertRecord[]>>(async (_query) => []),
-    suppressAlert: vi.fn<(id: string, days?: number) => Promise<void>>(async (_id, _days) => undefined),
-    unsuppressAlert: vi.fn<(id: string) => Promise<void>>(async (_id) => undefined),
-    batchSuppressAlerts: vi.fn<(ids: string[], days?: number) => Promise<void>>(async (_ids, _days) => undefined),
-    batchUnsuppressAlerts: vi.fn<(ids: string[]) => Promise<void>>(async (_ids) => undefined),
-    getTaskQueue: vi.fn<() => Promise<AgentTaskQueueGroup[]>>(async () => []),
-    getProcessAudit: vi.fn<(serverId: string) => Promise<ProcessAuditRow[]>>(async (_serverId) => []),
-    getSecurityEvents: vi.fn<(query?: SecurityEventQuery) => Promise<SecurityEventRecord[]>>(async (_query) => []),
-    markSecurityEventSafe: vi.fn<(id: number, reason?: string) => Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>>(async (_id, _reason) => {
-      throw new Error('not implemented');
-    }),
-    getGpuOverview: vi.fn<() => Promise<GpuOverviewResponse>>(async () => ({ generatedAt: 1_710_000_000_000, users: [], servers: [] })),
-    getGpuUsageSummary: vi.fn<(hours?: number) => Promise<GpuUsageSummaryItem[]>>(async (_hours) => []),
-    getGpuUsageByUser: vi.fn<(user: string, hours?: number) => Promise<GpuUsageTimelinePoint[]>>(async (_user, _hours) => []),
-    cancelTask: vi.fn<(serverId: string, taskId: string) => Promise<void>>(async (_serverId, _taskId) => undefined),
-    setTaskPriority: vi.fn<(serverId: string, taskId: string, priority: number) => Promise<void>>(async (_serverId, _taskId, _priority) => undefined),
-    pauseQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
-    resumeQueue: vi.fn<(serverId: string) => Promise<void>>(async (_serverId) => undefined),
-    uploadKey: vi.fn<(file: File) => Promise<{ path: string }>>(async (_file) => ({ path: '/tmp/key' })),
-    getResolvedGpuAllocation: vi.fn(async () => null),
-    getPersonBindingCandidates: vi.fn(async () => []),
+    onServersChanged: vi.fn(() => () => undefined),
+    getServers: vi.fn(async () => []),
+    addServer: vi.fn(async () => { throw new Error('not implemented'); }),
+    deleteServer: vi.fn(async () => undefined),
+    getStatuses: vi.fn(async () => ({})),
+    getMetricsHistory: vi.fn(async () => ({ snapshots: [], total: 0 })),
+    getSettings: vi.fn(async () => ({ alertCpuThreshold: 90, alertMemoryThreshold: 90, alertDiskThreshold: 90, alertGpuTempThreshold: 85 })),
+    saveSettings: vi.fn(async () => undefined),
+    login: vi.fn(async () => ({ success: true, token: 'token' })),
+    checkAuth: vi.fn(async () => ({ authenticated: false })),
+    getTasks: vi.fn(async () => ({ tasks: [], total: 0 })),
+    getTask: vi.fn(async () => { throw new Error('not found'); }),
+    cancelTask: vi.fn(async () => undefined),
+    getAlerts: vi.fn(async () => []),
+    suppressAlert: vi.fn(async () => undefined),
+    unsuppressAlert: vi.fn(async () => undefined),
+    getSecurityEvents: vi.fn(async () => []),
+    markSecurityEventSafe: vi.fn(async () => undefined),
+    unresolveSecurityEvent: vi.fn(async () => undefined),
+    getPersons: vi.fn(async () => []),
+    getPerson: vi.fn(async () => { throw new Error('not found'); }),
+    createPerson: vi.fn(async () => { throw new Error('not implemented'); }),
+    updatePerson: vi.fn(async () => { throw new Error('not implemented'); }),
+    getPersonBindings: vi.fn(async () => []),
+    getPersonTasks: vi.fn(async () => ({ tasks: [], total: 0 })),
+    getPersonTimeline: vi.fn(async () => ({ points: [] })),
     ...overrides,
-  };
+  } as TransportAdapter;
 }
 
 function renderApp(transport: TransportAdapter, route = '/') {
@@ -111,11 +67,11 @@ describe('AuthGate', () => {
     useStore.setState({
       servers: [],
       statuses: new Map(),
-      latestMetrics: new Map(),
-      hooks: [],
-      settings: null,
-      taskQueueGroups: [],
-      openSecurityEvents: [],
+      latestSnapshots: new Map(),
+      tasks: [],
+      taskTotal: 0,
+      alerts: [],
+      securityEvents: [],
       toasts: [],
       authenticated: false,
     });
@@ -123,7 +79,7 @@ describe('AuthGate', () => {
 
   it('restores an existing authenticated session before rendering the app shell', async () => {
     const transport = createMockTransport({
-      checkAuth: vi.fn(async () => ({ authenticated: true, needsSetup: false })),
+      checkAuth: vi.fn(async () => ({ authenticated: true })),
     });
 
     renderApp(transport);
@@ -136,7 +92,7 @@ describe('AuthGate', () => {
   });
 
   it('keeps the login form hidden until the startup auth check completes', async () => {
-    const deferred = createDeferred<{ authenticated: boolean; needsSetup: boolean }>();
+    const deferred = createDeferred<{ authenticated: boolean }>();
     const transport = createMockTransport({
       checkAuth: vi.fn(async () => deferred.promise),
     });
@@ -146,7 +102,7 @@ describe('AuthGate', () => {
     expect((await screen.findByRole('status')).textContent).toContain('正在恢复登录状态...');
     expect(screen.queryByPlaceholderText('请输入访问口令')).toBeNull();
 
-    deferred.resolve({ authenticated: false, needsSetup: false });
+    deferred.resolve({ authenticated: false });
 
     expect(await screen.findByPlaceholderText('请输入访问口令')).toBeTruthy();
     await waitFor(() => {

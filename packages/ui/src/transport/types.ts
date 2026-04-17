@@ -1,117 +1,286 @@
-import type {
-  ServerConfig, ServerInput, MetricsSnapshot, ServerStatus,
-  HookRule, HookRuleInput, HookLog, AppSettings, AlertEvent, AlertRecord,
-  AgentTaskQueueGroup, GpuOverviewResponse,
-  GpuUsageSummaryItem, GpuUsageTimelinePoint, ProcessAuditRow, SecurityEventRecord,
-  PersonRecord, PersonBindingCandidate, PersonBindingRecord, PersonBindingSuggestion,
-  PersonSummaryItem, PersonTimelinePoint, ServerPersonActivity,
-  AutoAddUnassignedPersonsReport,
-  MirroredAgentTaskRecord, ResolvedGpuAllocationResponse, AgentTaskEventRecord, AgentTaskAuditDetail,
-  MetricsHistoryResponse, GpuUsageHistoryResponse, ProcessHistoryFrame, ProcessReplayIndexPoint,
-} from '@monitor/core';
-
-export interface SecurityEventQuery {
-  serverId?: string;
-  resolved?: boolean;
-  hours?: number;
+// Server
+export interface Server {
+  id: string;
+  name: string;
+  agentId: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
-export interface AlertQuery {
-  limit?: number;
-  offset?: number;
-  /** true = only suppressed; false = only active; undefined = all */
-  suppressed?: boolean;
+export interface ServerStatus {
+  serverId: string;
+  status: 'online' | 'offline';
+  lastSeenAt: number;
+  version: string;
 }
 
+// UnifiedReport (from spec §4.3)
+export interface UnifiedReport {
+  agentId: string;
+  timestamp: number;
+  seq: number;
+  resourceSnapshot: {
+    gpuCards: GpuCardReport[];
+    cpu: { usage: number; cores: number; frequency: number };
+    memory: { totalMb: number; usedMb: number; percent: number };
+    disks: { mountpoint: string; totalMb: number; usedMb: number }[];
+    network: { interface: string; rxBytesPerSec: number; txBytesPerSec: number }[];
+    processes: ProcessInfo[];
+    internet: { reachable: boolean; targets: string[] };
+    localUsers: string[];
+  };
+  taskQueue: {
+    queued: TaskInfo[];
+    running: TaskInfo[];
+  };
+}
+
+export interface ProcessInfo {
+  pid: number;
+  name: string;
+  user: string;
+  cpuPercent: number;
+  memoryMb: number;
+  command: string;
+}
+
+export interface GpuCardReport {
+  index: number;
+  name: string;
+  temperature: number;
+  utilizationGpu: number;
+  utilizationMemory: number;
+  memoryTotalMb: number;
+  memoryUsedMb: number;
+  managedReservedMb: number;
+  unmanagedPeakMb: number;
+  effectiveFreeMb: number;
+  taskAllocations: { taskId: string; declaredVramMb: number }[];
+  userProcesses: { pid: number; user: string; vramMb: number }[];
+  unknownProcesses: { pid: number; vramMb: number }[];
+}
+
+export interface TaskInfo {
+  id: string;
+  status: 'queued' | 'running';
+  command: string;
+  cwd: string;
+  user: string;
+  launchMode: 'daemon_shell' | 'attached_python';
+  requireVramMb: number;
+  requireGpuCount: number;
+  gpuIds: number[] | null;
+  priority: number;
+  createdAt: number;
+  startedAt: number | null;
+  pid: number | null;
+  assignedGpus: number[] | null;
+  declaredVramPerGpu: number | null;
+  scheduleHistory: ScheduleEvaluation[];
+}
+
+export interface ScheduleEvaluation {
+  timestamp: number;
+  result: 'scheduled' | 'blocked_by_priority' | 'insufficient_gpu' | 'sustained_window_not_met';
+  gpuSnapshot: Record<string, number>;
+  detail: string;
+}
+
+// Task (persisted, from spec §3.1 tasks table)
+export interface Task {
+  id: string;
+  serverId: string;
+  status: 'queued' | 'running' | 'ended';
+  command: string;
+  cwd: string;
+  user: string;
+  launchMode: 'daemon_shell' | 'attached_python';
+  requireVramMb: number;
+  requireGpuCount: number;
+  gpuIds: number[] | null;
+  priority: number;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  pid: number | null;
+  exitCode: number | null;
+  assignedGpus: number[] | null;
+  declaredVramPerGpu: number | null;
+  scheduleHistory: ScheduleEvaluation[] | null;
+}
+
+// Alert (from spec §3.1 alerts table)
+export interface Alert {
+  id: number;
+  serverId: string;
+  alertType: 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline';
+  value: number | null;
+  threshold: number | null;
+  createdAt: number;
+  updatedAt: number;
+  suppressedUntil: number | null;
+}
+
+// Security Event
+export interface SecurityEvent {
+  id: number;
+  serverId: string;
+  eventType: 'suspicious_process' | 'unowned_gpu' | 'high_gpu_utilization' | 'marked_safe' | 'unresolve';
+  fingerprint: string;
+  details: Record<string, unknown>;
+  resolved: boolean;
+  resolvedBy: string | null;
+  createdAt: number;
+  resolvedAt: number | null;
+}
+
+// Person
+export interface Person {
+  id: string;
+  displayName: string;
+  email: string | null;
+  qq: string | null;
+  note: string | null;
+  customFields: Record<string, string> | null;
+  status: 'active' | 'archived';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersonBinding {
+  id: number;
+  personId: string;
+  serverId: string;
+  systemUser: string;
+  source: 'auto' | 'manual' | 'override';
+  enabled: boolean;
+  effectiveFrom: number | null;
+  effectiveTo: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersonTimelinePoint {
+  timestamp: number;
+  vramMb: number;
+  serverId: string;
+  gpuIndex: number;
+}
+
+// Task Event (pushed via WebSocket)
+export interface TaskEvent {
+  serverId: string;
+  eventType: 'submitted' | 'started' | 'ended' | 'priority_changed';
+  task: Task;
+}
+
+// Alert Event (pushed via WebSocket)
+export interface AlertEvent {
+  serverId: string;
+  alertType: string;
+  value: number;
+  threshold: number;
+}
+
+// Snapshot with GPU (for history queries)
+export interface SnapshotWithGpu {
+  id: number;
+  serverId: string;
+  timestamp: number;
+  tier: 'recent' | 'archive';
+  cpu: { usage: number; cores: number; frequency: number };
+  memory: { totalMb: number; usedMb: number; percent: number };
+  disks: { mountpoint: string; totalMb: number; usedMb: number }[];
+  network: { interface: string; rxBytesPerSec: number; txBytesPerSec: number }[];
+  processes: ProcessInfo[];
+  internet: { reachable: boolean; targets: string[] };
+  localUsers: string[];
+  gpuCards: GpuCardReport[];
+}
+
+// GPU Overview response
+export interface GpuOverviewResponse {
+  servers: { serverId: string; serverName: string; gpus: GpuCardReport[] }[];
+}
+
+// Settings
+export interface Settings {
+  alertCpuThreshold: number;
+  alertMemoryThreshold: number;
+  alertDiskThreshold: number;
+  alertGpuTempThreshold: number;
+  [key: string]: unknown;
+}
+
+// Toast (UI-only)
+export interface Toast {
+  id: string;
+  title: string;
+  body: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  timestamp: number;
+}
+
+// Transport adapter interface
 export interface TransportAdapter {
-  readonly isElectron?: boolean;
-
   // Connection
   connect(): void;
   disconnect(): void;
 
-  // Realtime subscriptions
-  onMetricsUpdate(cb: (data: MetricsSnapshot) => void): () => void;
+  // Realtime subscriptions (return unsubscribe fn)
+  onMetricsUpdate(cb: (data: { serverId: string; snapshot: UnifiedReport }) => void): () => void;
   onServerStatus(cb: (status: ServerStatus) => void): () => void;
+  onTaskEvent(cb: (event: TaskEvent) => void): () => void;
   onAlert(cb: (alert: AlertEvent) => void): () => void;
-  onHookTriggered(cb: (log: HookLog) => void): () => void;
-  onNotify(cb: (title: string, body: string) => void): () => void;
-  onTaskChanged(cb: () => void): () => void;
-  onSecurityEvent(cb: (event: SecurityEventRecord) => void): () => void;
-  onServersChanged?(cb: () => void): () => void;
+  onSecurityEvent(cb: (event: SecurityEvent) => void): () => void;
+  onServersChanged(cb: () => void): () => void;
 
-  // Servers
-  getServers(): Promise<ServerConfig[]>;
-  addServer(input: ServerInput): Promise<ServerConfig>;
-  updateServer(id: string, input: Partial<ServerInput>): Promise<ServerConfig>;
-  deleteServer(id: string): Promise<boolean>;
-  testConnection(input: ServerInput): Promise<{ success: boolean; error?: string }>;
+  // Servers (spec §8.2)
+  getServers(): Promise<Server[]>;
+  addServer(input: { name: string; agentId: string }): Promise<Server>;
+  deleteServer(id: string): Promise<void>;
+  getStatuses(): Promise<Record<string, ServerStatus>>;
 
-  // Metrics
-  getLatestMetrics(serverId: string): Promise<MetricsSnapshot | null>;
-  getMetricsHistory(serverId: string, from: number, to: number, fields?: string[]): Promise<MetricsSnapshot[]>;
-  getMetricsHistoryBucketed(serverId: string, from: number, to: number, bucketMs?: number): Promise<MetricsHistoryResponse>;
-  getServerStatuses(): Promise<ServerStatus[]>;
+  // Snapshots (spec §8.3)
+  getLatestMetrics(): Promise<Record<string, { snapshot: SnapshotWithGpu }>>;
+  getMetricsHistory(serverId: string, query: { from?: number; to?: number; tier?: 'recent' | 'archive' }): Promise<{ snapshots: SnapshotWithGpu[] }>;
 
-  // Hooks
-  getHooks(): Promise<HookRule[]>;
-  createHook(input: HookRuleInput): Promise<HookRule>;
-  updateHook(id: string, input: Partial<HookRuleInput>): Promise<HookRule>;
-  deleteHook(id: string): Promise<boolean>;
-  getHookLogs(hookId: string): Promise<HookLog[]>;
-  testHookAction(hookId: string): Promise<{ success: boolean; result?: string; error?: string }>;
-
-  // Settings
-  getSettings(): Promise<AppSettings>;
-  saveSettings(settings: Partial<AppSettings>): Promise<void>;
-
-  // Auth (web only)
-  login(password: string): Promise<{ success: boolean; token?: string; error?: string }>;
-  setPassword(password: string): Promise<{ success: boolean }>;
-  checkAuth(): Promise<{ authenticated: boolean; needsSetup: boolean }>;
-
-  // Alerts
-  getAlerts(query?: AlertQuery): Promise<AlertRecord[]>;
-  suppressAlert(id: string, days?: number): Promise<void>;
-  unsuppressAlert(id: string): Promise<void>;
-  batchSuppressAlerts(ids: string[], days?: number): Promise<void>;
-  batchUnsuppressAlerts(ids: string[]): Promise<void>;
-
-  // Operator data
-  getTaskQueue(): Promise<AgentTaskQueueGroup[]>;
-  getTaskEvents?(serverId: string, taskId: string, afterId?: number): Promise<AgentTaskEventRecord[]>;
-  getTaskAuditDetail?(serverId: string, taskId: string): Promise<AgentTaskAuditDetail | null>;
-  getProcessAudit(serverId: string): Promise<ProcessAuditRow[]>;
-  getProcessHistoryIndex?(serverId: string, from: number, to: number): Promise<ProcessReplayIndexPoint[]>;
-  getProcessHistoryFrame?(serverId: string, timestamp: number): Promise<ProcessHistoryFrame>;
-  getSecurityEvents(query?: SecurityEventQuery): Promise<SecurityEventRecord[]>;
-  markSecurityEventSafe(id: number, reason?: string): Promise<{ resolvedEvent: SecurityEventRecord; auditEvent?: SecurityEventRecord }>;
-  unresolveSecurityEvent(id: number, reason?: string): Promise<{ reopenedEvent: SecurityEventRecord; auditEvent: SecurityEventRecord }>;
-  getGpuOverview(): Promise<GpuOverviewResponse>;
-  getGpuUsageSummary(hours?: number): Promise<GpuUsageSummaryItem[]>;
-  getGpuUsageByUser(user: string, hours?: number): Promise<GpuUsageTimelinePoint[]>;
-  getGpuUsageByUserBucketed(user: string, from: number, to: number, bucketMs?: number): Promise<GpuUsageHistoryResponse>;
+  // Tasks (spec §8.4)
+  getTasks(query?: { serverId?: string; status?: string; user?: string; page?: number; limit?: number }): Promise<{ tasks: Task[]; total: number }>;
+  getTask(taskId: string): Promise<Task>;
   cancelTask(serverId: string, taskId: string): Promise<void>;
   setTaskPriority(serverId: string, taskId: string, priority: number): Promise<void>;
-  pauseQueue(serverId: string): Promise<void>;
-  resumeQueue(serverId: string): Promise<void>;
 
-  // Key upload
-  uploadKey(file: File): Promise<{ path: string }>;
+  // GPU Overview (spec §8.5)
+  getGpuOverview(): Promise<GpuOverviewResponse>;
 
-  // Person attribution
-  getPersons(): Promise<PersonRecord[]>;
-  createPerson(input: { displayName: string; email?: string; qq?: string; note?: string; customFields: Record<string, string> }): Promise<PersonRecord>;
-  updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; customFields: Record<string, string> }>): Promise<PersonRecord>;
-  getPersonBindings(personId: string): Promise<PersonBindingRecord[]>;
-  createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source: string; effectiveFrom: number }): Promise<PersonBindingRecord>;
-  updatePersonBinding(id: string, input: Partial<{ enabled: boolean; effectiveTo: number | null }>): Promise<PersonBindingRecord>;
-  getPersonBindingCandidates(): Promise<PersonBindingCandidate[]>;
-  getPersonBindingSuggestions(): Promise<PersonBindingSuggestion[]>;
-  autoAddUnassignedPersons?(): Promise<AutoAddUnassignedPersonsReport>;
-  getPersonSummary(hours?: number): Promise<PersonSummaryItem[]>;
-  getPersonTimeline(personId: string, hours?: number): Promise<PersonTimelinePoint[]>;
-  getPersonTasks(personId: string, hours?: number): Promise<MirroredAgentTaskRecord[]>;
-  getServerPersonActivity(serverId: string): Promise<ServerPersonActivity>;
-  getResolvedGpuAllocation(serverId: string): Promise<ResolvedGpuAllocationResponse | null>;
+  // Persons (spec §8.6)
+  getPersons(): Promise<Person[]>;
+  createPerson(input: { displayName: string; email?: string; qq?: string; note?: string }): Promise<Person>;
+  getPerson(id: string): Promise<Person>;
+  updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; status: string }>): Promise<Person>;
+  getPersonBindings(personId: string): Promise<PersonBinding[]>;
+  createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source?: string }): Promise<PersonBinding>;
+  updatePersonBinding(id: number, input: Partial<{ enabled: boolean; effectiveFrom: number; effectiveTo: number }>): Promise<PersonBinding>;
+  getPersonTimeline(personId: string, query?: { from?: number; to?: number }): Promise<{ points: PersonTimelinePoint[] }>;
+  getPersonTasks(personId: string, query?: { page?: number; limit?: number }): Promise<{ tasks: Task[]; total: number }>;
+  getPersonBindingCandidates(): Promise<{ candidates: { serverId: string; systemUser: string }[] }>;
+
+  // Alerts (spec §8.7)
+  getAlerts(query?: { serverId?: string }): Promise<Alert[]>;
+  suppressAlert(id: number, until: number): Promise<void>;
+  unsuppressAlert(id: number): Promise<void>;
+
+  // Security (spec §8.8)
+  getSecurityEvents(query?: { serverId?: string; resolved?: boolean }): Promise<SecurityEvent[]>;
+  markSecurityEventSafe(id: number): Promise<void>;
+  unresolveSecurityEvent(id: number): Promise<void>;
+
+  // Settings (spec §8.9)
+  getSettings(): Promise<Settings>;
+  saveSettings(settings: Partial<Settings>): Promise<void>;
+
+  // Auth (spec §8.1)
+  login(password: string): Promise<{ token: string }>;
+  checkAuth(): Promise<{ authenticated: boolean }>;
 }

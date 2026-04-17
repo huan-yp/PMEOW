@@ -1,45 +1,29 @@
-import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
 import { TransportProvider, useTransport } from './transport/TransportProvider.js';
 import type { TransportAdapter } from './transport/types.js';
 import { useStore } from './store/useStore.js';
 import { useMetricsSubscription, useLoadInitialData } from './hooks/useMetrics.js';
-import { useOperatorBootstrap } from './hooks/useOperatorData.js';
 import { ToastContainer } from './components/common/Toast.js';
-import { Overview } from './pages/Overview.js';
-import { ServerDetail } from './pages/ServerDetail.js';
-import { ServersManage } from './pages/ServersManage.js';
-import { HooksManage } from './pages/HooksManage.js';
-import { Settings } from './pages/Settings.js';
-import { Alerts } from './pages/Alerts.js';
-import { TaskQueue } from './pages/TaskQueue.js';
-import { TaskAuditDetail } from './pages/TaskAuditDetail.js';
-import { Security } from './pages/Security.js';
-import { Login } from './pages/Login.js';
-import { PeopleOverview } from './pages/PeopleOverview.js';
-import { PeopleManage } from './pages/PeopleManage.js';
-import { PersonDetail } from './pages/PersonDetail.js';
-import { MobileAdminLayout } from './mobile/layouts/MobileAdminLayout.js';
-import { AdminHome } from './mobile/screens/admin/Home.js';
-import { AdminTasks } from './mobile/screens/admin/Tasks.js';
-import { AdminNodes } from './mobile/screens/admin/Nodes.js';
-import { AdminNotifications } from './mobile/screens/admin/Notifications.js';
-import { MobilePersonLayout } from './mobile/layouts/MobilePersonLayout.js';
-import { PersonHome } from './mobile/screens/person/Home.js';
-import { PersonTasks } from './mobile/screens/person/Tasks.js';
-import { PersonNodes } from './mobile/screens/person/Nodes.js';
-import { PersonNotifications } from './mobile/screens/person/Notifications.js';
-import { PersonSettings } from './mobile/screens/person/Settings.js';
-import { ConnectScreen } from './mobile/screens/ConnectScreen.js';
-import { getServerUrl } from './mobile/session/server-url.js';
 import { AUTHOR_GITHUB_URL, AUTHOR_NAME, COPYRIGHT_YEAR } from './utils/branding.js';
+
+const Overview = lazy(() => import('./pages/Overview.js'));
+const NodeDetail = lazy(() => import('./pages/NodeDetail.js'));
+const Nodes = lazy(() => import('./pages/Nodes.js'));
+const Tasks = lazy(() => import('./pages/Tasks.js'));
+const TaskDetail = lazy(() => import('./pages/TaskDetail.js'));
+const Alerts = lazy(() => import('./pages/Alerts.js'));
+const People = lazy(() => import('./pages/People.js'));
+const PersonDetail = lazy(() => import('./pages/PersonDetail.js'));
+const Security = lazy(() => import('./pages/Security.js'));
+const Settings = lazy(() => import('./pages/Settings.js'));
+const Login = lazy(() => import('./pages/Login.js'));
 
 function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const links = [
     { to: '/', icon: DashboardIcon, label: '控制台' },
-    { to: '/servers', icon: ServerIcon, label: '节点' },
+    { to: '/nodes', icon: ServerIcon, label: '节点' },
     { to: '/people', icon: PeopleIcon, label: '人员' },
-    { to: '/hooks', icon: HookIcon, label: '钩子规则' },
     { to: '/alerts', icon: AlertIcon, label: '告警' },
     { to: '/tasks', icon: TaskIcon, label: '任务调度' },
     { to: '/security', icon: ShieldIcon, label: '安全审计' },
@@ -107,35 +91,32 @@ function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () 
 function AppContent() {
   useMetricsSubscription();
   useLoadInitialData();
-  useOperatorBootstrap();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="brand-shell min-h-screen bg-dark-bg text-slate-200">
       <SidebarNav collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} />
       <main className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
-        <Routes>
-          <Route path="/" element={<Overview />} />
-          <Route path="/server/:id" element={<ServerDetail />} />
-          <Route path="/servers" element={<ServersManage />} />
-          <Route path="/hooks" element={<HooksManage />} />
-          <Route path="/alerts" element={<Alerts />} />
-          <Route path="/tasks" element={<TaskQueue />} />
-          <Route path="/tasks/:serverId/:taskId" element={<TaskAuditDetail />} />
-          <Route path="/security" element={<Security />} />
-          <Route path="/people" element={<PeopleOverview />} />
-          <Route path="/people/new" element={<PeopleManage />} />
-          <Route path="/people/manage" element={<Navigate to="/people/new" replace />} />
-          <Route path="/people/:id" element={<PersonDetail />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/m/admin" element={<MobileAdminLayout />}>
-            <Route index element={<AdminHome />} />
-            <Route path="tasks" element={<AdminTasks />} />
-            <Route path="nodes" element={<AdminNodes />} />
-            <Route path="notifications" element={<AdminNotifications />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <div className="p-6">
+          <Suspense fallback={<div className="flex h-64 items-center justify-center text-sm text-slate-500">加载中...</div>}>
+            <Routes>
+              <Route path="/" element={<Overview />} />
+              <Route path="/nodes" element={<Nodes />} />
+              <Route path="/nodes/:id" element={<NodeDetail />} />
+              <Route path="/alerts" element={<Alerts />} />
+              <Route path="/tasks" element={<Tasks />} />
+              <Route path="/tasks/:taskId" element={<TaskDetail />} />
+              <Route path="/security" element={<Security />} />
+              <Route path="/people" element={<People />} />
+              <Route path="/people/:id" element={<PersonDetail />} />
+              <Route path="/settings" element={<Settings />} />
+              {/* Legacy redirects */}
+              <Route path="/servers" element={<Navigate to="/nodes" replace />} />
+              <Route path="/server/:id" element={<Navigate to="/nodes/:id" replace />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </div>
       </main>
       <ToastContainer />
     </div>
@@ -156,48 +137,34 @@ function AuthBootstrap() {
 function AuthGate() {
   const transport = useTransport();
   const { authenticated, setAuthenticated } = useStore();
-  const [authReady, setAuthReady] = useState(Boolean(transport.isElectron));
+  const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    if (transport.isElectron) {
-      setAuthenticated(true);
-      setAuthReady(true);
-      return;
-    }
-
-    setAuthReady(false);
-
     void transport.checkAuth()
       .then(({ authenticated: nextAuthenticated }) => {
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         setAuthenticated(nextAuthenticated);
         setAuthReady(true);
       })
       .catch(() => {
-        if (cancelled) {
-          return;
-        }
-
+        if (cancelled) return;
         setAuthenticated(false);
         setAuthReady(true);
       });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [transport, setAuthenticated]);
 
-  if (!authReady && !transport.isElectron) {
-    return <AuthBootstrap />;
-  }
+  if (!authReady) return <AuthBootstrap />;
 
-  if (!authenticated && !transport.isElectron) {
-    return <Login onSuccess={() => setAuthenticated(true)} />;
+  if (!authenticated) {
+    return (
+      <Suspense fallback={<AuthBootstrap />}>
+        <Login onLogin={() => setAuthenticated(true)} />
+      </Suspense>
+    );
   }
 
   return <AppContent />;
@@ -207,53 +174,10 @@ export default function App({ adapter }: { adapter?: TransportAdapter }) {
   return (
     <TransportProvider adapter={adapter}>
       <BrowserRouter>
-        <CapacitorGate />
+        <AuthGate />
       </BrowserRouter>
     </TransportProvider>
   );
-}
-
-/** In Capacitor native environment, redirect to /connect if no server URL is configured. */
-function CapacitorGate() {
-  const location = useLocation();
-  const isNative = typeof (window as any).Capacitor?.isNativePlatform === 'function'
-    && (window as any).Capacitor.isNativePlatform();
-
-  if (isNative && !getServerUrl() && location.pathname !== '/connect') {
-    return <Navigate to="/connect" replace />;
-  }
-
-  return <AppRouter />;
-}
-
-function AppRouter() {
-  const location = useLocation();
-
-  // Capacitor native: show connect screen if no server configured
-  if (location.pathname === '/connect') {
-    return (
-      <Routes>
-        <Route path="/connect" element={<ConnectScreen />} />
-      </Routes>
-    );
-  }
-
-  // Person mobile routes bypass admin auth
-  if (location.pathname.startsWith('/m/me')) {
-    return (
-      <Routes>
-        <Route path="/m/me" element={<MobilePersonLayout />}>
-          <Route index element={<PersonHome />} />
-          <Route path="tasks" element={<PersonTasks />} />
-          <Route path="nodes" element={<PersonNodes />} />
-          <Route path="notifications" element={<PersonNotifications />} />
-          <Route path="settings" element={<PersonSettings />} />
-        </Route>
-      </Routes>
-    );
-  }
-
-  return <AuthGate />;
 }
 
 /* ----- Icon components ----- */
@@ -271,15 +195,6 @@ function ServerIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
         d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-    </svg>
-  );
-}
-
-function HookIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-        d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   );
 }
