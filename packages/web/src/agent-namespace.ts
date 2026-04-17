@@ -167,6 +167,19 @@ function getSocketAddress(socket: AgentSocket): string | undefined {
   return normalizePeerAddress(socket.handshake.address);
 }
 
+function stampServerId(
+  serverId: string,
+  data: AgentTaskQueueResponse,
+): AgentTaskQueueResponse {
+  const stamp = (tasks: MirroredAgentTaskRecord[]) =>
+    tasks.map((t) => (t.serverId === serverId ? t : { ...t, serverId }));
+  return {
+    queued: stamp(data.queued),
+    running: stamp(data.running),
+    recent: stamp(data.recent),
+  };
+}
+
 function createLiveSession(socket: AgentSocket, agentId: string): AgentLiveSession {
   return {
     agentId,
@@ -434,8 +447,9 @@ export function createAgentNamespace(
         // Initial pull of task queue on registration
         session.requestTaskQueue().then((data) => {
           if (!isCurrentState(states, nextState) || !nextState.serverId) return;
-          const changed = diffTaskQueue(nextState.serverId, data);
-          setTaskQueueCache(nextState.serverId, data);
+          const normalized = stampServerId(nextState.serverId, data);
+          const changed = diffTaskQueue(nextState.serverId, normalized);
+          setTaskQueueCache(nextState.serverId, normalized);
           for (const task of changed) {
             recordTaskAttributionFact(task);
           }
@@ -486,8 +500,9 @@ export function createAgentNamespace(
       const serverId = state.serverId;
       state.session.requestTaskQueue().then((data) => {
         if (!isCurrentState(states, state)) return;
-        const changed = diffTaskQueue(serverId, data);
-        setTaskQueueCache(serverId, data);
+        const normalized = stampServerId(serverId, data);
+        const changed = diffTaskQueue(serverId, normalized);
+        setTaskQueueCache(serverId, normalized);
         for (const task of changed) {
           recordTaskAttributionFact(task);
         }
