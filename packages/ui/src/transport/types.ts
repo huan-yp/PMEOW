@@ -121,6 +121,14 @@ export interface Alert {
   suppressedUntil: number | null;
 }
 
+export interface AlertQuery {
+  serverId?: string;
+  /** true = only suppressed; false = only active; undefined = all */
+  suppressed?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
 // Security Event
 export interface SecurityEvent {
   id: number;
@@ -267,9 +275,11 @@ export interface TransportAdapter {
   getPersonBindingCandidates(): Promise<{ candidates: { serverId: string; systemUser: string }[] }>;
 
   // Alerts (spec §8.7)
-  getAlerts(query?: { serverId?: string }): Promise<Alert[]>;
+  getAlerts(query?: AlertQuery): Promise<Alert[]>;
   suppressAlert(id: number, until: number): Promise<void>;
   unsuppressAlert(id: number): Promise<void>;
+  batchSuppressAlerts(ids: number[], until: number): Promise<void>;
+  batchUnsuppressAlerts(ids: number[]): Promise<void>;
 
   // Security (spec §8.8)
   getSecurityEvents(query?: { serverId?: string; resolved?: boolean }): Promise<SecurityEvent[]>;

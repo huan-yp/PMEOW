@@ -1,8 +1,4 @@
-"""Assemble a full ResourceSnapshot from individual collectors.
-
-This replaces the old MetricsSnapshot-based snapshot with a ResourceSnapshot
-that includes dual-ledger GPU information and process filtering.
-"""
+"""Assemble the daemon collection snapshot from individual collectors."""
 
 from __future__ import annotations
 
@@ -10,19 +6,21 @@ import time
 from typing import Optional, TYPE_CHECKING
 
 from pmeow.models import (
-    GpuSnapshot,
-    MetricsSnapshot,
+    CollectedSnapshot,
+    GpuCardReport,
+    GpuCardTaskReport,
+    GpuCardUnknownProcessReport,
+    GpuCardUserProcessReport,
+    PerGpuAllocationSummary,
     ResourceSnapshot,
 )
 
 from pmeow.collector.cpu import collect_cpu
 from pmeow.collector.disk import collect_disk
 from pmeow.collector.gpu import (
-    collect_gpu,
+    GpuCardTelemetry,
+    collect_gpu_card_telemetry,
     collect_gpu_processes,
-    collect_per_gpu_total_memory,
-    collect_per_gpu_used_memory,
-    collect_per_gpu_utilization,
 )
 from pmeow.collector.gpu_attribution import attribute_gpu_processes
 from pmeow.collector.internet import InternetProbe
@@ -41,31 +39,27 @@ def collect_snapshot(
     task_queue: Optional[TaskQueue] = None,
     redundancy_coefficient: float = 0.1,
     internet_probe: Optional[InternetProbe] = None,
-) -> MetricsSnapshot:
-    """Collect a full metrics snapshot for the given server.
-
-    Accepts a TaskQueue (in-memory) instead of a sqlite3 Connection.
-    Returns a MetricsSnapshot for backward compatibility during transition.
-    """
-    gpu = collect_gpu()
+) -> CollectedSnapshot:
+    """Collect a full resource snapshot for the given server."""
+    timestamp = time.time()
+    gpu_cards = collect_gpu_card_telemetry()
 
     gpu_allocation = None
     gpu_pids_map: dict[int, float] = {}
 
-    if task_queue is not None and gpu.available:
+    if gpu_cards:
         gpu_procs = collect_gpu_processes()
         # Build GPU PID → memory mapping for process filtering
         for gp in gpu_procs:
             gpu_pids_map[gp.pid] = gpu_pids_map.get(gp.pid, 0.0) + gp.used_memory_mb
 
-        running_tasks = task_queue.list_running()
-        # Also include reserved tasks since they have GPU allocated
-        reserved_tasks = task_queue.list_reserved()
+        running_tasks = task_queue.list_running() if task_queue is not None else []
+        reserved_tasks = task_queue.list_reserved() if task_queue is not None else []
         all_gpu_tasks = running_tasks + reserved_tasks
 
-        per_gpu_mem = collect_per_gpu_total_memory()
-        per_gpu_used = collect_per_gpu_used_memory()
-        per_gpu_util = collect_per_gpu_utilization()
+        per_gpu_mem = {card.index: card.memory_total_mb for card in gpu_cards}
+        per_gpu_used = {card.index: card.memory_used_mb for card in gpu_cards}
+        per_gpu_util = {card.index: card.utilization_gpu for card in gpu_cards}
 
         # Build PID → task_id mapping from running tasks
         task_process_pids: dict[int, str] = {}
@@ -95,16 +89,88 @@ def collect_snapshot(
         apply_filter=True,
     )
 
-    return MetricsSnapshot(
-        server_id=server_id,
-        timestamp=time.time(),
+    disk = collect_disk()
+    local_users = [user.username for user in collect_local_users()]
+    per_gpu = gpu_allocation.per_gpu if gpu_allocation is not None else []
+
+    resource_snapshot = ResourceSnapshot(
+        gpu_cards=_build_gpu_cards(gpu_cards, per_gpu, redundancy_coefficient),
         cpu=collect_cpu(),
         memory=collect_memory(),
-        disk=collect_disk(),
+        disks=list(disk.disks),
         network=network,
-        gpu=gpu,
         processes=processes,
-        docker=[],
+        local_users=local_users,
         system=collect_system(),
-        gpu_allocation=gpu_allocation,
     )
+
+    return CollectedSnapshot(
+        timestamp=timestamp,
+        resource_snapshot=resource_snapshot,
+        per_gpu=per_gpu,
+    )
+
+
+def _build_gpu_cards(
+    telemetry: list[GpuCardTelemetry],
+    per_gpu: list[PerGpuAllocationSummary],
+    redundancy_coefficient: float,
+) -> list[GpuCardReport]:
+    per_gpu_by_index = {gpu.gpu_index: gpu for gpu in per_gpu}
+    cards: list[GpuCardReport] = []
+
+    for card in telemetry:
+        summary = per_gpu_by_index.get(card.index)
+        pmeow_tasks = summary.pmeow_tasks if summary is not None else []
+        user_processes = summary.user_processes if summary is not None else []
+        unknown_processes = summary.unknown_processes if summary is not None else []
+
+        managed_reserved_mb = sum(task.declared_vram_mb for task in pmeow_tasks)
+        unmanaged_actual_mb = (
+            sum(process.used_memory_mb for process in user_processes)
+            + sum(process.used_memory_mb for process in unknown_processes)
+        )
+        unmanaged_peak_mb = unmanaged_actual_mb * (1 + redundancy_coefficient)
+        effective_free_mb = (
+            summary.effective_free_mb
+            if summary is not None
+            else max(0.0, card.memory_total_mb - unmanaged_peak_mb)
+        )
+        actual_used_mb = summary.used_memory_mb if summary is not None else card.memory_used_mb
+
+        cards.append(GpuCardReport(
+            index=card.index,
+            name=card.name,
+            temperature=int(round(card.temperature_c)),
+            utilization_gpu=int(round(card.utilization_gpu)),
+            utilization_memory=int(round(card.utilization_memory)),
+            memory_total_mb=int(round(card.memory_total_mb)),
+            memory_used_mb=int(round(actual_used_mb)),
+            managed_reserved_mb=int(round(managed_reserved_mb)),
+            unmanaged_peak_mb=int(round(unmanaged_peak_mb)),
+            effective_free_mb=int(round(effective_free_mb)),
+            task_allocations=[
+                GpuCardTaskReport(
+                    task_id=task.task_id,
+                    declared_vram_mb=task.declared_vram_mb,
+                )
+                for task in pmeow_tasks
+            ],
+            user_processes=[
+                GpuCardUserProcessReport(
+                    pid=process.pid,
+                    user=process.user,
+                    vram_mb=process.used_memory_mb,
+                )
+                for process in user_processes
+            ],
+            unknown_processes=[
+                GpuCardUnknownProcessReport(
+                    pid=process.pid,
+                    vram_mb=process.used_memory_mb,
+                )
+                for process in unknown_processes
+            ],
+        ))
+
+    return cards

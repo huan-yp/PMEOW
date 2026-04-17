@@ -123,7 +123,7 @@ class AgentTransportClient:
             return
         ok = self._emit_safe("agent:report", report.to_dict())
         if ok:
-            log.debug("emitted agent:report seq=%d", report.seq)
+            log.info("emitted agent:report seq=%d", report.seq)
         else:
             log.warning("failed to emit agent:report seq=%d", report.seq)
 

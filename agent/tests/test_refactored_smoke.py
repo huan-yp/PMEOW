@@ -4,6 +4,7 @@ import pytest
 
 from pmeow.models import (
     ProcessInfo,
+    ResourceSnapshot,
     TaskSpec,
     TaskStatus,
     UnifiedReport,
@@ -33,23 +34,9 @@ class TestUnifiedReportSerialization:
         from pmeow.reporter import Reporter
 
         reporter = Reporter("test")
-        from pmeow.models import (
-            CpuSnapshot, DiskSnapshot, GpuSnapshot,
-            MemorySnapshot, MetricsSnapshot, NetworkSnapshot,
-            SystemSnapshot, TaskQueueSnapshot,
-        )
-        snapshot = MetricsSnapshot(
-            server_id="s",
-            timestamp=1.0,
-            cpu=CpuSnapshot(usage_percent=0, core_count=1, model_name="", frequency_mhz=0, per_core_usage=[]),
-            memory=MemorySnapshot(total_mb=0, used_mb=0, available_mb=0, usage_percent=0, swap_total_mb=0, swap_used_mb=0, swap_percent=0),
-            disk=DiskSnapshot(disks=[], io_read_kbs=0, io_write_kbs=0),
-            network=NetworkSnapshot(rx_bytes_per_sec=0, tx_bytes_per_sec=0, interfaces=[]),
-            gpu=GpuSnapshot(available=False, total_memory_mb=0, used_memory_mb=0, memory_usage_percent=0, utilization_percent=0, temperature_c=0, gpu_count=0),
-            processes=[],
-            docker=[],
-            system=SystemSnapshot(hostname="h", uptime="0", load_avg1=0, load_avg5=0, load_avg15=0, kernel_version=""),
-        )
+        from pmeow.models import TaskQueueSnapshot
+
+        snapshot = ResourceSnapshot()
         r1 = reporter.build(snapshot, TaskQueueSnapshot())
         r2 = reporter.build(snapshot, TaskQueueSnapshot())
         assert r2.seq == r1.seq + 1

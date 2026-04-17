@@ -1,7 +1,7 @@
 """Domain models for the PMEOW agent.
 
-Includes task/queue models, GPU attribution models, and collector snapshot
-dataclasses that mirror the TypeScript MetricsSnapshot shape.
+Includes task/queue models, GPU attribution models, and unified report
+dataclasses shared across collection, scheduling, and transport.
 """
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from __future__ import annotations
 import enum
 import re
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, field, is_dataclass
+from typing import Optional, cast
 
 
 # ---------------------------------------------------------------------------
@@ -47,11 +47,12 @@ def _serialize(obj: object) -> object:
         return [_serialize(v) for v in obj]
     if isinstance(obj, deque):
         return [_serialize(v) for v in obj]
-    if hasattr(obj, "__dataclass_fields__"):
+    if is_dataclass(obj):
+        dataclass_fields = cast(dict[str, object], getattr(obj, "__dataclass_fields__", {}))
         return {
-            _to_camel(k): _serialize(v)
+            cast(str, getattr(dataclass_fields[k], "metadata", {}).get("alias") or _to_camel(k)): _serialize(v)
             for k, v in obj.__dict__.items()
-            if v is not None or k in obj.__dataclass_fields__
+            if v is not None or k in dataclass_fields
         }
     return obj
 
@@ -213,6 +214,25 @@ class GpuAllocationSummary:
     by_user: list[UserGpuUsageSummary] = field(default_factory=list)
 
 
+@dataclass
+class GpuCardTaskReport:
+    task_id: str
+    declared_vram_mb: int = field(metadata={"alias": "declaredVramMb"})
+
+
+@dataclass
+class GpuCardUserProcessReport:
+    pid: int
+    user: str
+    vram_mb: float = field(metadata={"alias": "vramMb"})
+
+
+@dataclass
+class GpuCardUnknownProcessReport:
+    pid: int
+    vram_mb: float = field(metadata={"alias": "vramMb"})
+
+
 # ---------------------------------------------------------------------------
 # GPU card report (per-card info with dual-ledger for Web)
 # ---------------------------------------------------------------------------
@@ -225,22 +245,22 @@ class GpuCardReport:
     temperature: int
     utilization_gpu: int       # compute utilization %
     utilization_memory: int    # memory utilization %
-    memory_total_mb: int
-    memory_used_mb: int        # actual physical usage
+    memory_total_mb: int = field(metadata={"alias": "memoryTotalMb"})
+    memory_used_mb: int = field(metadata={"alias": "memoryUsedMb"})  # actual physical usage
 
     # Dual-ledger fields
-    managed_reserved_mb: int   # PMEOW task declared reservation total
-    unmanaged_peak_mb: int     # non-PMEOW process window peak × 1.05
-    effective_free_mb: int     # schedulable - managed - unmanaged
+    managed_reserved_mb: int = field(metadata={"alias": "managedReservedMb"})  # PMEOW task declared reservation total
+    unmanaged_peak_mb: int = field(metadata={"alias": "unmanagedPeakMb"})      # non-PMEOW process window peak × 1.05
+    effective_free_mb: int = field(metadata={"alias": "effectiveFreeMb"})      # schedulable - managed - unmanaged
 
     # Attribution info
-    task_allocations: list[GpuTaskAllocation] = field(default_factory=list)
-    user_processes: list[GpuUserProcess] = field(default_factory=list)
-    unknown_processes: list[GpuUnknownProcess] = field(default_factory=list)
+    task_allocations: list[GpuCardTaskReport] = field(default_factory=list)
+    user_processes: list[GpuCardUserProcessReport] = field(default_factory=list)
+    unknown_processes: list[GpuCardUnknownProcessReport] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
-# Collector snapshot models (mirrors TypeScript MetricsSnapshot)
+# Collector snapshot models
 # ---------------------------------------------------------------------------
 
 
@@ -377,20 +397,23 @@ class TaskQueueSnapshot:
 
 @dataclass
 class ResourceSnapshot:
-    """Complete resource snapshot (replaces MetricsSnapshot)."""
+    """Complete resource snapshot published to Web."""
     gpu_cards: list[GpuCardReport] = field(default_factory=list)
     cpu: Optional[CpuSnapshot] = None
     memory: Optional[MemorySnapshot] = None
     disks: list[DiskInfo] = field(default_factory=list)
     network: Optional[NetworkSnapshot] = None
     processes: list[ProcessInfo] = field(default_factory=list)
-    internet_reachable: Optional[bool] = None
-    internet_latency_ms: Optional[float] = None
     local_users: list[str] = field(default_factory=list)
     system: Optional[SystemSnapshot] = None
-    # Legacy aggregated GPU snapshot (for backward compat during transition)
-    gpu: Optional[GpuSnapshot] = None
-    gpu_allocation: Optional[GpuAllocationSummary] = None
+
+
+@dataclass
+class CollectedSnapshot:
+    """Collector output used internally by the daemon loop."""
+    timestamp: float
+    resource_snapshot: ResourceSnapshot
+    per_gpu: list[PerGpuAllocationSummary] = field(default_factory=list)
 
 
 @dataclass
@@ -405,45 +428,13 @@ class UnifiedReport:
 
     def to_dict(self) -> dict:
         """Serialize to camelCase dict for Socket.IO transport."""
-        d = _serialize(self)
+        d = cast(dict, _serialize(self))
         # Strip None-valued optional fields from network sub-dict
-        rs = d.get("resourceSnapshot", {})
+        rs = cast(dict, d.get("resourceSnapshot", {}))
         net = rs.get("network")
         if isinstance(net, dict):
             if net.get("internetReachable") is None and net.get("internetProbeCheckedAt") is None:
                 for key in ("internetReachable", "internetLatencyMs",
                             "internetProbeTarget", "internetProbeCheckedAt"):
                     net.pop(key, None)
-        return d
-
-
-# ---------------------------------------------------------------------------
-# Legacy compat: MetricsSnapshot (used during transition by collector)
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class MetricsSnapshot:
-    """Legacy metrics snapshot — kept for transitional compatibility."""
-    server_id: str
-    timestamp: float
-    cpu: CpuSnapshot
-    memory: MemorySnapshot
-    disk: DiskSnapshot
-    network: NetworkSnapshot
-    gpu: GpuSnapshot
-    processes: list[ProcessInfo] = field(default_factory=list)
-    docker: list = field(default_factory=list)
-    system: SystemSnapshot = field(default=None)  # type: ignore[assignment]
-    gpu_allocation: Optional[GpuAllocationSummary] = None
-
-    def to_dict(self) -> dict:
-        """Serialize to camelCase dict matching the TypeScript MetricsSnapshot."""
-        d = _serialize(self)
-        if self.gpu_allocation is None:
-            d.pop("gpuAllocation", None)
-        net = d.get("network")
-        if isinstance(net, dict) and self.network.internet_reachable is None and self.network.internet_probe_checked_at is None:
-            for key in ("internetReachable", "internetLatencyMs", "internetProbeTarget", "internetProbeCheckedAt"):
-                net.pop(key, None)
         return d

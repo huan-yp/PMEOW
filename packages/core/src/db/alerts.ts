@@ -38,6 +38,20 @@ export function unsuppressAlert(id: number): void {
   db.prepare('UPDATE alerts SET suppressed_until = NULL WHERE id = ?').run(id);
 }
 
+export function batchSuppressAlerts(ids: number[], until: number): void {
+  const db = getDatabase();
+  const stmt = db.prepare('UPDATE alerts SET suppressed_until = ? WHERE id = ?');
+  const run = db.transaction(() => { for (const id of ids) stmt.run(until, id); });
+  run();
+}
+
+export function batchUnsuppressAlerts(ids: number[]): void {
+  const db = getDatabase();
+  const stmt = db.prepare('UPDATE alerts SET suppressed_until = NULL WHERE id = ?');
+  const run = db.transaction(() => { for (const id of ids) stmt.run(id); });
+  run();
+}
+
 export function deleteAlertsByServerId(serverId: string): void {
   const db = getDatabase();
   db.prepare('DELETE FROM alerts WHERE server_id = ?').run(serverId);

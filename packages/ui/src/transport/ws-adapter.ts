@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import type {
-  TransportAdapter, Server, ServerStatus, UnifiedReport, Task, Alert,
+  TransportAdapter, Server, ServerStatus, UnifiedReport, Task, Alert, AlertQuery,
   SecurityEvent, Person, PersonBinding, PersonTimelinePoint, SnapshotWithGpu,
   GpuOverviewResponse, Settings, TaskEvent, AlertEvent,
 } from './types.js';
@@ -155,9 +155,12 @@ export class WebSocketAdapter implements TransportAdapter {
   async getPersonBindingCandidates(): Promise<{ candidates: { serverId: string; systemUser: string }[] }> { return this.fetch('/api/person-binding-candidates'); }
 
   // Alerts
-  async getAlerts(query: { serverId?: string } = {}): Promise<Alert[]> {
+  async getAlerts(query: AlertQuery = {}): Promise<Alert[]> {
     const params = new URLSearchParams();
     if (query.serverId) params.set('serverId', query.serverId);
+    if (query.suppressed !== undefined) params.set('suppressed', String(query.suppressed));
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.offset) params.set('offset', String(query.offset));
     return this.fetch(`/api/alerts?${params}`);
   }
   async suppressAlert(id: number, until: number): Promise<void> {
@@ -165,6 +168,12 @@ export class WebSocketAdapter implements TransportAdapter {
   }
   async unsuppressAlert(id: number): Promise<void> {
     await this.fetch(`/api/alerts/${id}/unsuppress`, { method: 'POST' });
+  }
+  async batchSuppressAlerts(ids: number[], until: number): Promise<void> {
+    await this.fetch('/api/alerts/batch/suppress', { method: 'POST', body: JSON.stringify({ ids, until }) });
+  }
+  async batchUnsuppressAlerts(ids: number[]): Promise<void> {
+    await this.fetch('/api/alerts/batch/unsuppress', { method: 'POST', body: JSON.stringify({ ids }) });
   }
 
   // Security

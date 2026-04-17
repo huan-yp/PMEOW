@@ -12,18 +12,20 @@ from pmeow.config import (
 from pmeow.models import (
     CpuSnapshot,
     DiskInfo,
-    DiskSnapshot,
-    GpuAllocationSummary,
-    GpuSnapshot,
+    GpuCardReport,
+    GpuCardTaskReport,
+    GpuCardUnknownProcessReport,
+    GpuCardUserProcessReport,
     MemorySnapshot,
-    MetricsSnapshot,
     NetworkInterface,
     NetworkSnapshot,
-    PerGpuAllocationSummary,
     ProcessInfo,
+    ResourceSnapshot,
     SystemSnapshot,
     TaskSpec,
+    TaskQueueSnapshot,
     TaskStatus,
+    UnifiedReport,
 )
 
 
@@ -57,31 +59,55 @@ class TestTaskSpec:
 
 
 # ---------------------------------------------------------------------------
-# MetricsSnapshot
+# UnifiedReport serialization
 # ---------------------------------------------------------------------------
 
 
-def _make_snapshot(gpu_allocation=None):
-    return MetricsSnapshot(
-        server_id="srv-1",
+def _make_report():
+    return UnifiedReport(
+        agent_id="agent-1",
         timestamp=1000.0,
-        cpu=CpuSnapshot(
-            usage_percent=55.0,
-            core_count=8,
-            model_name="AMD EPYC",
-            frequency_mhz=3500.0,
-            per_core_usage=[50.0, 60.0],
-        ),
-        memory=MemorySnapshot(
-            total_mb=32768.0,
-            used_mb=16384.0,
-            available_mb=16384.0,
-            usage_percent=50.0,
-            swap_total_mb=8192.0,
-            swap_used_mb=0.0,
-            swap_percent=0.0,
-        ),
-        disk=DiskSnapshot(
+        seq=1,
+        resource_snapshot=ResourceSnapshot(
+            gpu_cards=[
+                GpuCardReport(
+                    index=0,
+                    name="NVIDIA RTX 4090",
+                    temperature=65,
+                    utilization_gpu=75,
+                    utilization_memory=49,
+                    memory_total_mb=24576,
+                    memory_used_mb=12000,
+                    managed_reserved_mb=8000,
+                    unmanaged_peak_mb=2200,
+                    effective_free_mb=14376,
+                    task_allocations=[
+                        GpuCardTaskReport(task_id="task-1", declared_vram_mb=8000),
+                    ],
+                    user_processes=[
+                        GpuCardUserProcessReport(pid=4321, user="bob", vram_mb=2000.0),
+                    ],
+                    unknown_processes=[
+                        GpuCardUnknownProcessReport(pid=7777, vram_mb=200.0),
+                    ],
+                )
+            ],
+            cpu=CpuSnapshot(
+                usage_percent=55.0,
+                core_count=8,
+                model_name="AMD EPYC",
+                frequency_mhz=3500.0,
+                per_core_usage=[50.0, 60.0],
+            ),
+            memory=MemorySnapshot(
+                total_mb=32768.0,
+                used_mb=16384.0,
+                available_mb=16384.0,
+                usage_percent=50.0,
+                swap_total_mb=8192.0,
+                swap_used_mb=0.0,
+                swap_percent=0.0,
+            ),
             disks=[
                 DiskInfo(
                     filesystem="/dev/sda1",
@@ -92,174 +118,116 @@ def _make_snapshot(gpu_allocation=None):
                     usage_percent=50.0,
                 )
             ],
-            io_read_kbs=100.0,
-            io_write_kbs=50.0,
+            network=NetworkSnapshot(
+                rx_bytes_per_sec=1000.0,
+                tx_bytes_per_sec=500.0,
+                interfaces=[NetworkInterface(name="eth0", rx_bytes=100000, tx_bytes=50000)],
+            ),
+            processes=[
+                ProcessInfo(pid=1234, ppid=1, user="alice", cpu_percent=30.0, mem_percent=10.0, rss=512000, command="python train.py")
+            ],
+            local_users=["alice", "bob"],
+            system=SystemSnapshot(
+                hostname="gpu-node-1",
+                uptime="5 days",
+                load_avg1=1.5,
+                load_avg5=1.2,
+                load_avg15=1.0,
+                kernel_version="5.15.0",
+            ),
         ),
-        network=NetworkSnapshot(
-            rx_bytes_per_sec=1000.0,
-            tx_bytes_per_sec=500.0,
-            interfaces=[NetworkInterface(name="eth0", rx_bytes=100000, tx_bytes=50000)],
-        ),
-        gpu=GpuSnapshot(
-            available=True,
-            total_memory_mb=24576.0,
-            used_memory_mb=12000.0,
-            memory_usage_percent=48.8,
-            utilization_percent=75.0,
-            temperature_c=65.0,
-            gpu_count=2,
-        ),
-        processes=[
-            ProcessInfo(pid=1234, ppid=1, user="alice", cpu_percent=30.0, mem_percent=10.0, rss=512000, command="python train.py")
-        ],
-        docker=[],
-        system=SystemSnapshot(
-            hostname="gpu-node-1",
-            uptime="5 days",
-            load_avg1=1.5,
-            load_avg5=1.2,
-            load_avg15=1.0,
-            kernel_version="5.15.0",
-        ),
-        gpu_allocation=gpu_allocation,
+        task_queue=TaskQueueSnapshot(),
     )
 
 
-class TestMetricsSnapshot:
-    def test_gpu_allocation_none(self):
-        snap = _make_snapshot(gpu_allocation=None)
-        assert snap.gpu_allocation is None
-
-    def test_gpu_allocation_accepted(self):
-        alloc = GpuAllocationSummary(
-            per_gpu=[
-                PerGpuAllocationSummary(
-                    gpu_index=0,
-                    total_memory_mb=24576.0,
-                    used_memory_mb=4096.0,
-                    effective_free_mb=12000.0,
-                )
-            ],
-        )
-        snap = _make_snapshot(gpu_allocation=alloc)
-        assert snap.gpu_allocation is not None
-        assert snap.gpu_allocation.per_gpu[0].gpu_index == 0
-
+class TestUnifiedReportSerialization:
     def test_to_dict_camel_case_keys(self):
-        snap = _make_snapshot()
-        d = snap.to_dict()
+        report = _make_report()
+        d = report.to_dict()
 
-        # Top-level keys must be camelCase matching TS
-        assert "serverId" in d
+        assert "agentId" in d
         assert "timestamp" in d
-        assert "cpu" in d
-        assert "memory" in d
-        assert "disk" in d
-        assert "network" in d
-        assert "gpu" in d
-        assert "processes" in d
-        assert "docker" in d
-        assert "system" in d
-        # gpuAllocation should be absent when None
-        assert "gpuAllocation" not in d
+        assert "seq" in d
+        assert "resourceSnapshot" in d
+        assert "taskQueue" in d
+
+        snapshot = d["resourceSnapshot"]
+        assert "gpuCards" in snapshot
+        assert "gpu" not in snapshot
+        assert "gpuAllocation" not in snapshot
 
     def test_to_dict_cpu_keys(self):
-        d = _make_snapshot().to_dict()
-        cpu = d["cpu"]
+        cpu = _make_report().to_dict()["resourceSnapshot"]["cpu"]
         assert set(cpu.keys()) == {"usagePercent", "coreCount", "modelName", "frequencyMhz", "perCoreUsage"}
 
     def test_to_dict_memory_keys(self):
-        d = _make_snapshot().to_dict()
-        mem = d["memory"]
+        mem = _make_report().to_dict()["resourceSnapshot"]["memory"]
         assert set(mem.keys()) == {
             "totalMB", "usedMB", "availableMB", "usagePercent",
             "swapTotalMB", "swapUsedMB", "swapPercent",
         }
 
     def test_to_dict_disk_keys(self):
-        d = _make_snapshot().to_dict()
-        disk = d["disk"]
-        assert "disks" in disk
-        assert "ioReadKBs" in disk  # ioReadKBs — note the 'KB' stays lowercase after 'Read'
-        assert "ioWriteKBs" in disk
-        di = disk["disks"][0]
-        assert set(di.keys()) == {"filesystem", "mountPoint", "totalGB", "usedGB", "availableGB", "usagePercent"}
+        disk = _make_report().to_dict()["resourceSnapshot"]["disks"][0]
+        assert set(disk.keys()) == {"filesystem", "mountPoint", "totalGB", "usedGB", "availableGB", "usagePercent"}
 
     def test_to_dict_network_keys(self):
-        d = _make_snapshot().to_dict()
-        net = d["network"]
+        net = _make_report().to_dict()["resourceSnapshot"]["network"]
         assert "rxBytesPerSec" in net
         assert "txBytesPerSec" in net
         iface = net["interfaces"][0]
         assert set(iface.keys()) == {"name", "rxBytes", "txBytes"}
 
     def test_to_dict_network_omits_internet_fields_when_not_set(self):
-        """When the probe has not run, the optional internet fields must be
-        absent from the serialized dict — not present-but-null — so the TS
-        consumer treats them as ``undefined``."""
-        d = _make_snapshot().to_dict()
-        net = d["network"]
+        net = _make_report().to_dict()["resourceSnapshot"]["network"]
         assert "internetReachable" not in net
         assert "internetLatencyMs" not in net
         assert "internetProbeTarget" not in net
         assert "internetProbeCheckedAt" not in net
 
     def test_to_dict_network_includes_internet_fields_when_set(self):
-        snap = _make_snapshot()
-        snap.network.internet_reachable = True
-        snap.network.internet_latency_ms = 25.0
-        snap.network.internet_probe_target = "1.1.1.1:443"
-        snap.network.internet_probe_checked_at = 1712000000.0
-        d = snap.to_dict()
-        net = d["network"]
+        report = _make_report()
+        report.resource_snapshot.network.internet_reachable = True
+        report.resource_snapshot.network.internet_latency_ms = 25.0
+        report.resource_snapshot.network.internet_probe_target = "1.1.1.1:443"
+        report.resource_snapshot.network.internet_probe_checked_at = 1712000000.0
+        net = report.to_dict()["resourceSnapshot"]["network"]
         assert net["internetReachable"] is True
         assert net["internetLatencyMs"] == 25.0
         assert net["internetProbeTarget"] == "1.1.1.1:443"
         assert net["internetProbeCheckedAt"] == 1712000000.0
 
     def test_to_dict_network_internet_unreachable_keeps_null_latency(self):
-        snap = _make_snapshot()
-        snap.network.internet_reachable = False
-        snap.network.internet_latency_ms = None
-        snap.network.internet_probe_target = "1.1.1.1:443"
-        snap.network.internet_probe_checked_at = 1712000000.0
-        d = snap.to_dict()
-        net = d["network"]
+        report = _make_report()
+        report.resource_snapshot.network.internet_reachable = False
+        report.resource_snapshot.network.internet_latency_ms = None
+        report.resource_snapshot.network.internet_probe_target = "1.1.1.1:443"
+        report.resource_snapshot.network.internet_probe_checked_at = 1712000000.0
+        net = report.to_dict()["resourceSnapshot"]["network"]
         assert net["internetReachable"] is False
         assert net["internetLatencyMs"] is None
 
-    def test_to_dict_gpu_keys(self):
-        d = _make_snapshot().to_dict()
-        gpu = d["gpu"]
+    def test_to_dict_gpu_card_keys(self):
+        gpu = _make_report().to_dict()["resourceSnapshot"]["gpuCards"][0]
         assert set(gpu.keys()) == {
-            "available", "totalMemoryMB", "usedMemoryMB",
-            "memoryUsagePercent", "utilizationPercent", "temperatureC", "gpuCount",
+            "index", "name", "temperature", "utilizationGpu",
+            "utilizationMemory", "memoryTotalMb", "memoryUsedMb",
+            "managedReservedMb", "unmanagedPeakMb", "effectiveFreeMb",
+            "taskAllocations", "userProcesses", "unknownProcesses",
         }
+        assert gpu["taskAllocations"][0] == {"taskId": "task-1", "declaredVramMb": 8000}
+        assert gpu["userProcesses"][0] == {"pid": 4321, "user": "bob", "vramMb": 2000.0}
+        assert gpu["unknownProcesses"][0] == {"pid": 7777, "vramMb": 200.0}
 
     def test_to_dict_process_keys(self):
-        d = _make_snapshot().to_dict()
-        proc = d["processes"][0]
+        proc = _make_report().to_dict()["resourceSnapshot"]["processes"][0]
         assert set(proc.keys()) == {"pid", "ppid", "user", "cpuPercent", "memPercent", "rss", "command", "gpuMemoryMB"}
 
-    def test_to_dict_docker_empty(self):
-        d = _make_snapshot().to_dict()
-        assert d["docker"] == []
-
     def test_to_dict_system_keys(self):
-        d = _make_snapshot().to_dict()
-        sys_ = d["system"]
+        sys_ = _make_report().to_dict()["resourceSnapshot"]["system"]
         assert set(sys_.keys()) == {
             "hostname", "uptime", "loadAvg1", "loadAvg5", "loadAvg15", "kernelVersion",
         }
-
-    def test_to_dict_with_gpu_allocation(self):
-        alloc = GpuAllocationSummary(
-            per_gpu=[PerGpuAllocationSummary(gpu_index=0, total_memory_mb=24576.0, used_memory_mb=2048.0)],
-        )
-        d = _make_snapshot(gpu_allocation=alloc).to_dict()
-        assert "gpuAllocation" in d
-        assert d["gpuAllocation"]["perGpu"][0]["gpuIndex"] == 0
-        assert d["gpuAllocation"]["perGpu"][0]["usedMemoryMB"] == 2048.0
 
 
 # ---------------------------------------------------------------------------

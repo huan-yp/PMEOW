@@ -154,17 +154,15 @@ class DaemonService:
         collect_ms = (time.time() - t0) * 1000
         log.info(
             "collected snapshot: cpu=%.1f%% mem=%.0f/%dMB gpus=%d procs=%d (%.0fms)",
-            snapshot.cpu.usage if snapshot.cpu else 0,
-            snapshot.memory.used_mb if snapshot.memory else 0,
-            snapshot.memory.total_mb if snapshot.memory else 0,
-            len(snapshot.gpu.gpu_names) if snapshot.gpu and snapshot.gpu.gpu_names else 0,
-            len(snapshot.processes),
+            snapshot.resource_snapshot.cpu.usage_percent if snapshot.resource_snapshot.cpu else 0,
+            snapshot.resource_snapshot.memory.used_mb if snapshot.resource_snapshot.memory else 0,
+            snapshot.resource_snapshot.memory.total_mb if snapshot.resource_snapshot.memory else 0,
+            len(snapshot.resource_snapshot.gpu_cards),
+            len(snapshot.resource_snapshot.processes),
             collect_ms,
         )
 
-        per_gpu = (
-            snapshot.gpu_allocation.per_gpu if snapshot.gpu_allocation else []
-        )
+        per_gpu = snapshot.per_gpu
 
         with self._lock:
             self._last_per_gpu = per_gpu
@@ -214,7 +212,7 @@ class DaemonService:
 
             # Build and send unified report
             task_snapshot = self.task_queue.to_snapshot()
-            report = self.reporter.build(snapshot, task_snapshot)
+            report = self.reporter.build(snapshot.resource_snapshot, task_snapshot)
 
         if self.transport:
             d = report.to_dict()

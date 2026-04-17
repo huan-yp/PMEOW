@@ -46,9 +46,11 @@ export function useMetricsSubscription() {
       }),
 
       transport.onAlert((alert) => {
+        const srv = useStore.getState().servers.find((s) => s.id === alert.serverId);
+        const nodeName = srv?.name ?? alert.serverId;
         addToast(
           `告警: ${alert.alertType}`,
-          `节点 ${alert.serverId} — ${alert.alertType} ${alert.value} 超过阈值 ${alert.threshold}`,
+          `节点 ${nodeName} — ${alert.alertType} ${alert.value} 超过阈值 ${alert.threshold}`,
           'warning',
         );
       }),

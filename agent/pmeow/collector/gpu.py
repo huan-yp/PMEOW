@@ -4,11 +4,23 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from dataclasses import dataclass
 from typing import Optional
 
 from pmeow.models import GpuProcessInfo, GpuSnapshot
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GpuCardTelemetry:
+    index: int
+    name: str
+    temperature_c: float
+    utilization_gpu: float
+    utilization_memory: float
+    memory_total_mb: float
+    memory_used_mb: float
 
 
 def _run_smi(args: list[str]) -> Optional[str]:
@@ -38,41 +50,98 @@ _GPU_UNAVAILABLE = GpuSnapshot(
 )
 
 
-def collect_gpu() -> GpuSnapshot:
-    """Collect aggregated GPU snapshot. Never raises."""
+def _parse_smi_float(value: str) -> float:
+    try:
+        return float(value)
+    except ValueError:
+        return 0.0
+
+
+def collect_gpu_card_telemetry() -> list[GpuCardTelemetry]:
+    """Collect per-card GPU telemetry. Never raises."""
     output = _run_smi([
-        "--query-gpu=memory.total,memory.used,utilization.gpu,temperature.gpu",
+        "--query-gpu=index,name,temperature.gpu,utilization.gpu,utilization.memory,memory.total,memory.used",
         "--format=csv,noheader,nounits",
     ])
     if not output:
-        return _GPU_UNAVAILABLE
+        return []
 
-    total_mem = 0.0
-    used_mem = 0.0
-    util_sum = 0.0
-    max_temp = 0.0
-    count = 0
-
+    cards: list[GpuCardTelemetry] = []
     for line in output.splitlines():
         parts = [p.strip() for p in line.split(",")]
-        if len(parts) < 4:
+        if len(parts) < 7:
             continue
         try:
-            t = float(parts[0])
-            u = float(parts[1])
-            util = float(parts[2])
-            temp = float(parts[3])
+            index = int(parts[0])
         except ValueError:
             continue
-        total_mem += t
-        used_mem += u
-        util_sum += util
-        if temp > max_temp:
-            max_temp = temp
-        count += 1
+        cards.append(GpuCardTelemetry(
+            index=index,
+            name=parts[1],
+            temperature_c=_parse_smi_float(parts[2]),
+            utilization_gpu=_parse_smi_float(parts[3]),
+            utilization_memory=_parse_smi_float(parts[4]),
+            memory_total_mb=_parse_smi_float(parts[5]),
+            memory_used_mb=_parse_smi_float(parts[6]),
+        ))
+    return cards
 
-    if count == 0:
-        return _GPU_UNAVAILABLE
+
+def collect_gpu() -> GpuSnapshot:
+    """Collect aggregated GPU snapshot. Never raises."""
+    cards = collect_gpu_card_telemetry()
+    if not cards:
+        output = _run_smi([
+            "--query-gpu=memory.total,memory.used,utilization.gpu,temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ])
+        if not output:
+            return _GPU_UNAVAILABLE
+
+        total_mem = 0.0
+        used_mem = 0.0
+        util_sum = 0.0
+        max_temp = 0.0
+        count = 0
+
+        for line in output.splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 4:
+                continue
+            try:
+                t = float(parts[0])
+                u = float(parts[1])
+                util = float(parts[2])
+                temp = float(parts[3])
+            except ValueError:
+                continue
+            total_mem += t
+            used_mem += u
+            util_sum += util
+            if temp > max_temp:
+                max_temp = temp
+            count += 1
+
+        if count == 0:
+            return _GPU_UNAVAILABLE
+
+        usage_pct = (used_mem / total_mem * 100.0) if total_mem > 0 else 0.0
+
+        return GpuSnapshot(
+            available=True,
+            total_memory_mb=total_mem,
+            used_memory_mb=used_mem,
+            memory_usage_percent=round(usage_pct, 1),
+            utilization_percent=round(util_sum / count, 1),
+            temperature_c=max_temp,
+            gpu_count=count,
+        )
+
+    total_mem = sum(card.memory_total_mb for card in cards)
+    used_mem = sum(card.memory_used_mb for card in cards)
+    util_sum = sum(card.utilization_gpu for card in cards)
+    max_temp = max(card.temperature_c for card in cards)
+    count = len(cards)
 
     usage_pct = (used_mem / total_mem * 100.0) if total_mem > 0 else 0.0
 

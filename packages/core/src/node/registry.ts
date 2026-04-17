@@ -10,6 +10,9 @@ export class AgentSessionRegistry {
   
   attachSession(session: AgentSession): void {
     this.sessions.set(session.agentId, session);
+    if (!this.lastReportAt.has(session.agentId)) {
+      this.lastReportAt.set(session.agentId, Date.now());
+    }
   }
 
   detachSession(agentId: string): void {
