@@ -153,7 +153,7 @@ class DaemonService:
             internet_probe=self.internet_probe,
         )
         collect_ms = (time.time() - t0) * 1000
-        log.info(
+        log.debug(
             "collected snapshot: cpu=%.1f%% mem=%.0f/%dMB gpus=%d procs=%d (%.0fms)",
             snapshot.resource_snapshot.cpu.usage_percent if snapshot.resource_snapshot.cpu else 0,
             snapshot.resource_snapshot.memory.used_mb if snapshot.resource_snapshot.memory else 0,
@@ -244,7 +244,7 @@ class DaemonService:
 
         if self.transport:
             d = report.to_dict()
-            log.info(
+            log.debug(
                 "sending report seq=%d ts=%.1f tasks=%d+%d keys=%s",
                 report.seq,
                 report.timestamp,

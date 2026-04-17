@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import request from 'supertest';
 import { createWebRuntime, type WebRuntime } from '../src/app.js';
@@ -5,8 +8,12 @@ import { signToken } from '../src/auth.js';
 
 let runtime: WebRuntime;
 let token: string;
+let publicDir: string;
 
 beforeAll(async () => {
+  publicDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pmeow-web-public-'));
+  fs.writeFileSync(path.join(publicDir, 'index.html'), '<!doctype html><html><body>monitor</body></html>');
+  process.env.PMEOW_WEB_PUBLIC_DIR = publicDir;
   runtime = createWebRuntime();
   await runtime.start(0); // random port
   token = signToken({ role: 'admin' });
@@ -14,12 +21,20 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await runtime.stop();
+  delete process.env.PMEOW_WEB_PUBLIC_DIR;
+  fs.rmSync(publicDir, { recursive: true, force: true });
 });
 
 describe('web runtime lifecycle', () => {
   it('starts and exposes express app', () => {
     expect(runtime.app).toBeDefined();
     expect(runtime.httpServer.listening).toBe(true);
+  });
+
+  it('serves index.html on root path when public assets are available', async () => {
+    const res = await request(runtime.app).get('/');
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('monitor');
   });
 });
 

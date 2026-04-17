@@ -37,6 +37,25 @@ const DEFAULT_PORT = Number(process.env.PORT) || 17200;
 const DEFAULT_HOST = "0.0.0.0";
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
+function resolvePublicDir(): string | null {
+  const configuredDir = process.env.PMEOW_WEB_PUBLIC_DIR?.trim();
+  const candidateDirs = [
+    configuredDir,
+    path.join(moduleDir, "public"),
+    path.resolve(moduleDir, "..", "dist", "public"),
+    path.resolve(moduleDir, "..", "..", "ui", "dist"),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidateDir of candidateDirs) {
+    const indexFile = path.join(candidateDir, "index.html");
+    if (fs.existsSync(indexFile)) {
+      return candidateDir;
+    }
+  }
+
+  return null;
+}
+
 export interface WebRuntime {
   app: Express;
   httpServer: HttpServer;
@@ -114,8 +133,8 @@ export function createWebRuntime(): WebRuntime {
     });
   });
   
-  const publicDir = path.join(moduleDir, "public");
-  if (fs.existsSync(publicDir)) {
+  const publicDir = resolvePublicDir();
+  if (publicDir) {
     app.use(express.static(publicDir));
     app.get("*", (_req, res) => {
       res.sendFile(path.join(publicDir, "index.html"));
