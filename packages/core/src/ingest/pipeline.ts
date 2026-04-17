@@ -25,6 +25,7 @@ export class IngestPipeline {
     const prevReport = this.latestReports.get(serverId);
     const settings = settingsDb.getSettings();
     const now = Date.now();
+    const nowSeconds = Math.floor(now / 1000);
 
     // 1. Store in latestReports cache
     this.latestReports.set(serverId, report);
@@ -42,7 +43,7 @@ export class IngestPipeline {
     for (const diff of diffs) {
       // DB Ops
       if (diff.eventType === 'task_ended') {
-        taskDb.endTask(diff.task.taskId, now);
+        taskDb.endTask(diff.task.taskId, nowSeconds);
       } else {
         taskDb.upsertTask(serverId, diff.task);
       }
