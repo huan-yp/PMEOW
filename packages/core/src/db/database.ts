@@ -2,6 +2,21 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
+const SNAPSHOT_COLUMNS = [
+  'id',
+  'server_id',
+  'timestamp',
+  'tier',
+  'seq',
+  'cpu',
+  'memory',
+  'disks',
+  'disk_io',
+  'network',
+  'processes',
+  'local_users',
+];
+
 let db: Database.Database | null = null;
 
 export function getDatabase(dataDir?: string): Database.Database {
@@ -18,6 +33,10 @@ export function getDatabase(dataDir?: string): Database.Database {
     const dir = dataDir || path.join(process.cwd(), 'data');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     dbPath = path.join(dir, 'monitor.db');
+  }
+
+  if (needsDatabaseReset(dbPath)) {
+    moveInvalidDatabaseFiles(dbPath);
   }
 
   db = new Database(dbPath);
@@ -47,9 +66,9 @@ function initSchema(db: Database.Database): void {
       cpu TEXT NOT NULL,
       memory TEXT NOT NULL,
       disks TEXT NOT NULL,
+      disk_io TEXT NOT NULL,
       network TEXT NOT NULL,
       processes TEXT NOT NULL,
-      internet TEXT NOT NULL,
       local_users TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_snapshots_query ON snapshots (server_id, tier, timestamp);
@@ -145,15 +164,17 @@ function initSchema(db: Database.Database): void {
       effective_from INTEGER,
       effective_to INTEGER,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      UNIQUE (server_id, system_user)
+      updated_at INTEGER NOT NULL
     );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique ON person_bindings (server_id, system_user) WHERE enabled = 1;
 
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
   `);
+
+  migrateLegacyPersonBindings(db);
 }
 
 export function closeDatabase(): void {
@@ -161,4 +182,87 @@ export function closeDatabase(): void {
     db.close();
     db = null;
   }
+}
+
+function needsDatabaseReset(dbPath: string): boolean {
+  if (!fs.existsSync(dbPath)) {
+    return false;
+  }
+
+  let probe: Database.Database | null = null;
+  try {
+    probe = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const snapshotsExists = probe
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='snapshots' LIMIT 1")
+      .get();
+
+    if (!snapshotsExists) {
+      return false;
+    }
+
+    const columns = probe.prepare('PRAGMA table_info(snapshots)').all() as Array<{ name: string }>;
+    const names = columns.map((column) => column.name);
+    return names.length !== SNAPSHOT_COLUMNS.length || names.some((name, index) => name !== SNAPSHOT_COLUMNS[index]);
+  } catch {
+    return true;
+  } finally {
+    probe?.close();
+  }
+}
+
+function moveInvalidDatabaseFiles(dbPath: string): void {
+  const invalidDir = path.join(path.dirname(dbPath), 'invalid-db');
+  if (!fs.existsSync(invalidDir)) {
+    fs.mkdirSync(invalidDir, { recursive: true });
+  }
+
+  const stamp = new Date().toISOString().replace(/[.:]/g, '-');
+  const baseName = path.basename(dbPath);
+  const targets = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, `${dbPath}-journal`];
+
+  for (const source of targets) {
+    if (!fs.existsSync(source)) {
+      continue;
+    }
+    const suffix = source.slice(dbPath.length);
+    const destination = path.join(invalidDir, `${baseName}.${stamp}${suffix}`);
+    fs.renameSync(source, destination);
+  }
+}
+
+function migrateLegacyPersonBindings(db: Database.Database): void {
+  const table = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_bindings'"
+  ).get() as { sql?: string } | undefined;
+
+  if (!table?.sql?.includes('UNIQUE (server_id, system_user)')) {
+    return;
+  }
+
+  db.transaction(() => {
+    db.exec(`
+      ALTER TABLE person_bindings RENAME TO person_bindings_legacy;
+
+      CREATE TABLE person_bindings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        person_id TEXT NOT NULL REFERENCES persons(id),
+        server_id TEXT NOT NULL,
+        system_user TEXT NOT NULL,
+        source TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        effective_from INTEGER,
+        effective_to INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO person_bindings (id, person_id, server_id, system_user, source, enabled, effective_from, effective_to, created_at, updated_at)
+      SELECT id, person_id, server_id, system_user, source, enabled, effective_from, effective_to, created_at, updated_at
+      FROM person_bindings_legacy;
+
+      DROP TABLE person_bindings_legacy;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique ON person_bindings (server_id, system_user) WHERE enabled = 1;
+    `);
+  })();
 }

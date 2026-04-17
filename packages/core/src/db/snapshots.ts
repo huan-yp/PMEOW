@@ -1,5 +1,16 @@
 import { getDatabase } from './database.js';
-import type { UnifiedReport, SnapshotRecord, GpuSnapshotRecord } from '../types.js';
+import type {
+  UnifiedReport,
+  SnapshotRecord,
+  GpuSnapshotRecord,
+  CpuSnapshot,
+  MemorySnapshot,
+  DiskInfo,
+  DiskIoSnapshot,
+  NetworkSnapshot,
+  ProcessInfo,
+  GpuCardReport,
+} from '../types.js';
 
 export type SnapshotWithGpus = SnapshotRecord & { gpuSnapshots: GpuSnapshotRecord[] };
 
@@ -9,7 +20,7 @@ export function saveSnapshot(serverId: string, report: UnifiedReport, tier: 'rec
 
   const tx = db.transaction(() => {
     const res = db.prepare(
-      `INSERT INTO snapshots (server_id, timestamp, tier, seq, cpu, memory, disks, network, processes, internet, local_users)
+      `INSERT INTO snapshots (server_id, timestamp, tier, seq, cpu, memory, disks, disk_io, network, processes, local_users)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       serverId,
@@ -19,9 +30,9 @@ export function saveSnapshot(serverId: string, report: UnifiedReport, tier: 'rec
       JSON.stringify(snap.cpu),
       JSON.stringify(snap.memory),
       JSON.stringify(snap.disks),
+      JSON.stringify(snap.diskIo),
       JSON.stringify(snap.network),
       JSON.stringify(snap.processes),
-      JSON.stringify(snap.internet),
       JSON.stringify(snap.localUsers),
     );
 
@@ -101,20 +112,22 @@ export function getLatestSnapshot(serverId: string): SnapshotWithGpus | undefine
 }
 
 function mapSnapshotRow(s: Record<string, unknown>, gpuRows: Record<string, unknown>[]): SnapshotWithGpus {
+  const gpuSnapshots = gpuRows.map(mapGpuRow);
   return {
     id: s.id as number,
     serverId: s.server_id as string,
     timestamp: s.timestamp as number,
     tier: s.tier as 'recent' | 'archive',
     seq: s.seq as number | null,
-    cpu: s.cpu as string,
-    memory: s.memory as string,
-    disks: s.disks as string,
-    network: s.network as string,
-    processes: s.processes as string,
-    internet: s.internet as string,
-    localUsers: s.local_users as string,
-    gpuSnapshots: gpuRows.map(mapGpuRow),
+    cpu: JSON.parse(s.cpu as string) as CpuSnapshot,
+    memory: JSON.parse(s.memory as string) as MemorySnapshot,
+    disks: JSON.parse(s.disks as string) as DiskInfo[],
+    diskIo: JSON.parse(s.disk_io as string) as DiskIoSnapshot,
+    network: JSON.parse(s.network as string) as NetworkSnapshot,
+    processes: JSON.parse(s.processes as string) as ProcessInfo[],
+    localUsers: JSON.parse(s.local_users as string) as string[],
+    gpuCards: gpuSnapshots.map(mapGpuSnapshotToCard),
+    gpuSnapshots,
   };
 }
 
@@ -136,5 +149,23 @@ function mapGpuRow(g: Record<string, unknown>): GpuSnapshotRecord {
     taskAllocations: g.task_allocations as string,
     userProcesses: g.user_processes as string,
     unknownProcesses: g.unknown_processes as string,
+  };
+}
+
+function mapGpuSnapshotToCard(gpu: GpuSnapshotRecord): GpuCardReport {
+  return {
+    index: gpu.gpuIndex,
+    name: gpu.name,
+    temperature: gpu.temperature,
+    utilizationGpu: gpu.utilizationGpu,
+    utilizationMemory: gpu.utilizationMemory,
+    memoryTotalMb: gpu.memoryTotalMb,
+    memoryUsedMb: gpu.memoryUsedMb,
+    managedReservedMb: gpu.managedReservedMb,
+    unmanagedPeakMb: gpu.unmanagedPeakMb,
+    effectiveFreeMb: gpu.effectiveFreeMb,
+    taskAllocations: JSON.parse(gpu.taskAllocations) as GpuCardReport['taskAllocations'],
+    userProcesses: JSON.parse(gpu.userProcesses) as GpuCardReport['userProcesses'],
+    unknownProcesses: JSON.parse(gpu.unknownProcesses) as GpuCardReport['unknownProcesses'],
   };
 }

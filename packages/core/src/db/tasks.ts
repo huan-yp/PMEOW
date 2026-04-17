@@ -17,7 +17,7 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
       schedule_history = excluded.schedule_history,
       priority = excluded.priority`
   ).run(
-    task.id,
+    task.taskId,
     serverId,
     task.status,
     task.command,
