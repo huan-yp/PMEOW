@@ -13,9 +13,11 @@ interface Props {
   series: TimeSeriesChartSeries[];
   height?: number;
   yAxisFormatter?: (v: number) => string;
+  yAxisMin?: number;
+  yAxisMax?: number;
 }
 
-export function TimeSeriesChart({ series, height = 200, yAxisFormatter }: Props) {
+export function TimeSeriesChart({ series, height = 200, yAxisFormatter, yAxisMin, yAxisMax }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
@@ -72,6 +74,8 @@ export function TimeSeriesChart({ series, height = 200, yAxisFormatter }: Props)
       },
       yAxis: {
         type: 'value',
+        min: yAxisMin,
+        max: yAxisMax,
         axisLabel: { color: '#64748b', fontSize: 10, formatter: yAxisFormatter },
         splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } },
       },
@@ -90,7 +94,7 @@ export function TimeSeriesChart({ series, height = 200, yAxisFormatter }: Props)
         data: s.data.map(d => [d.time, d.value]),
       })),
     }, true);
-  }, [series, yAxisFormatter]);
+  }, [series, yAxisFormatter, yAxisMin, yAxisMax]);
 
   return <div ref={chartRef} style={{ width: '100%', height }} />;
 }

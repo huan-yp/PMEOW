@@ -3,7 +3,7 @@ import { ServerCard } from '../components/ServerCard.js';
 import { getInternetReachabilityState } from '../utils/nodeStatus.js';
 
 function formatTime(timestamp: number) {
-  return new Date(timestamp).toLocaleTimeString('zh-CN', {
+  return new Date(timestamp * 1000).toLocaleTimeString('zh-CN', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -12,7 +12,7 @@ function formatTime(timestamp: number) {
 }
 
 function formatTimestamp(timestamp: number) {
-  return new Date(timestamp).toLocaleString('zh-CN', {
+  return new Date(timestamp * 1000).toLocaleString('zh-CN', {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -39,7 +39,7 @@ export default function Overview() {
   const internetSummary = servers.reduce(
     (summary, server) => {
       const snapshot = latestSnapshots.get(server.id);
-      const state = getInternetReachabilityState(snapshot?.resourceSnapshot.internet.reachable);
+      const state = getInternetReachabilityState(snapshot?.resourceSnapshot.network.internetReachable);
       if (state === 'reachable') summary.reachable += 1;
       else if (state === 'unreachable') summary.unreachable += 1;
       else summary.unprobed += 1;

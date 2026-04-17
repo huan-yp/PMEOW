@@ -1,13 +1,14 @@
 import { io, Socket } from 'socket.io-client';
 import type {
   TransportAdapter, Server, ServerStatus, UnifiedReport, Task, Alert, AlertQuery,
-  SecurityEvent, Person, PersonBinding, PersonTimelinePoint, SnapshotWithGpu,
-  GpuOverviewResponse, Settings, TaskEvent, AlertEvent,
+  SecurityEvent, Person, PersonBinding, PersonBindingCandidate, PersonTimelinePoint, SnapshotWithGpu,
+  GpuOverviewResponse, Settings, TaskEvent, AlertEvent, CreatePersonWizardInput, CreatePersonWizardResult,
 } from './types.js';
 
 export class WebSocketAdapter implements TransportAdapter {
   private socket: Socket | null = null;
   private token: string | null = null;
+  private socketLogBound = false;
 
   constructor() {
     this.token = localStorage.getItem('auth_token');
@@ -21,11 +22,40 @@ export class WebSocketAdapter implements TransportAdapter {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
     });
+    this.bindSocketLogs();
+    console.info(`[ui-ws] connect requested: tokenPresent=${this.token ? 'yes' : 'no'}`);
   }
 
   disconnect(): void {
+    console.info(`[ui-ws] disconnect requested: socketPresent=${this.socket ? 'yes' : 'no'} connected=${this.socket?.connected ? 'yes' : 'no'}`);
     this.socket?.disconnect();
     this.socket = null;
+    this.socketLogBound = false;
+  }
+
+  private bindSocketLogs(): void {
+    if (!this.socket || this.socketLogBound) return;
+    this.socketLogBound = true;
+
+    this.socket.on('connect', () => {
+      console.info(`[ui-ws] connected: id=${this.socket?.id ?? 'unknown'} transport=${this.socket?.io.engine.transport.name ?? 'unknown'}`);
+    });
+    this.socket.on('disconnect', (reason, details) => {
+      const detailText = details ? JSON.stringify(details) : 'none';
+      console.info(`[ui-ws] disconnected: reason=${reason} details=${detailText}`);
+    });
+    this.socket.on('connect_error', (error) => {
+      console.warn(`[ui-ws] connect_error: ${error.message}`);
+    });
+    this.socket.io.on('reconnect_attempt', (attempt) => {
+      console.info(`[ui-ws] reconnect_attempt: count=${attempt}`);
+    });
+    this.socket.io.on('reconnect_error', (error) => {
+      console.warn(`[ui-ws] reconnect_error: ${error instanceof Error ? error.message : String(error)}`);
+    });
+    this.socket.io.on('reconnect_failed', () => {
+      console.warn('[ui-ws] reconnect_failed');
+    });
   }
 
   // Subscriptions
@@ -76,8 +106,31 @@ export class WebSocketAdapter implements TransportAdapter {
       throw new Error('Unauthorized');
     }
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`HTTP ${res.status}: ${text}`);
+      const contentType = res.headers.get('content-type') ?? '';
+      let details: unknown = undefined;
+      let message = `HTTP ${res.status}`;
+
+      if (contentType.includes('application/json')) {
+        details = await res.json();
+        if (details && typeof details === 'object') {
+          const record = details as Record<string, unknown>;
+          if (typeof record.message === 'string') {
+            message = record.message;
+          } else if (typeof record.error === 'string') {
+            message = record.error;
+          }
+        }
+      } else {
+        const text = await res.text();
+        if (text) {
+          message = text;
+        }
+      }
+
+      const error = new Error(message) as Error & { status?: number; details?: unknown };
+      error.status = res.status;
+      error.details = details;
+      throw error;
     }
     if (res.status === 204) return undefined as T;
     return res.json();
@@ -94,13 +147,13 @@ export class WebSocketAdapter implements TransportAdapter {
   async getStatuses(): Promise<Record<string, ServerStatus>> { return this.fetch('/api/statuses'); }
 
   // Snapshots
-  async getLatestMetrics(): Promise<Record<string, { snapshot: SnapshotWithGpu }>> { return this.fetch('/api/metrics/latest'); }
+  async getLatestMetrics(): Promise<Record<string, UnifiedReport>> { return this.fetch('/api/metrics/latest'); }
   async getMetricsHistory(serverId: string, query: { from?: number; to?: number; tier?: 'recent' | 'archive' } = {}): Promise<{ snapshots: SnapshotWithGpu[] }> {
     const params = new URLSearchParams();
     if (query.from !== undefined) params.set('from', String(query.from));
     if (query.to !== undefined) params.set('to', String(query.to));
     if (query.tier) params.set('tier', query.tier);
-    return this.fetch(`/api/metrics/${encodeURIComponent(serverId)}/history?${params}`);
+    return this.fetch<SnapshotWithGpu[]>(`/api/metrics/${encodeURIComponent(serverId)}/history?${params}`).then((snapshots) => ({ snapshots }));
   }
 
   // Tasks
@@ -140,6 +193,9 @@ export class WebSocketAdapter implements TransportAdapter {
   async updatePersonBinding(id: number, input: Partial<{ enabled: boolean; effectiveFrom: number; effectiveTo: number }>): Promise<PersonBinding> {
     return this.fetch(`/api/person-bindings/${id}`, { method: 'PUT', body: JSON.stringify(input) });
   }
+  async createPersonWizard(input: CreatePersonWizardInput): Promise<CreatePersonWizardResult> {
+    return this.fetch('/api/persons/wizard', { method: 'POST', body: JSON.stringify(input) });
+  }
   async getPersonTimeline(personId: string, query: { from?: number; to?: number } = {}): Promise<{ points: PersonTimelinePoint[] }> {
     const params = new URLSearchParams();
     if (query.from !== undefined) params.set('from', String(query.from));
@@ -152,7 +208,7 @@ export class WebSocketAdapter implements TransportAdapter {
     if (query.limit !== undefined) params.set('limit', String(query.limit));
     return this.fetch(`/api/persons/${encodeURIComponent(personId)}/tasks?${params}`);
   }
-  async getPersonBindingCandidates(): Promise<{ candidates: { serverId: string; systemUser: string }[] }> { return this.fetch('/api/person-binding-candidates'); }
+  async getPersonBindingCandidates(): Promise<{ candidates: PersonBindingCandidate[] }> { return this.fetch('/api/person-binding-candidates'); }
 
   // Alerts
   async getAlerts(query: AlertQuery = {}): Promise<Alert[]> {

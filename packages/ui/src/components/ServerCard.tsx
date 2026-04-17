@@ -44,17 +44,17 @@ export function ServerCard({ server, status, report }: Props) {
   const vramPercent = totalVram > 0 ? (usedVram / totalVram) * 100 : 0;
 
   // Network aggregate
-  const totalRx = snap?.network?.reduce((s, n) => s + n.rxBytesPerSec, 0) ?? 0;
-  const totalTx = snap?.network?.reduce((s, n) => s + n.txBytesPerSec, 0) ?? 0;
+  const totalRx = snap?.network.rxBytesPerSec ?? 0;
+  const totalTx = snap?.network.txBytesPerSec ?? 0;
 
   // Internet status
-  const internetReachable = snap?.internet?.reachable;
+  const internetReachable = snap?.network.internetReachable;
   const internetLabel = internetReachable === true ? '有外网' : internetReachable === false ? '无外网' : '未探测';
   const internetDot = internetReachable === true ? 'bg-emerald-300' : internetReachable === false ? 'bg-rose-300' : 'bg-slate-400';
 
   return (
     <div
-      onClick={() => navigate(`/nodes/${server.id}`)}
+      onClick={() => navigate(`/nodes/${server.id}`, { state: { returnTo: '/', returnLabel: '返回控制台' } })}
       className={`node-surface-shell node-card-shell ${statusVisual.surfaceClassName} rounded-2xl p-5 cursor-pointer`}
     >
       <div className="mb-2 flex items-start justify-between gap-3">
@@ -93,16 +93,16 @@ export function ServerCard({ server, status, report }: Props) {
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
               <span className="text-slate-500">CPU</span>
-              <p className="mt-0.5 font-mono text-slate-300">{snap.cpu.usage.toFixed(1)}%</p>
+              <p className="mt-0.5 font-mono text-slate-300">{snap.cpu.usagePercent.toFixed(1)}%</p>
             </div>
             <div>
               <span className="text-slate-500">内存</span>
-              <p className="mt-0.5 font-mono text-slate-300">{snap.memory.percent.toFixed(1)}%</p>
+              <p className="mt-0.5 font-mono text-slate-300">{snap.memory.usagePercent.toFixed(1)}%</p>
             </div>
             <div>
               <span className="text-slate-500">磁盘</span>
               <p className="mt-0.5 font-mono text-slate-300">
-                {snap.disks[0] ? `${((snap.disks[0].usedMb / snap.disks[0].totalMb) * 100).toFixed(0)}%` : 'N/A'}
+                {snap.disks[0] ? `${snap.disks[0].usagePercent.toFixed(0)}%` : 'N/A'}
               </p>
             </div>
             <div>
@@ -128,7 +128,7 @@ export function ServerCard({ server, status, report }: Props) {
 
           <div className="mt-3 space-y-1.5 border-t border-dark-border pt-3">
             {hasGpu && <ProgressBar label="VRAM" value={vramPercent} />}
-            <ProgressBar label="内存" value={snap.memory.percent} />
+            <ProgressBar label="内存" value={snap.memory.usagePercent} />
           </div>
         </div>
       ) : (

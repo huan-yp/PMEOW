@@ -21,13 +21,14 @@ export interface UnifiedReport {
   seq: number;
   resourceSnapshot: {
     gpuCards: GpuCardReport[];
-    cpu: { usage: number; cores: number; frequency: number };
-    memory: { totalMb: number; usedMb: number; percent: number };
-    disks: { mountpoint: string; totalMb: number; usedMb: number }[];
-    network: { interface: string; rxBytesPerSec: number; txBytesPerSec: number }[];
+    cpu: CpuSnapshot;
+    memory: MemorySnapshot;
+    disks: DiskInfo[];
+    diskIo: DiskIoSnapshot;
+    network: NetworkSnapshot;
     processes: ProcessInfo[];
-    internet: { reachable: boolean; targets: string[] };
     localUsers: string[];
+    system?: SystemSnapshot;
   };
   taskQueue: {
     queued: TaskInfo[];
@@ -35,13 +36,72 @@ export interface UnifiedReport {
   };
 }
 
+export interface CpuSnapshot {
+  usagePercent: number;
+  coreCount: number;
+  modelName: string;
+  frequencyMhz: number;
+  perCoreUsage: number[];
+}
+
+export interface MemorySnapshot {
+  totalMb: number;
+  usedMb: number;
+  availableMb: number;
+  usagePercent: number;
+  swapTotalMb: number;
+  swapUsedMb: number;
+  swapPercent: number;
+}
+
+export interface DiskInfo {
+  filesystem: string;
+  mountPoint: string;
+  totalGB: number;
+  usedGB: number;
+  availableGB: number;
+  usagePercent: number;
+}
+
+export interface DiskIoSnapshot {
+  readBytesPerSec: number;
+  writeBytesPerSec: number;
+}
+
+export interface NetworkInterface {
+  name: string;
+  rxBytes: number;
+  txBytes: number;
+}
+
+export interface NetworkSnapshot {
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+  interfaces: NetworkInterface[];
+  internetReachable?: boolean;
+  internetLatencyMs?: number;
+  internetProbeTarget?: string;
+  internetProbeCheckedAt?: number;
+}
+
 export interface ProcessInfo {
   pid: number;
-  name: string;
+  ppid: number | null;
   user: string;
   cpuPercent: number;
-  memoryMb: number;
+  memPercent: number;
+  rss: number;
   command: string;
+  gpuMemoryMb: number;
+}
+
+export interface SystemSnapshot {
+  hostname: string;
+  uptime: string;
+  loadAvg1: number;
+  loadAvg5: number;
+  loadAvg15: number;
+  kernelVersion: string;
 }
 
 export interface GpuCardReport {
@@ -61,7 +121,7 @@ export interface GpuCardReport {
 }
 
 export interface TaskInfo {
-  id: string;
+  taskId: string;
   status: 'queued' | 'running';
   command: string;
   cwd: string;
@@ -160,12 +220,51 @@ export interface PersonBinding {
   personId: string;
   serverId: string;
   systemUser: string;
-  source: 'auto' | 'manual' | 'override';
+  source: 'manual' | 'suggested' | 'synced';
   enabled: boolean;
   effectiveFrom: number | null;
   effectiveTo: number | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface PersonBindingCandidate {
+  serverId: string;
+  serverName: string;
+  systemUser: string;
+  activeBinding: PersonBinding | null;
+  activePerson: Pick<Person, 'id' | 'displayName' | 'email' | 'qq'> | null;
+}
+
+export type PersonWizardMode = 'seed-user' | 'manual';
+
+export interface CreatePersonWizardInput {
+  mode: PersonWizardMode;
+  person: {
+    displayName: string;
+    email?: string | null;
+    qq?: string | null;
+    note?: string | null;
+  };
+  bindings: Array<{
+    serverId: string;
+    systemUser: string;
+    source?: 'manual' | 'suggested' | 'synced';
+  }>;
+  confirmTransfer?: boolean;
+}
+
+export interface PersonBindingConflict {
+  serverId: string;
+  systemUser: string;
+  activeBinding: PersonBinding;
+  activePerson: Pick<Person, 'id' | 'displayName' | 'email' | 'qq'> | null;
+}
+
+export interface CreatePersonWizardResult {
+  person: Person;
+  bindings: PersonBinding[];
+  transferredBindings: PersonBindingConflict[];
 }
 
 export interface PersonTimelinePoint {
@@ -179,7 +278,7 @@ export interface PersonTimelinePoint {
 export interface TaskEvent {
   serverId: string;
   eventType: 'submitted' | 'started' | 'ended' | 'priority_changed';
-  task: Task;
+  task: TaskInfo;
 }
 
 // Alert Event (pushed via WebSocket)
@@ -196,12 +295,12 @@ export interface SnapshotWithGpu {
   serverId: string;
   timestamp: number;
   tier: 'recent' | 'archive';
-  cpu: { usage: number; cores: number; frequency: number };
-  memory: { totalMb: number; usedMb: number; percent: number };
-  disks: { mountpoint: string; totalMb: number; usedMb: number }[];
-  network: { interface: string; rxBytesPerSec: number; txBytesPerSec: number }[];
+  cpu: CpuSnapshot;
+  memory: MemorySnapshot;
+  disks: DiskInfo[];
+  diskIo: DiskIoSnapshot;
+  network: NetworkSnapshot;
   processes: ProcessInfo[];
-  internet: { reachable: boolean; targets: string[] };
   localUsers: string[];
   gpuCards: GpuCardReport[];
 }
@@ -250,7 +349,7 @@ export interface TransportAdapter {
   getStatuses(): Promise<Record<string, ServerStatus>>;
 
   // Snapshots (spec §8.3)
-  getLatestMetrics(): Promise<Record<string, { snapshot: SnapshotWithGpu }>>;
+  getLatestMetrics(): Promise<Record<string, UnifiedReport>>;
   getMetricsHistory(serverId: string, query: { from?: number; to?: number; tier?: 'recent' | 'archive' }): Promise<{ snapshots: SnapshotWithGpu[] }>;
 
   // Tasks (spec §8.4)
@@ -270,9 +369,10 @@ export interface TransportAdapter {
   getPersonBindings(personId: string): Promise<PersonBinding[]>;
   createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source?: string }): Promise<PersonBinding>;
   updatePersonBinding(id: number, input: Partial<{ enabled: boolean; effectiveFrom: number; effectiveTo: number }>): Promise<PersonBinding>;
+  createPersonWizard(input: CreatePersonWizardInput): Promise<CreatePersonWizardResult>;
   getPersonTimeline(personId: string, query?: { from?: number; to?: number }): Promise<{ points: PersonTimelinePoint[] }>;
   getPersonTasks(personId: string, query?: { page?: number; limit?: number }): Promise<{ tasks: Task[]; total: number }>;
-  getPersonBindingCandidates(): Promise<{ candidates: { serverId: string; systemUser: string }[] }>;
+  getPersonBindingCandidates(): Promise<{ candidates: PersonBindingCandidate[] }>;
 
   // Alerts (spec §8.7)
   getAlerts(query?: AlertQuery): Promise<Alert[]>;

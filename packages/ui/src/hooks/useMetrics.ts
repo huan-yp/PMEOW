@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useTransport } from '../transport/TransportProvider.js';
 import { useStore } from '../store/useStore.js';
+import type { Task, TaskInfo } from '../transport/types.js';
 
 export function useMetricsSubscription() {
   const transport = useTransport();
@@ -35,7 +36,7 @@ export function useMetricsSubscription() {
       }),
 
       transport.onTaskEvent((event) => {
-        upsertTask(event.task);
+        upsertTask(toTaskRecord(event.task, event.serverId));
         const labels: Record<string, string> = {
           submitted: '任务提交',
           started: '任务启动',
@@ -69,6 +70,30 @@ export function useMetricsSubscription() {
 
     return () => unsubs.forEach((fn) => fn());
   }, [transport, setServers, setLatestSnapshot, setStatus, upsertTask, addToast]);
+}
+
+function toTaskRecord(task: TaskInfo, serverId: string): Task {
+  return {
+    id: task.taskId,
+    serverId,
+    status: task.status,
+    command: task.command,
+    cwd: task.cwd,
+    user: task.user,
+    launchMode: task.launchMode,
+    requireVramMb: task.requireVramMb,
+    requireGpuCount: task.requireGpuCount,
+    gpuIds: task.gpuIds,
+    priority: task.priority,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt,
+    finishedAt: null,
+    pid: task.pid,
+    exitCode: null,
+    assignedGpus: task.assignedGpus,
+    declaredVramPerGpu: task.declaredVramPerGpu,
+    scheduleHistory: task.scheduleHistory,
+  };
 }
 
 export function useLoadInitialData() {

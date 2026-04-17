@@ -13,7 +13,8 @@ export function ProcessTable({ processes }: Props) {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const sorted = [...processes].sort((a, b) => {
-    const av = a[sortField], bv = b[sortField];
+    const av = sortField === 'memoryMb' ? a.rss : a.cpuPercent;
+    const bv = sortField === 'memoryMb' ? b.rss : b.cpuPercent;
     return sortDir === 'desc' ? bv - av : av - bv;
   });
 
@@ -45,9 +46,9 @@ export function ProcessTable({ processes }: Props) {
             <tr className="text-slate-500 border-b border-dark-border">
               <th className="text-left py-2 px-3">PID</th>
               <th className="text-left py-2 px-3">用户</th>
-              <th className="text-left py-2 px-3">名称</th>
               <th className="text-right py-2 px-3">CPU%</th>
-              <th className="text-right py-2 px-3">内存 MB</th>
+              <th className="text-right py-2 px-3">RSS MB</th>
+              <th className="text-right py-2 px-3">GPU MB</th>
               <th className="text-left py-2 px-3">命令</th>
             </tr>
           </thead>
@@ -56,11 +57,11 @@ export function ProcessTable({ processes }: Props) {
               <tr key={`${p.pid}-${i}`} className="border-b border-dark-border/50 hover:bg-dark-hover">
                 <td className="py-1.5 px-3 font-mono text-slate-400">{p.pid}</td>
                 <td className="py-1.5 px-3 text-slate-300">{p.user}</td>
-                <td className="py-1.5 px-3 text-slate-300">{p.name}</td>
                 <td className={`py-1.5 px-3 text-right font-mono ${p.cpuPercent > 50 ? 'text-accent-red' : p.cpuPercent > 20 ? 'text-accent-yellow' : 'text-slate-300'}`}>
                   {p.cpuPercent.toFixed(1)}
                 </td>
-                <td className="py-1.5 px-3 text-right font-mono text-slate-300">{p.memoryMb.toFixed(0)}</td>
+                <td className="py-1.5 px-3 text-right font-mono text-slate-300">{(p.rss / (1024 * 1024)).toFixed(0)}</td>
+                <td className="py-1.5 px-3 text-right font-mono text-slate-300">{p.gpuMemoryMb.toFixed(0)}</td>
                 <td className="py-1.5 px-3 text-slate-400 truncate max-w-[300px]" title={p.command}>{p.command}</td>
               </tr>
             ))}
