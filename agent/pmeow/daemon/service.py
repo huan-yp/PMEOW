@@ -19,13 +19,14 @@ from pmeow.daemon.runtime_monitor import RuntimeMonitorLoop
 from pmeow.executor.logs import append_task_log_line, ensure_task_log, read_task_log
 from pmeow.executor.runner import TaskRunner
 from pmeow.models import (
+    ScheduleEvaluation,
     TaskLaunchMode,
     TaskRecord,
     TaskSpec,
     TaskStatus,
 )
 from pmeow.queue.history import GpuHistoryTracker
-from pmeow.queue.scheduler import QueueScheduler, validate_request_possible
+from pmeow.queue.scheduler import QueueScheduler, TaskScheduleEvaluation, validate_request_possible
 from pmeow.reporter import Reporter
 from pmeow.state.task_queue import TaskQueue
 from pmeow.transport.client import AgentTransportClient
@@ -174,6 +175,10 @@ class DaemonService:
                 task = self.task_queue.get(task_id)
                 if task is None:
                     continue
+                self._append_task_message(
+                    task_id,
+                    self._format_finished_message(task_id, exit_code),
+                )
                 self.task_queue.remove(task_id)
                 log.info("task %s finished (exit=%d)", task_id, exit_code)
 
@@ -181,6 +186,17 @@ class DaemonService:
             queued_tasks = self.task_queue.list_queued()
             if queued_tasks:
                 schedule_result = self.scheduler.try_schedule(queued_tasks, per_gpu)
+                evaluation_map = {
+                    evaluation.task_id: evaluation
+                    for evaluation in schedule_result.evaluations
+                }
+
+                for task in queued_tasks:
+                    evaluation = evaluation_map.get(task.id)
+                    if evaluation is None:
+                        continue
+                    self._record_schedule_evaluation(task, evaluation)
+
                 decisions = schedule_result.decisions
 
                 for dec in decisions:
@@ -195,6 +211,10 @@ class DaemonService:
                             task.id, dec.gpu_ids,
                             attach_deadline=attach_deadline,
                         )
+                        self._append_task_message(
+                            task.id,
+                            self._format_launch_reserved_message(dec.gpu_ids),
+                        )
                         log.info(
                             "reserved attached launch %s (gpus=%s)",
                             task.id, dec.gpu_ids,
@@ -203,8 +223,16 @@ class DaemonService:
 
                     # Daemon-shell launch
                     self.task_queue.reserve(task.id, dec.gpu_ids)
+                    self._append_task_message(
+                        task.id,
+                        self._format_launch_reserved_message(dec.gpu_ids),
+                    )
                     proc = self.runner.start(task, dec.gpu_ids, self.config.log_dir)
                     self.task_queue.start(task.id, proc.pid)
+                    self._append_task_message(
+                        task.id,
+                        self._format_started_message(task.id, proc.pid),
+                    )
                     log.info(
                         "started task %s (pid=%d, gpus=%s)",
                         task.id, proc.pid, dec.gpu_ids,
@@ -242,6 +270,7 @@ class DaemonService:
                     raise ValueError(err)
             rec = self.task_queue.submit(spec)
             ensure_task_log(rec.id, self.config.log_dir)
+            self._append_task_message(rec.id, self._format_submitted_message(rec))
             log.info(
                 "submitted task %s user=%s mode=%s cwd=%s",
                 rec.id, rec.user, rec.launch_mode.value, rec.cwd,
@@ -276,7 +305,10 @@ class DaemonService:
             return self.task_queue.get(task_id)
 
     def get_logs(self, task_id: str, tail: int = 100) -> str:
-        return read_task_log(task_id, self.config.log_dir)
+        try:
+            return read_task_log(task_id, self.config.log_dir, tail=tail)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"log file not found for task {task_id}") from exc
 
     def set_task_priority(self, task_id: str, priority: int) -> bool:
         with self._lock:
@@ -294,6 +326,7 @@ class DaemonService:
             if task is None or task.status != TaskStatus.reserved:
                 return False
             self.task_queue.start(task_id, pid)
+            self._append_task_message(task_id, self._format_started_message(task_id, pid))
             log.info("confirmed attached launch %s (pid=%d)", task_id, pid)
             return True
 
@@ -302,6 +335,114 @@ class DaemonService:
             task = self.task_queue.get(task_id)
             if task is None or task.launch_mode != TaskLaunchMode.attached_python:
                 return False
+            self._append_task_message(task_id, self._format_finished_message(task_id, exit_code))
             self.task_queue.remove(task_id)
             log.info("attached task %s finished (exit=%d)", task_id, exit_code)
             return True
+
+    # ------------------------------------------------------------------
+    # Task diagnostics
+    # ------------------------------------------------------------------
+
+    def _append_task_message(self, task_id: str, message: str) -> None:
+        append_task_log_line(task_id, self.config.log_dir, message)
+
+    def _record_schedule_evaluation(
+        self,
+        task: TaskRecord,
+        evaluation: TaskScheduleEvaluation,
+    ) -> None:
+        entry = ScheduleEvaluation(
+            timestamp=time.time(),
+            result=self._map_schedule_result(evaluation.reason_code),
+            gpu_snapshot=self._build_schedule_gpu_snapshot(task, evaluation),
+            detail=self._format_schedule_detail(task, evaluation),
+        )
+        task.schedule_history.append(entry)
+        self._append_task_message(task.id, f"schedule {entry.result}: {entry.detail}")
+
+    def _map_schedule_result(self, reason_code: str) -> str:
+        return {
+            "scheduled": "scheduled",
+            "blocked_by_higher_priority": "blocked_by_priority",
+            "insufficient_gpu_count": "insufficient_gpu",
+            "sustained_window_not_satisfied": "sustained_window_not_met",
+        }.get(reason_code, "insufficient_gpu")
+
+    def _build_schedule_gpu_snapshot(
+        self,
+        task: TaskRecord,
+        evaluation: TaskScheduleEvaluation,
+    ) -> dict[str, float | int]:
+        snapshot: dict[str, float | int] = {
+            "requestedGpuCount": task.require_gpu_count,
+            "requestedVramMb": task.require_vram_mb,
+            "eligibleNowCount": len(evaluation.current_eligible_gpu_ids),
+            "eligibleSustainedCount": len(evaluation.sustained_eligible_gpu_ids),
+            "selectedGpuCount": len(evaluation.gpu_ids),
+            "blockerCount": len(evaluation.blocker_task_ids),
+        }
+        for gpu_id, free_mb in evaluation.current_effective_free_mb.items():
+            snapshot[f"effectiveFreeMb.gpu{gpu_id}"] = round(free_mb, 2)
+        for gpu_id, pending_mb in evaluation.pending_vram_mb.items():
+            snapshot[f"pendingVramMb.gpu{gpu_id}"] = round(pending_mb, 2)
+        return snapshot
+
+    def _format_schedule_detail(
+        self,
+        task: TaskRecord,
+        evaluation: TaskScheduleEvaluation,
+    ) -> str:
+        selected = self._format_gpu_ids(evaluation.gpu_ids)
+        eligible_now = self._format_gpu_ids(evaluation.current_eligible_gpu_ids)
+        sustained = self._format_gpu_ids(evaluation.sustained_eligible_gpu_ids)
+        effective_free = self._format_effective_free(evaluation.current_effective_free_mb)
+
+        if evaluation.reason_code == "scheduled":
+            return (
+                f"need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB; "
+                f"selected={selected}; eligible_now={eligible_now}; effective_free={effective_free}"
+            )
+        if evaluation.reason_code == "blocked_by_higher_priority":
+            blockers = ",".join(evaluation.blocker_task_ids) or "none"
+            return (
+                f"blocked by higher-priority reservations; need {task.require_gpu_count} GPU(s) with >= "
+                f"{task.require_vram_mb} MB; blockers={blockers}; eligible_now={eligible_now}; "
+                f"effective_free={effective_free}"
+            )
+        if evaluation.reason_code == "sustained_window_not_satisfied":
+            return (
+                f"sustained availability window not satisfied; need {task.require_gpu_count} GPU(s) with >= "
+                f"{task.require_vram_mb} MB; eligible_now={eligible_now}; sustained_common={sustained}; "
+                f"effective_free={effective_free}"
+            )
+        return (
+            f"not enough eligible GPUs; need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB; "
+            f"eligible_now={eligible_now}; sustained_common={sustained}; effective_free={effective_free}"
+        )
+
+    def _format_submitted_message(self, task: TaskRecord) -> str:
+        return (
+            f"submitted task {task.id} mode={task.launch_mode.value} user={task.user} cwd={task.cwd}; "
+            f"need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB"
+        )
+
+    def _format_launch_reserved_message(self, gpu_ids: list[int]) -> str:
+        return f"launch reserved: selected {self._format_gpu_ids(gpu_ids)}"
+
+    def _format_started_message(self, task_id: str, pid: int) -> str:
+        return f"task started: pid={pid} task_id={task_id}"
+
+    def _format_finished_message(self, task_id: str, exit_code: int) -> str:
+        return f"task finished: exit_code={exit_code} task_id={task_id}"
+
+    def _format_gpu_ids(self, gpu_ids: list[int]) -> str:
+        return ",".join(str(gpu_id) for gpu_id in gpu_ids) or "none"
+
+    def _format_effective_free(self, current_effective_free_mb: dict[int, float]) -> str:
+        if not current_effective_free_mb:
+            return "none"
+        return ", ".join(
+            f"gpu{gpu_id}={round(free_mb, 2)}MB"
+            for gpu_id, free_mb in sorted(current_effective_free_mb.items())
+        )
