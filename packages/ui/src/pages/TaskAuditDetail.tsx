@@ -280,7 +280,7 @@ export function TaskAuditDetail() {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (!serverId || !taskId) {
+    if (!serverId || !taskId || serverId === 'undefined' || taskId === 'undefined') {
       setState('error');
       setErrorMsg('缺少参数。');
       return;

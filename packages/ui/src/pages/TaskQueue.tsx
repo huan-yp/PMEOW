@@ -102,12 +102,18 @@ function TaskTable({
                     <td className="py-3 pr-4 text-slate-400">{formatTaskStatus(task.status)}</td>
                     <td className="py-3">
                       <div className="flex flex-wrap gap-2">
-                        <Link
-                          to={`/tasks/${task.serverId}/${task.taskId}`}
-                          className="rounded border border-dark-border px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-hover"
-                        >
-                          审计详情
-                        </Link>
+                        {task.serverId ? (
+                          <Link
+                            to={`/tasks/${task.serverId}/${task.taskId}`}
+                            className="rounded border border-dark-border px-2 py-1 text-xs text-slate-300 transition-colors hover:bg-dark-hover"
+                          >
+                            审计详情
+                          </Link>
+                        ) : (
+                          <span className="rounded border border-dark-border/50 px-2 py-1 text-xs text-slate-500">
+                            审计详情
+                          </span>
+                        )}
                         {canCancel ? (
                           <button
                             type="button"
