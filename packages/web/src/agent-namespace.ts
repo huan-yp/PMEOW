@@ -1,17 +1,15 @@
 import type { Server as SocketServer, Socket, Namespace } from "socket.io";
 import {
   AGENT_EVENT,
-  SERVER_COMMAND,
   isAgentRegisterPayload,
-  isUnifiedReport,
+  parseUnifiedReport,
   AgentSessionRegistry,
   IngestPipeline,
   getServerByAgentId,
   createServer,
   createAgentSession,
-  type AgentRegisterPayload,
-  type UnifiedReport,
 } from "@monitor/core";
+import type { AgentReportDebugLogger } from "./agent-report-debug-log.js";
 import type { UIBroadcast } from "./ui-broadcast.js";
 
 const AGENT_NAMESPACE = "/agent";
@@ -21,6 +19,7 @@ export function createAgentNamespace(
   registry: AgentSessionRegistry,
   pipeline: IngestPipeline,
   broadcast?: UIBroadcast,
+  reportDebugLogger?: AgentReportDebugLogger,
 ): Namespace {
   const ns = io.of(AGENT_NAMESPACE);
   
@@ -46,19 +45,23 @@ export function createAgentNamespace(
     
     socket.on(AGENT_EVENT.report, (payload: unknown) => {
       if (!agentId) return;
-      if (!isUnifiedReport(payload)) {
-        console.warn(`[agent] invalid report from ${agentId}:`, typeof payload, payload && typeof payload === 'object' ? Object.keys(payload) : payload);
-        return;
-      }
-      
+
       const session = registry.getSession(agentId);
       if (!session) {
         console.warn(`[agent] report from unregistered agent ${agentId}, ignoring`);
         return;
       }
+
+      reportDebugLogger?.logReceivedReport(agentId, session.serverId, payload);
+
+      const report = parseUnifiedReport(payload);
+      if (!report) {
+        console.warn(`[agent] invalid report from ${agentId}:`, typeof payload, payload && typeof payload === 'object' ? Object.keys(payload) : payload);
+        return;
+      }
       
       registry.updateLastReport(agentId, Date.now());
-      pipeline.processReport(session.serverId, payload as UnifiedReport);
+      pipeline.processReport(session.serverId, report);
     });
     
     socket.on("disconnect", () => {

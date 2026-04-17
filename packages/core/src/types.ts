@@ -25,18 +25,67 @@ export interface UnifiedReport {
   seq: number;
   resourceSnapshot: {
     gpuCards: GpuCardReport[];
-    cpu: { usage: number; cores: number; frequency: number };
-    memory: { totalMb: number; usedMb: number; percent: number };
-    disks: { mountpoint: string; totalMb: number; usedMb: number }[];
-    network: { interface: string; rxBytesPerSec: number; txBytesPerSec: number }[];
+    cpu: CpuSnapshot;
+    memory: MemorySnapshot;
+    disks: DiskInfo[];
+    diskIo: DiskIoSnapshot;
+    network: NetworkSnapshot;
     processes: ProcessInfo[];
-    internet: { reachable: boolean; targets: string[] };
     localUsers: string[];
+    system?: SystemSnapshot;
   };
   taskQueue: {
     queued: TaskInfo[];
     running: TaskInfo[];
   };
+}
+
+export interface CpuSnapshot {
+  usagePercent: number;
+  coreCount: number;
+  modelName: string;
+  frequencyMhz: number;
+  perCoreUsage: number[];
+}
+
+export interface MemorySnapshot {
+  totalMb: number;
+  usedMb: number;
+  availableMb: number;
+  usagePercent: number;
+  swapTotalMb: number;
+  swapUsedMb: number;
+  swapPercent: number;
+}
+
+export interface DiskInfo {
+  filesystem: string;
+  mountPoint: string;
+  totalGB: number;
+  usedGB: number;
+  availableGB: number;
+  usagePercent: number;
+}
+
+export interface DiskIoSnapshot {
+  readBytesPerSec: number;
+  writeBytesPerSec: number;
+}
+
+export interface NetworkInterface {
+  name: string;
+  rxBytes: number;
+  txBytes: number;
+}
+
+export interface NetworkSnapshot {
+  rxBytesPerSec: number;
+  txBytesPerSec: number;
+  interfaces: NetworkInterface[];
+  internetReachable?: boolean;
+  internetLatencyMs?: number;
+  internetProbeTarget?: string;
+  internetProbeCheckedAt?: number;
 }
 
 export interface GpuCardReport {
@@ -56,7 +105,7 @@ export interface GpuCardReport {
 }
 
 export interface TaskInfo {
-  id: string;
+  taskId: string;
   status: 'queued' | 'running';
   command: string;
   cwd: string;
@@ -83,11 +132,22 @@ export interface ScheduleEvaluation {
 
 export interface ProcessInfo {
   pid: number;
+  ppid: number | null;
   user: string;
   cpuPercent: number;
   memPercent: number;
   rss: number;
   command: string;
+  gpuMemoryMb: number;
+}
+
+export interface SystemSnapshot {
+  hostname: string;
+  uptime: string;
+  loadAvg1: number;
+  loadAvg5: number;
+  loadAvg15: number;
+  kernelVersion: string;
 }
 
 // ========================
@@ -100,13 +160,14 @@ export interface SnapshotRecord {
   timestamp: number;
   tier: 'recent' | 'archive';
   seq: number | null;
-  cpu: string;  // JSON
-  memory: string;
-  disks: string;
-  network: string;
-  processes: string;
-  internet: string;
-  localUsers: string;
+  cpu: CpuSnapshot;
+  memory: MemorySnapshot;
+  disks: DiskInfo[];
+  diskIo: DiskIoSnapshot;
+  network: NetworkSnapshot;
+  processes: ProcessInfo[];
+  localUsers: string[];
+  gpuCards: GpuCardReport[];
 }
 
 export interface GpuSnapshotRecord {
@@ -269,4 +330,38 @@ export interface PersonBindingCandidate {
   serverName: string;
   systemUser: string;
   activeBinding: PersonBindingRecord | null;
+  activePerson: ResolvedPersonSummary | null;
+}
+
+export type PersonWizardMode = 'seed-user' | 'manual';
+
+export interface CreatePersonWizardBindingInput {
+  serverId: string;
+  systemUser: string;
+  source?: 'manual' | 'suggested' | 'synced';
+}
+
+export interface CreatePersonWizardInput {
+  mode: PersonWizardMode;
+  person: {
+    displayName: string;
+    email?: string | null;
+    qq?: string | null;
+    note?: string | null;
+  };
+  bindings: CreatePersonWizardBindingInput[];
+  confirmTransfer?: boolean;
+}
+
+export interface PersonBindingConflict {
+  serverId: string;
+  systemUser: string;
+  activeBinding: PersonBindingRecord;
+  activePerson: ResolvedPersonSummary | null;
+}
+
+export interface CreatePersonWizardResult {
+  person: PersonRecord;
+  bindings: PersonBindingRecord[];
+  transferredBindings: PersonBindingConflict[];
 }

@@ -11,11 +11,11 @@ export { upsertAlert, getAlerts, suppressAlert, unsuppressAlert, batchSuppressAl
 export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "./db/security-events.js";
 export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";
 export { createPerson, getPersonById, listPersons, updatePerson } from "./db/persons.js";
-export { createBinding, updateBinding, getBindingsByPersonId, getActiveBinding, listBindingCandidates } from "./db/person-bindings.js";
+export { createBinding, updateBinding, getBindingsByPersonId, getActiveBinding, deactivateBinding, listBindingCandidates } from "./db/person-bindings.js";
 export { getSettings, saveSetting, saveSettings } from "./db/settings.js";
 
 // Agent
-export { AGENT_EVENT, SERVER_COMMAND, isAgentRegisterPayload, isUnifiedReport } from "./agent/protocol.js";
+export { AGENT_EVENT, SERVER_COMMAND, isAgentRegisterPayload, isUnifiedReport, parseUnifiedReport } from "./agent/protocol.js";
 export type { AgentRegisterPayload } from "./agent/protocol.js";
 export { AgentCommandError, isAgentCommandError } from "./agent/errors.js";
 export type { AgentCommandErrorCode } from "./agent/errors.js";
@@ -44,5 +44,5 @@ export type { SecurityFinding } from "./security/analyzer.js";
 export { processSecurityCheck } from "./security/pipeline.js";
 
 // Person
-export { getPersonTimeline, getPersonTasks } from "./person/service.js";
+export { createPersonFromWizard, getPersonTimeline, getPersonTasks, PersonWizardConflictError } from "./person/service.js";
 export { resolveRawUserPerson } from "./person/resolve.js";
