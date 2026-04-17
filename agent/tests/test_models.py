@@ -13,7 +13,6 @@ from pmeow.models import (
     CpuSnapshot,
     DiskInfo,
     DiskSnapshot,
-    DockerContainer,
     GpuAllocationSummary,
     GpuSnapshot,
     MemorySnapshot,
@@ -113,9 +112,7 @@ def _make_snapshot(gpu_allocation=None):
         processes=[
             ProcessInfo(pid=1234, ppid=1, user="alice", cpu_percent=30.0, mem_percent=10.0, rss=512000, command="python train.py")
         ],
-        docker=[
-            DockerContainer(id="abc123", name="web", image="nginx", status="Up 2h", state="running", ports="80/tcp", created_at="2026-01-01")
-        ],
+        docker=[],
         system=SystemSnapshot(
             hostname="gpu-node-1",
             uptime="5 days",
@@ -242,12 +239,11 @@ class TestMetricsSnapshot:
     def test_to_dict_process_keys(self):
         d = _make_snapshot().to_dict()
         proc = d["processes"][0]
-        assert set(proc.keys()) == {"pid", "ppid", "user", "cpuPercent", "memPercent", "rss", "command"}
+        assert set(proc.keys()) == {"pid", "ppid", "user", "cpuPercent", "memPercent", "rss", "command", "gpuMemoryMB"}
 
-    def test_to_dict_docker_keys(self):
+    def test_to_dict_docker_empty(self):
         d = _make_snapshot().to_dict()
-        dc = d["docker"][0]
-        assert set(dc.keys()) == {"id", "name", "image", "status", "state", "ports", "createdAt"}
+        assert d["docker"] == []
 
     def test_to_dict_system_keys(self):
         d = _make_snapshot().to_dict()

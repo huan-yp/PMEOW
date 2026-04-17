@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import enum
 import re
-from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -45,8 +44,6 @@ def _serialize(obj: object) -> object:
         return {_to_camel(k): _serialize(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_serialize(v) for v in obj]
-    if isinstance(obj, deque):
-        return [_serialize(v) for v in obj]
     if hasattr(obj, "__dataclass_fields__"):
         return {
             _to_camel(k): _serialize(v)
@@ -62,26 +59,24 @@ def _serialize(obj: object) -> object:
 
 
 class TaskStatus(enum.Enum):
-    """Agent internal task states."""
     queued = "queued"
-    reserved = "reserved"
+    launching = "launching"
     running = "running"
-
-
-class PublicTaskStatus(enum.Enum):
-    """Protocol-visible task states (reported to Web)."""
-    queued = "queued"
-    running = "running"
-
-
-class ArchivedTaskStatus(enum.Enum):
-    """Web archive-only terminal state."""
-    ended = "ended"
+    completed = "completed"
+    failed = "failed"
+    cancelled = "cancelled"
 
 
 class TaskLaunchMode(enum.Enum):
     daemon_shell = "daemon_shell"
     attached_python = "attached_python"
+
+
+class RuntimePhase(enum.Enum):
+    registered = "registered"
+    running = "running"
+    finalizing = "finalizing"
+    finalized = "finalized"
 
 
 @dataclass
@@ -96,61 +91,76 @@ class TaskSpec:
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
     launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
-
-
-@dataclass
-class ScheduleEvaluation:
-    """Single scheduling evaluation snapshot for a queued task."""
-    timestamp: float
-    result: str  # "scheduled" | "blocked_by_priority" | "insufficient_gpu" | "sustained_window_not_met"
-    gpu_snapshot: dict = field(default_factory=dict)
-    detail: str = ""
+    report_requested: bool = False
 
 
 @dataclass
 class TaskRecord:
     id: str
-    status: TaskStatus
     command: str
     cwd: str
     user: str
-    launch_mode: TaskLaunchMode
-
-    # Resource requirements
     require_vram_mb: int
     require_gpu_count: int
-    gpu_ids: Optional[list[int]] = None  # user-requested GPU affinity
-    priority: int = 10
-
-    # Timeline
-    created_at: float = 0.0
-    reserved_at: Optional[float] = None
-    started_at: Optional[float] = None
-
-    # Runtime
-    pid: Optional[int] = None
-    pid_create_time: Optional[float] = None
-    assigned_gpus: Optional[list[int]] = None  # GPUs assigned by scheduler
-    declared_vram_per_gpu: Optional[int] = None  # VRAM declared per GPU (MB)
-
-    # Schedule evaluation history
-    schedule_history: deque[ScheduleEvaluation] = field(
-        default_factory=lambda: deque(maxlen=5)
-    )
-
-    # attached_python specific
-    attach_deadline: Optional[float] = None
+    gpu_ids: Optional[list[int]]
+    priority: int
+    status: TaskStatus
+    created_at: float
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
+    launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
+    report_requested: bool = False
+    launch_deadline: Optional[float] = None
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    exit_code: Optional[int] = None
+    pid: Optional[int] = None
 
-    @property
-    def public_status(self) -> PublicTaskStatus:
-        """Map internal status to protocol-visible status."""
-        if self.status == TaskStatus.reserved:
-            return PublicTaskStatus.queued
-        return PublicTaskStatus(self.status.value)
 
 
+@dataclass
+class QueueState:
+    paused: bool
+    queued: int
+    running: int
+    completed: int
+    failed: int
+    cancelled: int
+
+
+@dataclass
+class TaskRuntimeRecord:
+    task_id: str
+    launch_mode: TaskLaunchMode
+    root_pid: int
+    runtime_phase: RuntimePhase
+    first_started_at: float
+    last_seen_at: float
+    root_created_at: Optional[float] = None
+    finalize_source: Optional[str] = None
+    finalize_reason_code: Optional[str] = None
+    last_observed_exit_code: Optional[int] = None
+    updated_at: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
+
+@dataclass
+class TaskProcessRecord:
+    task_id: str
+    pid: int
+    ppid: Optional[int]
+    depth: int
+    user: str
+    command: str
+    is_root: bool
+    first_seen_at: float
+    last_seen_at: float
+    create_time: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
 # ---------------------------------------------------------------------------
 # GPU attribution models
 # ---------------------------------------------------------------------------
@@ -213,30 +223,26 @@ class GpuAllocationSummary:
     by_user: list[UserGpuUsageSummary] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
-# GPU card report (per-card info with dual-ledger for Web)
-# ---------------------------------------------------------------------------
+@dataclass
+class LocalUserRecord:
+    username: str
+    uid: int
+    gid: int
+    gecos: str
+    home: str
+    shell: str
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
 
 
 @dataclass
-class GpuCardReport:
-    index: int
-    name: str
-    temperature: int
-    utilization_gpu: int       # compute utilization %
-    utilization_memory: int    # memory utilization %
-    memory_total_mb: int
-    memory_used_mb: int        # actual physical usage
+class LocalUsersInventory:
+    timestamp: float
+    users: list[LocalUserRecord] = field(default_factory=list)
 
-    # Dual-ledger fields
-    managed_reserved_mb: int   # PMEOW task declared reservation total
-    unmanaged_peak_mb: int     # non-PMEOW process window peak × 1.05
-    effective_free_mb: int     # schedulable - managed - unmanaged
-
-    # Attribution info
-    task_allocations: list[GpuTaskAllocation] = field(default_factory=list)
-    user_processes: list[GpuUserProcess] = field(default_factory=list)
-    unknown_processes: list[GpuUnknownProcess] = field(default_factory=list)
+    def to_dict(self) -> dict:
+        return _serialize(self)
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +258,9 @@ class CpuSnapshot:
     frequency_mhz: float
     per_core_usage: list[float] = field(default_factory=list)
 
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
 
 @dataclass
 class MemorySnapshot:
@@ -263,6 +272,9 @@ class MemorySnapshot:
     swap_used_mb: float
     swap_percent: float
 
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
 
 @dataclass
 class DiskInfo:
@@ -273,12 +285,18 @@ class DiskInfo:
     available_gb: float
     usage_percent: float
 
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
 
 @dataclass
 class DiskSnapshot:
     disks: list[DiskInfo] = field(default_factory=list)
     io_read_kbs: float = 0.0
     io_write_kbs: float = 0.0
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
 
 
 @dataclass
@@ -287,16 +305,24 @@ class NetworkInterface:
     rx_bytes: int
     tx_bytes: int
 
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
 
 @dataclass
 class NetworkSnapshot:
     rx_bytes_per_sec: float
     tx_bytes_per_sec: float
     interfaces: list[NetworkInterface] = field(default_factory=list)
+    # Internet reachability probe result (optional; None when probe is disabled
+    # or has not yet produced a sample). Mirrors NetworkMetrics on the TS side.
     internet_reachable: Optional[bool] = None
     internet_latency_ms: Optional[float] = None
     internet_probe_target: Optional[str] = None
     internet_probe_checked_at: Optional[float] = None
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
 
 
 @dataclass
@@ -309,6 +335,9 @@ class GpuSnapshot:
     temperature_c: float
     gpu_count: int
 
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
 
 @dataclass
 class ProcessInfo:
@@ -319,7 +348,23 @@ class ProcessInfo:
     mem_percent: float
     rss: int
     command: str
-    gpu_memory_mb: float = 0.0  # GPU memory usage for filtering
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
+
+
+@dataclass
+class DockerContainer:
+    id: str
+    name: str
+    image: str
+    status: str
+    state: str
+    ports: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return _serialize(self)
 
 
 @dataclass
@@ -331,100 +376,12 @@ class SystemSnapshot:
     load_avg15: float
     kernel_version: str
 
-
-@dataclass
-class LocalUserRecord:
-    username: str
-    uid: int
-    gid: int
-    gecos: str
-    home: str
-    shell: str
-
-
-# ---------------------------------------------------------------------------
-# Unified report models
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class TaskInfo:
-    """Serializable task info for protocol/report snapshots."""
-    task_id: str
-    status: str  # "queued" | "running"
-    command: str
-    cwd: str
-    user: str
-    launch_mode: str
-    require_vram_mb: int
-    require_gpu_count: int
-    gpu_ids: Optional[list[int]]
-    priority: int
-    created_at: float
-    started_at: Optional[float] = None
-    pid: Optional[int] = None
-    assigned_gpus: Optional[list[int]] = None
-    declared_vram_per_gpu: Optional[int] = None
-    schedule_history: list[dict] = field(default_factory=list)
-
-
-@dataclass
-class TaskQueueSnapshot:
-    """Serializable view of active tasks for protocol."""
-    queued: list[TaskInfo] = field(default_factory=list)
-    running: list[TaskInfo] = field(default_factory=list)
-
-
-@dataclass
-class ResourceSnapshot:
-    """Complete resource snapshot (replaces MetricsSnapshot)."""
-    gpu_cards: list[GpuCardReport] = field(default_factory=list)
-    cpu: Optional[CpuSnapshot] = None
-    memory: Optional[MemorySnapshot] = None
-    disks: list[DiskInfo] = field(default_factory=list)
-    network: Optional[NetworkSnapshot] = None
-    processes: list[ProcessInfo] = field(default_factory=list)
-    internet_reachable: Optional[bool] = None
-    internet_latency_ms: Optional[float] = None
-    local_users: list[str] = field(default_factory=list)
-    system: Optional[SystemSnapshot] = None
-    # Legacy aggregated GPU snapshot (for backward compat during transition)
-    gpu: Optional[GpuSnapshot] = None
-    gpu_allocation: Optional[GpuAllocationSummary] = None
-
-
-@dataclass
-class UnifiedReport:
-    """Top-level unified report pushed to Web every tick."""
-    agent_id: str
-    timestamp: float
-    seq: int
-
-    resource_snapshot: ResourceSnapshot
-    task_queue: TaskQueueSnapshot
-
     def to_dict(self) -> dict:
-        """Serialize to camelCase dict for Socket.IO transport."""
-        d = _serialize(self)
-        # Strip None-valued optional fields from network sub-dict
-        rs = d.get("resourceSnapshot", {})
-        net = rs.get("network")
-        if isinstance(net, dict):
-            if net.get("internetReachable") is None and net.get("internetProbeCheckedAt") is None:
-                for key in ("internetReachable", "internetLatencyMs",
-                            "internetProbeTarget", "internetProbeCheckedAt"):
-                    net.pop(key, None)
-        return d
-
-
-# ---------------------------------------------------------------------------
-# Legacy compat: MetricsSnapshot (used during transition by collector)
-# ---------------------------------------------------------------------------
+        return _serialize(self)
 
 
 @dataclass
 class MetricsSnapshot:
-    """Legacy metrics snapshot — kept for transitional compatibility."""
     server_id: str
     timestamp: float
     cpu: CpuSnapshot
@@ -433,15 +390,21 @@ class MetricsSnapshot:
     network: NetworkSnapshot
     gpu: GpuSnapshot
     processes: list[ProcessInfo] = field(default_factory=list)
-    docker: list = field(default_factory=list)
+    docker: list[DockerContainer] = field(default_factory=list)
     system: SystemSnapshot = field(default=None)  # type: ignore[assignment]
     gpu_allocation: Optional[GpuAllocationSummary] = None
 
     def to_dict(self) -> dict:
         """Serialize to camelCase dict matching the TypeScript MetricsSnapshot."""
         d = _serialize(self)
+        # gpu_allocation is agent-only; strip if None
         if self.gpu_allocation is None:
             d.pop("gpuAllocation", None)
+        # Strip internet probe fields from the network sub-dict when the agent
+        # has no probe result, so the TS payload matches the optional/undefined
+        # shape instead of carrying explicit nulls on every snapshot.
+        # _serialize is recursive and does not call nested to_dict(), so the
+        # stripping must happen at this level.
         net = d.get("network")
         if isinstance(net, dict) and self.network.internet_reachable is None and self.network.internet_probe_checked_at is None:
             for key in ("internetReachable", "internetLatencyMs", "internetProbeTarget", "internetProbeCheckedAt"):

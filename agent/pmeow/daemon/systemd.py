@@ -38,7 +38,7 @@ def render_environment_file(config: AgentConfig) -> str:
         f"PMEOW_SERVER_URL={config.server_url}",
         f"PMEOW_AGENT_ID={config.agent_id or ''}",
         f"PMEOW_COLLECTION_INTERVAL={config.collection_interval}",
-        f"PMEOW_HEARTBEAT_INTERVAL={config.heartbeat_interval}",
+        f"PMEOW_ATTACH_TIMEOUT={config.attach_timeout}",
         f"PMEOW_HISTORY_WINDOW={config.history_window_seconds}",
         f"PMEOW_VRAM_REDUNDANCY={config.vram_redundancy_coefficient}",
         f"PMEOW_STATE_DIR={config.state_dir}",

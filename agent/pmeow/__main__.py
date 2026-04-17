@@ -43,15 +43,20 @@ def _socket_path(args: argparse.Namespace) -> str:
 def _cmd_status(args: argparse.Namespace) -> None:
     from pmeow.daemon.socket_server import send_request
 
-    resp = send_request(_socket_path(args), "get_status")
+    resp = send_request(_socket_path(args), "list_tasks")
     if not resp.get("ok"):
         print(f"error: {resp.get('error')}", file=sys.stderr)
         raise SystemExit(1)
-    r = resp["result"]
+    tasks = resp["result"]
+    counts: dict[str, int] = {"queued": 0, "reserved": 0, "running": 0}
+    for t in tasks:
+        s = t.get("status", "")
+        if s in counts:
+            counts[s] += 1
     print(
-        f"paused={r['paused']}  queued={r['queued']}  "
-        f"running={r['running']}  completed={r['completed']}  "
-        f"failed={r['failed']}  cancelled={r['cancelled']}"
+        f"queued={counts['queued']}  "
+        f"reserved={counts['reserved']}  "
+        f"running={counts['running']}"
     )
 
 
@@ -131,26 +136,6 @@ def _cmd_tasks(args: argparse.Namespace) -> None:
         ))
 
 
-def _cmd_pause(args: argparse.Namespace) -> None:
-    from pmeow.daemon.socket_server import send_request
-
-    resp = send_request(_socket_path(args), "pause_queue")
-    if not resp.get("ok"):
-        print(f"error: {resp.get('error')}", file=sys.stderr)
-        raise SystemExit(1)
-    print("queue paused")
-
-
-def _cmd_resume(args: argparse.Namespace) -> None:
-    from pmeow.daemon.socket_server import send_request
-
-    resp = send_request(_socket_path(args), "resume_queue")
-    if not resp.get("ok"):
-        print(f"error: {resp.get('error')}", file=sys.stderr)
-        raise SystemExit(1)
-    print("queue resumed")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pmeow",
@@ -200,12 +185,9 @@ def build_parser() -> argparse.ArgumentParser:
     tasks_parser = sub.add_parser("tasks", help="List tasks")
     tasks_parser.add_argument(
         "--status", default=None,
-        choices=["queued", "launching", "running", "completed", "failed", "cancelled"],
+        choices=["queued", "reserved", "running"],
         help="Filter by status",
     )
-
-    sub.add_parser("pause", help="Pause the task queue")
-    sub.add_parser("resume", help="Resume the task queue")
 
     return parser
 
@@ -224,8 +206,6 @@ _HANDLERS = {
     "cancel": _cmd_cancel,
     "logs": _cmd_logs,
     "submit": _cmd_submit,
-    "pause": _cmd_pause,
-    "resume": _cmd_resume,
 }
 
 

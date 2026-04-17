@@ -17,7 +17,6 @@ class PythonInvocation:
     require_vram_mb: int
     require_gpu_count: int
     priority: int
-    report: bool
     script_path: str
     script_args: list[str]
 
@@ -43,7 +42,7 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
     known_subcommands = {
         "run", "daemon", "start", "stop", "restart", "is-running",
         "install-service", "uninstall-service", "status", "cancel",
-        "logs", "submit", "pause", "resume",
+        "logs", "submit",
     }
     if not argv or argv[0] in known_subcommands or argv[0] in {"-h", "--help"}:
         return None
@@ -52,7 +51,6 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
     require_vram_mb = 0
     require_gpu_count = 1
     priority = 10
-    report = False
 
     index = 0
     while index < len(argv):
@@ -63,7 +61,6 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
                 require_vram_mb=require_vram_mb,
                 require_gpu_count=require_gpu_count,
                 priority=priority,
-                report=report,
                 script_path=str(Path(token).resolve()),
                 script_args=argv[index + 1:],
             )
@@ -83,8 +80,6 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
         elif token == "--socket":
             index += 1
             socket_path = argv[index]
-        elif token == "--report":
-            report = True
         else:
             raise SystemExit(f"error: unsupported PMEOW flag before script path: {token}")
         index += 1
@@ -118,14 +113,12 @@ def run_python_invocation(
         "priority": invocation.priority,
         "argv": argv,
         "launch_mode": "attached_python",
-        "report_requested": invocation.report,
     })
     if not submit.get("ok"):
         raise SystemExit(submit.get("error", "submit failed"))
 
     task_id = submit["result"]["id"]
     print(f"task_id={task_id}")
-    last_event_id = 0
 
     try:
         while True:
@@ -134,18 +127,9 @@ def run_python_invocation(
                 raise SystemExit("error: task disappeared")
             task = current["result"]
 
-            if invocation.report:
-                events = send_request(socket_path, "get_task_events", {"task_id": task_id, "after_id": last_event_id})
-                for event in events.get("result", []):
-                    details = event.get("details")
-                    message = details.get("message") if isinstance(details, dict) else None
-                    if message:
-                        print(message)
-                    last_event_id = event["id"]
-
-            if task["status"] == "launching":
+            if task["status"] == "reserved":
                 env = os.environ.copy()
-                env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in (task["gpu_ids"] or []))
+                env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in (task["assigned_gpus"] or task["gpu_ids"] or []))
 
                 def _on_started(pid: int) -> None:
                     ack = send_request(socket_path, "confirm_attached_launch", {"task_id": task_id, "pid": pid})
@@ -172,8 +156,10 @@ def run_python_invocation(
                 print(f"task finished exit_code={exit_code}")
                 return exit_code
 
-            if task["status"] in {"completed", "failed", "cancelled"}:
-                return int(task.get("exit_code") or 0)
+            if task["status"] not in {"queued", "reserved", "running"}:
+                # Task no longer active (removed from queue)
+                print("task is no longer active")
+                return 0
 
             time.sleep(1)
     except KeyboardInterrupt:

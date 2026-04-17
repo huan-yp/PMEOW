@@ -22,6 +22,7 @@ from pmeow.models import (
     GpuTaskAllocation,
     GpuUnknownProcess,
     GpuUserProcess,
+    TaskLaunchMode,
     TaskRecord,
     TaskStatus,
 )
@@ -34,14 +35,15 @@ from pmeow.models import (
 def _make_task(task_id: str, pid: int, vram: int = 8000, gpu_ids=None) -> TaskRecord:
     return TaskRecord(
         id=task_id,
+        status=TaskStatus.running,
         command="train.py",
         cwd="/tmp",
         user="alice",
+        launch_mode=TaskLaunchMode.daemon_shell,
         require_vram_mb=vram,
         require_gpu_count=1,
         gpu_ids=gpu_ids or [0],
         priority=10,
-        status=TaskStatus.running,
         created_at=0.0,
         pid=pid,
     )

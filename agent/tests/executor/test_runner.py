@@ -9,7 +9,7 @@ import pytest
 
 from pmeow.executor.logs import get_task_log_path, read_task_log
 from pmeow.executor.runner import TaskRunner
-from pmeow.models import TaskRecord, TaskStatus
+from pmeow.models import TaskLaunchMode, TaskRecord, TaskStatus
 
 
 def _make_task(
@@ -19,14 +19,15 @@ def _make_task(
 ) -> TaskRecord:
     return TaskRecord(
         id=task_id,
+        status=TaskStatus.queued,
         command=command,
         cwd=cwd,
         user="testuser",
+        launch_mode=TaskLaunchMode.daemon_shell,
         require_vram_mb=0,
         require_gpu_count=0,
         gpu_ids=None,
         priority=10,
-        status=TaskStatus.queued,
         created_at=time.time(),
     )
 

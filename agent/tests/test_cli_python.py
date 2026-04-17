@@ -20,7 +20,6 @@ def test_detect_python_invocation_splits_flags_and_script_args(tmp_path):
     invocation = detect_python_invocation([
         "-vram=10g",
         "-gpus=2",
-        "--report",
         str(script),
         "--epochs",
         "3",
@@ -29,7 +28,6 @@ def test_detect_python_invocation_splits_flags_and_script_args(tmp_path):
     assert invocation is not None
     assert invocation.require_vram_mb == 10240
     assert invocation.require_gpu_count == 2
-    assert invocation.report is True
     assert invocation.script_path == str(script.resolve())
     assert invocation.script_args == ["--epochs", "3"]
 
@@ -43,7 +41,7 @@ def test_detect_python_invocation_returns_none_for_empty():
 
 
 def test_detect_python_invocation_returns_none_for_no_py_file():
-    assert detect_python_invocation(["-vram=10g", "--report"]) is None
+    assert detect_python_invocation(["-vram=10g"]) is None
 
 
 def test_detect_python_invocation_space_separated_vram(tmp_path):
@@ -92,7 +90,6 @@ def test_run_python_invocation_uses_username_fallback(monkeypatch, tmp_path):
             require_vram_mb=0,
             require_gpu_count=1,
             priority=10,
-            report=False,
             script_path=str(script),
             script_args=[],
         ),
@@ -130,7 +127,6 @@ def test_run_python_invocation_submits_with_current_cwd_and_interpreter(monkeypa
             require_vram_mb=0,
             require_gpu_count=1,
             priority=10,
-            report=False,
             script_path=str(script),
             script_args=["--epochs", "3"],
         ),
@@ -161,9 +157,10 @@ def test_run_python_invocation_attached_launch_uses_task_cwd_and_current_environ
             return {
                 "ok": True,
                 "result": {
-                    "status": "launching",
+                    "status": "reserved",
                     "argv": [sys.executable, str(script)],
                     "cwd": task_cwd,
+                    "assigned_gpus": [1, 3],
                     "gpu_ids": [1, 3],
                     "log_path": str(tmp_path / "task.log"),
                 },
@@ -191,7 +188,6 @@ def test_run_python_invocation_attached_launch_uses_task_cwd_and_current_environ
             require_vram_mb=0,
             require_gpu_count=0,
             priority=10,
-            report=False,
             script_path=str(script),
             script_args=[],
         ),
@@ -224,9 +220,10 @@ def test_run_python_invocation_keyboard_interrupt_returns_130_and_finishes(monke
             return {
                 "ok": True,
                 "result": {
-                    "status": "launching",
+                    "status": "reserved",
                     "argv": [sys.executable, str(script)],
                     "cwd": str(tmp_path),
+                    "assigned_gpus": [0],
                     "gpu_ids": [0],
                     "log_path": str(tmp_path / "task.log"),
                 },
@@ -252,7 +249,6 @@ def test_run_python_invocation_keyboard_interrupt_returns_130_and_finishes(monke
             require_vram_mb=0,
             require_gpu_count=0,
             priority=10,
-            report=False,
             script_path=str(script),
             script_args=[],
         ),

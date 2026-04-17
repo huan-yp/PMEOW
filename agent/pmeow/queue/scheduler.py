@@ -7,12 +7,10 @@ Tasks with require_vram_mb == 0 are exclusive and require fully idle GPUs.
 
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 
-from pmeow.models import PerGpuAllocationSummary
+from pmeow.models import PerGpuAllocationSummary, TaskRecord
 from pmeow.queue.history import GpuHistoryTracker
-from pmeow.store.tasks import list_queued_tasks
 
 # ---------------------------------------------------------------------------
 # Scheduling constants — single definition block for future promotion
@@ -256,11 +254,11 @@ class QueueScheduler:
 
     def try_schedule(
         self,
-        conn: sqlite3.Connection,
+        queued_tasks: list[TaskRecord],
         current_per_gpu: list[PerGpuAllocationSummary],
     ) -> ScheduleBatchResult:
         """Return schedulable tasks together with per-task scheduling diagnostics."""
-        tasks = list_queued_tasks(conn)
+        tasks = queued_tasks
         history_samples = self.history.get_history()
 
         result = ScheduleBatchResult()

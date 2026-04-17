@@ -1,22 +1,16 @@
-"""Assemble a full ResourceSnapshot from individual collectors.
-
-This replaces the old MetricsSnapshot-based snapshot with a ResourceSnapshot
-that includes dual-ledger GPU information and process filtering.
-"""
+"""Assemble a full MetricsSnapshot from individual collectors."""
 
 from __future__ import annotations
 
+import sqlite3
 import time
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 
-from pmeow.models import (
-    GpuSnapshot,
-    MetricsSnapshot,
-    ResourceSnapshot,
-)
+from pmeow.models import MetricsSnapshot, TaskStatus
 
 from pmeow.collector.cpu import collect_cpu
 from pmeow.collector.disk import collect_disk
+from pmeow.collector.docker import collect_docker
 from pmeow.collector.gpu import (
     collect_gpu,
     collect_gpu_processes,
@@ -26,55 +20,40 @@ from pmeow.collector.gpu import (
 )
 from pmeow.collector.gpu_attribution import attribute_gpu_processes
 from pmeow.collector.internet import InternetProbe
-from pmeow.collector.local_users import collect_local_users
 from pmeow.collector.memory import collect_memory
 from pmeow.collector.network import collect_network
 from pmeow.collector.processes import collect_processes
 from pmeow.collector.system import collect_system
-
-if TYPE_CHECKING:
-    from pmeow.state.task_queue import TaskQueue
+from pmeow.store.task_runtime import list_task_process_owners_by_pid
+from pmeow.store.tasks import list_tasks
 
 
 def collect_snapshot(
     server_id: str,
-    task_queue: Optional[TaskQueue] = None,
+    task_store: Optional[sqlite3.Connection] = None,
     redundancy_coefficient: float = 0.1,
     internet_probe: Optional[InternetProbe] = None,
 ) -> MetricsSnapshot:
     """Collect a full metrics snapshot for the given server.
 
-    Accepts a TaskQueue (in-memory) instead of a sqlite3 Connection.
-    Returns a MetricsSnapshot for backward compatibility during transition.
+    ``internet_probe`` is optional and intentionally injected by the caller
+    (the daemon) rather than constructed here, so tests can supply a fake
+    probe without monkey-patching module state and so the daemon owns the
+    probe's cached state across collection cycles.
     """
     gpu = collect_gpu()
 
     gpu_allocation = None
-    gpu_pids_map: dict[int, float] = {}
-
-    if task_queue is not None and gpu.available:
+    if task_store is not None and gpu.available:
         gpu_procs = collect_gpu_processes()
-        # Build GPU PID → memory mapping for process filtering
-        for gp in gpu_procs:
-            gpu_pids_map[gp.pid] = gpu_pids_map.get(gp.pid, 0.0) + gp.used_memory_mb
-
-        running_tasks = task_queue.list_running()
-        # Also include reserved tasks since they have GPU allocated
-        reserved_tasks = task_queue.list_reserved()
-        all_gpu_tasks = running_tasks + reserved_tasks
-
+        running_tasks = list_tasks(task_store, TaskStatus.running)
         per_gpu_mem = collect_per_gpu_total_memory()
         per_gpu_used = collect_per_gpu_used_memory()
         per_gpu_util = collect_per_gpu_utilization()
-
-        # Build PID → task_id mapping from running tasks
-        task_process_pids: dict[int, str] = {}
-        for task in running_tasks:
-            if task.pid is not None:
-                task_process_pids[task.pid] = task.id
-
+        gpu_pids = [p.pid for p in gpu_procs]
+        task_process_pids = list_task_process_owners_by_pid(task_store, gpu_pids)
         gpu_allocation = attribute_gpu_processes(
-            gpu_procs, all_gpu_tasks, per_gpu_mem, redundancy_coefficient,
+            gpu_procs, running_tasks, per_gpu_mem, redundancy_coefficient,
             per_gpu_used_memory=per_gpu_used,
             task_process_pids=task_process_pids,
             per_gpu_utilization=per_gpu_util,
@@ -89,12 +68,6 @@ def collect_snapshot(
             network.internet_probe_target = probe_result.probe_target
             network.internet_probe_checked_at = probe_result.checked_at
 
-    # Collect processes with GPU memory info and filtering
-    processes = collect_processes(
-        gpu_pids=gpu_pids_map if gpu_pids_map else None,
-        apply_filter=True,
-    )
-
     return MetricsSnapshot(
         server_id=server_id,
         timestamp=time.time(),
@@ -103,8 +76,8 @@ def collect_snapshot(
         disk=collect_disk(),
         network=network,
         gpu=gpu,
-        processes=processes,
-        docker=[],
+        processes=collect_processes(),
+        docker=collect_docker(),
         system=collect_system(),
         gpu_allocation=gpu_allocation,
     )

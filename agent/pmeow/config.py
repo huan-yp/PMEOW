@@ -17,9 +17,9 @@ def _default_state_dir() -> str:
 class AgentConfig:
     server_url: str = ""
     agent_id: str | None = None
-    collection_interval: int = 5
-    heartbeat_interval: int = 30
+    collection_interval: int = 1
     history_window_seconds: int = 120
+    attach_timeout: int = 30
     vram_redundancy_coefficient: float = 0.1
     state_dir: str = field(default_factory=_default_state_dir)
     socket_path: str = field(default_factory=lambda: os.path.expanduser("~/.pmeow/pmeow.sock"))
@@ -72,10 +72,10 @@ def load_config() -> AgentConfig:
         return float(val) if val is not None else default
 
     collection_interval = validate_interval(
-        _int("PMEOW_COLLECTION_INTERVAL", 5), "collection_interval"
+        _int("PMEOW_COLLECTION_INTERVAL", 1), "collection_interval"
     )
-    heartbeat_interval = validate_interval(
-        _int("PMEOW_HEARTBEAT_INTERVAL", 30), "heartbeat_interval"
+    attach_timeout = validate_interval(
+        _int("PMEOW_ATTACH_TIMEOUT", 30), "attach_timeout"
     )
     history_window_seconds = validate_interval(
         _int("PMEOW_HISTORY_WINDOW", 120), "history_window_seconds"
@@ -94,8 +94,8 @@ def load_config() -> AgentConfig:
         server_url=env.get("PMEOW_SERVER_URL", ""),
         agent_id=agent_id,
         collection_interval=collection_interval,
-        heartbeat_interval=heartbeat_interval,
         history_window_seconds=history_window_seconds,
+        attach_timeout=attach_timeout,
         vram_redundancy_coefficient=vram_redundancy_coefficient,
         state_dir=state_dir,
         socket_path=socket_path,

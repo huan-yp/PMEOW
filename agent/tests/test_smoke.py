@@ -28,8 +28,8 @@ def test_config_defaults():
 
     cfg = load_config()
     assert cfg.vram_redundancy_coefficient == 0.1
-    assert cfg.collection_interval == 5
-    assert cfg.heartbeat_interval == 30
+    assert cfg.collection_interval == 1
+    assert cfg.attach_timeout == 30
     assert cfg.server_url == ""
 
 

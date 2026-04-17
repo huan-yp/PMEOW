@@ -149,12 +149,15 @@ def _to_task_dict(rec: Any, *, log_dir: str | None = None) -> dict:
         "require_gpu_count": rec.require_gpu_count,
         "argv": rec.argv,
         "launch_mode": rec.launch_mode.value,
+        "report_requested": rec.report_requested,
+        "launch_deadline": rec.launch_deadline,
         "gpu_ids": rec.gpu_ids,
-        "assigned_gpus": rec.assigned_gpus,
         "priority": rec.priority,
         "status": rec.status.value,
         "created_at": rec.created_at,
         "started_at": rec.started_at,
+        "finished_at": rec.finished_at,
+        "exit_code": rec.exit_code,
         "pid": rec.pid,
     }
     if log_dir is not None:
@@ -176,6 +179,7 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         argv=params.get("argv"),
         env_overrides=params.get("env_overrides"),
         launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.daemon_shell,
+        report_requested=bool(params.get("report_requested", False)),
     )
     rec = svc.submit_task(spec)
     return _to_task_dict(rec, log_dir=svc.config.log_dir)
@@ -196,9 +200,35 @@ def _get_logs(svc: DaemonService, params: dict) -> str:
     return svc.get_logs(params["task_id"], tail=params.get("tail", 100))
 
 
+def _pause_queue(svc: DaemonService, params: dict) -> None:
+    svc.pause_queue()
+    return None
+
+
+def _resume_queue(svc: DaemonService, params: dict) -> None:
+    svc.resume_queue()
+    return None
+
+
+def _get_status(svc: DaemonService, params: dict) -> dict:
+    qs = svc.get_queue_state()
+    return {
+        "paused": qs.paused,
+        "queued": qs.queued,
+        "running": qs.running,
+        "completed": qs.completed,
+        "failed": qs.failed,
+        "cancelled": qs.cancelled,
+    }
+
+
 def _get_task(svc: DaemonService, params: dict) -> dict | None:
     task = svc.get_task(params["task_id"])
     return _to_task_dict(task, log_dir=svc.config.log_dir) if task is not None else None
+
+
+def _get_task_events(svc: DaemonService, params: dict) -> list[dict]:
+    return svc.get_task_events(params["task_id"], after_id=params.get("after_id", 0))
 
 
 def _confirm_attached_launch(svc: DaemonService, params: dict) -> bool:
@@ -209,19 +239,43 @@ def _finish_attached_task(svc: DaemonService, params: dict) -> bool:
     return svc.finish_attached_task(params["task_id"], exit_code=params["exit_code"])
 
 
-def _set_priority(svc: DaemonService, params: dict) -> bool:
-    return svc.set_task_priority(params["task_id"], int(params["priority"]))
+def _get_task_audit_detail(svc: DaemonService, params: dict) -> dict | None:
+    result = svc.get_task_audit_detail(params["task_id"])
+    if result is None:
+        return None
+    task, events, runtime = result
+    audit: dict = {
+        "task": _to_task_dict(task, log_dir=svc.config.log_dir),
+        "events": events,
+    }
+    if runtime is not None:
+        audit["runtime"] = {
+            "launch_mode": runtime.launch_mode.value,
+            "root_pid": runtime.root_pid,
+            "root_created_at": runtime.root_created_at,
+            "runtime_phase": runtime.runtime_phase.value,
+            "first_started_at": runtime.first_started_at,
+            "last_seen_at": runtime.last_seen_at,
+            "finalize_source": runtime.finalize_source,
+            "finalize_reason_code": runtime.finalize_reason_code,
+            "last_observed_exit_code": runtime.last_observed_exit_code,
+        }
+    return audit
 
 
 _METHODS: dict[str, Any] = {
     "submit_task": _submit_task,
     "list_tasks": _list_tasks,
     "get_task": _get_task,
+    "get_task_events": _get_task_events,
+    "get_task_audit_detail": _get_task_audit_detail,
     "cancel_task": _cancel_task,
     "get_logs": _get_logs,
     "confirm_attached_launch": _confirm_attached_launch,
     "finish_attached_task": _finish_attached_task,
-    "set_priority": _set_priority,
+    "pause_queue": _pause_queue,
+    "resume_queue": _resume_queue,
+    "get_status": _get_status,
 }
 
 
@@ -230,7 +284,11 @@ _METHODS: dict[str, Any] = {
 # ------------------------------------------------------------------
 
 def send_request(socket_path: str, method: str, params: dict | None = None) -> dict:
-    """Connect to the daemon socket, send a JSON request, return the response."""
+    """Connect to the daemon socket, send a JSON request, return the response.
+
+    Detects whether the daemon is listening on AF_UNIX or TCP loopback by
+    checking if *socket_path* contains a port number (TCP fallback mode).
+    """
     if _HAS_AF_UNIX:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         target: str | tuple[str, int] = socket_path
