@@ -188,6 +188,27 @@ class TestAttributionPmeowTask:
         assert alloc.declared_vram_mb == 8000
         assert alloc.actual_vram_mb == 6500.0
 
+    def test_matches_descendant_pid_of_shell_wrapped_task(self):
+        task = _make_task("task-1", pid=1234, vram=8000)
+        proc = GpuProcessInfo(pid=5678, gpu_index=1, used_memory_mb=4350.0, process_name="")
+        child = MagicMock(pid=5678)
+        parent = MagicMock()
+        parent.children.return_value = [child]
+
+        with patch("pmeow.collector.gpu_attribution.psutil.Process", return_value=parent):
+            summary = attribute_gpu_processes(
+                gpu_processes=[proc],
+                running_tasks=[task],
+                per_gpu_memory={1: 24000.0},
+            )
+
+        assert len(summary.per_gpu) == 1
+        gpu = summary.per_gpu[0]
+        assert len(gpu.pmeow_tasks) == 1
+        assert gpu.pmeow_tasks[0].task_id == "task-1"
+        assert gpu.pmeow_tasks[0].actual_vram_mb == 4350.0
+        assert gpu.user_processes == []
+
 
 # ---------------------------------------------------------------------------
 # Test: attribution – user process (/proc readable)

@@ -133,6 +133,14 @@ class AgentTransportClient:
         self._send_event("agent:taskUpdate", {
             "taskId": update.task_id,
             "status": update.status.value,
+            "command": update.command,
+            "cwd": update.cwd,
+            "user": update.user,
+            "requireVramMB": update.require_vram_mb,
+            "requireGpuCount": update.require_gpu_count,
+            "gpuIds": update.gpu_ids,
+            "priority": update.priority,
+            "createdAt": update.created_at,
             "startedAt": update.started_at,
             "finishedAt": update.finished_at,
             "exitCode": update.exit_code,
@@ -183,12 +191,13 @@ class AgentTransportClient:
         with self._lock:
             self._connected = True
 
-        # Flush buffered messages
-        self._flush_buffer()
-
         # Re-register if we have previously registered
         if self._register_hostname and self._register_version:
             self.send_register(self._register_hostname, self._register_version)
+
+        # Flush buffered messages after registration so the server has already
+        # rebound this socket before replaying offline task updates or metrics.
+        self._flush_buffer()
 
     def _on_disconnect(self) -> None:
         log.info("disconnected from %s", self._server_url)

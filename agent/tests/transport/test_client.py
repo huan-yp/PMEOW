@@ -116,6 +116,14 @@ class TestSendTaskUpdate:
         update = TaskUpdate(
             task_id="t-123",
             status=TaskStatus.running,
+            command="python train.py",
+            cwd="/srv/jobs/train",
+            user="alice",
+            require_vram_mb=8192,
+            require_gpu_count=1,
+            gpu_ids=[0],
+            priority=7,
+            created_at=900.0,
             started_at=1000.0,
             pid=42,
         )
@@ -125,6 +133,14 @@ class TestSendTaskUpdate:
         assert event == "agent:taskUpdate"
         assert d["taskId"] == "t-123"
         assert d["status"] == "running"
+        assert d["command"] == "python train.py"
+        assert d["cwd"] == "/srv/jobs/train"
+        assert d["user"] == "alice"
+        assert d["requireVramMB"] == 8192
+        assert d["requireGpuCount"] == 1
+        assert d["gpuIds"] == [0]
+        assert d["priority"] == 7
+        assert d["createdAt"] == 900.0
         assert d["startedAt"] == 1000.0
         assert d["pid"] == 42
         assert d["finishedAt"] is None
@@ -203,6 +219,20 @@ class TestReconnect:
         event, data = _emit_payload(mock_sio)
         assert event == "agent:register"
         assert data["hostname"] == "mybox"
+
+    def test_reconnect_reregisters_before_flushing_buffered_events(self):
+        mock_sio = MagicMock()
+        client = _make_client(mock_sio)
+
+        client.send_register("mybox", "0.1.0")
+        client._buffer.clear()
+        client._send_event("agent:taskUpdate", {"taskId": "task-1"})
+
+        client._on_connect()
+
+        assert mock_sio.emit.call_count == 2
+        assert _emit_payload(mock_sio, 0)[0] == "agent:register"
+        assert _emit_payload(mock_sio, 1) == ("agent:taskUpdate", {"taskId": "task-1"})
 
 
 class TestOfflineBuffering:

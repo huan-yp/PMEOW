@@ -254,6 +254,7 @@ class DaemonService:
                         self.transport.send_task_update(TaskUpdate(
                             task_id=task.id,
                             status=TaskStatus.running,
+                            gpu_ids=dec.gpu_ids,
                             started_at=started_at,
                             pid=proc.pid,
                         ))
@@ -275,6 +276,19 @@ class DaemonService:
                 rec.id, "submitted",
                 f"task submitted: {rec.command!r} (mode={rec.launch_mode.value})",
             )
+            if self.transport:
+                self.transport.send_task_update(TaskUpdate(
+                    task_id=rec.id,
+                    status=TaskStatus.queued,
+                    command=rec.command,
+                    cwd=rec.cwd,
+                    user=rec.user,
+                    require_vram_mb=rec.require_vram_mb,
+                    require_gpu_count=rec.require_gpu_count,
+                    gpu_ids=rec.gpu_ids,
+                    priority=rec.priority,
+                    created_at=rec.created_at,
+                ))
             return rec
 
     def cancel_task(self, task_id: str) -> bool:

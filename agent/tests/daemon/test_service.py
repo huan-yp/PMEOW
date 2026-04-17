@@ -64,6 +64,31 @@ def test_submit_enqueues_task(svc: DaemonService):
     assert rec.command == "echo hello"
 
 
+def test_submit_sends_queued_update_with_metadata(svc: DaemonService):
+    svc.transport = MagicMock()
+
+    rec = svc.submit_task(_make_spec(
+        command="python train.py",
+        cwd="/workspace/train",
+        user="alice",
+        require_vram_mb=8192,
+        require_gpu_count=2,
+        priority=7,
+    ))
+
+    svc.transport.send_task_update.assert_called_once()
+    update = svc.transport.send_task_update.call_args.args[0]
+    assert update.task_id == rec.id
+    assert update.status == TaskStatus.queued
+    assert update.command == "python train.py"
+    assert update.cwd == "/workspace/train"
+    assert update.user == "alice"
+    assert update.require_vram_mb == 8192
+    assert update.require_gpu_count == 2
+    assert update.priority == 7
+    assert update.created_at == rec.created_at
+
+
 def test_list_returns_tasks(svc: DaemonService):
     svc.submit_task(_make_spec(command="a"))
     svc.submit_task(_make_spec(command="b"))

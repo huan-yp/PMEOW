@@ -73,6 +73,18 @@ def _get_process_username(pid: int) -> Optional[str]:
         return None
 
 
+def _collect_task_process_ids(task_pid: int) -> set[int]:
+    """Return the tracked task PID plus any live descendants."""
+    pids = {task_pid}
+    try:
+        process = psutil.Process(task_pid)
+        for child in process.children(recursive=True):
+            pids.add(child.pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return pids
+    return pids
+
+
 def _uid_to_username(uid: int) -> str:
     if pwd is not None:
         try:
@@ -120,7 +132,8 @@ def attribute_gpu_processes(
     pid_to_task: dict[int, TaskRecord] = {}
     for task in running_tasks:
         if task.pid is not None:
-            pid_to_task[task.pid] = task
+            for pid in _collect_task_process_ids(task.pid):
+                pid_to_task[pid] = task
 
     # Buckets per GPU
     task_allocs: dict[int, list[GpuTaskAllocation]] = defaultdict(list)
