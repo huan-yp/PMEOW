@@ -1,218 +1,141 @@
-import fs from 'fs';
-import { createServer, type Server as HttpServer } from 'http';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import cors from 'cors';
-import express, { type Express } from 'express';
-import { getDatabase, Scheduler, type AgentSessionRegistry, getSettings, AgentCommandService } from '@monitor/core';
-import { loginHandler, authMiddleware, socketAuthMiddleware } from './auth.js';
-import { setupAgentReadRoutes } from './agent-routes.js';
-import { setupRestRoutes, setupSocketHandlers } from './handlers.js';
-import { Server as SocketServer } from 'socket.io';
-import { setupOperatorRoutes } from './operator-routes.js';
-import { setupPersonRoutes } from './person-routes.js';
-import { personMobileAuthMiddleware } from './mobile-auth.js';
-import { setupMobileAdminRoutes } from './mobile-admin-routes.js';
-import { setupMobilePersonRoutes } from './mobile-person-routes.js';
-import { handleTaskUpdateForNotifications, handleServerStatusForNotifications } from './mobile-notification-runtime.js';
+import fs from "fs";
+import { createServer, type Server as HttpServer } from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+import cors from "cors";
+import express, { type Express } from "express";
+import { Server as SocketServer } from "socket.io";
 import {
-  createAgentNamespace,
-  type CreateAgentNamespaceOptions,
-} from './agent-namespace.js';
+  getDatabase,
+  AgentSessionRegistry,
+  IngestPipeline,
+  SnapshotScheduler,
+  getSettings,
+  checkOffline,
+  type AlertRecord,
+  type SecurityEventRecord,
+  type TaskEvent,
+  type UnifiedReport,
+} from "@monitor/core";
+import { loginHandler, authMiddleware, socketAuthMiddleware } from "./auth.js";
+import { createAgentNamespace } from "./agent-namespace.js";
+import { createUIBroadcast } from "./ui-broadcast.js";
+import { serverRoutes } from "./routes/server-routes.js";
+import { metricsRoutes } from "./routes/metrics-routes.js";
+import { taskRoutes } from "./routes/task-routes.js";
+import { personRoutes } from "./routes/person-routes.js";
+import { alertRoutes } from "./routes/alert-routes.js";
+import { securityRoutes } from "./routes/security-routes.js";
+import { settingsRoutes } from "./routes/settings-routes.js";
 
 const DEFAULT_PORT = Number(process.env.PORT) || 17200;
-const DEFAULT_HOST = '0.0.0.0';
+const DEFAULT_HOST = "0.0.0.0";
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 export interface WebRuntime {
   app: Express;
   httpServer: HttpServer;
   io: SocketServer;
-  scheduler: Scheduler;
-  agentRegistry: AgentSessionRegistry;
+  registry: AgentSessionRegistry;
+  pipeline: IngestPipeline;
   start: (port?: number) => Promise<number>;
   stop: () => Promise<void>;
 }
 
-export interface CreateWebRuntimeOptions {
-  port?: number;
-  publicDir?: string;
-  scheduler?: Scheduler;
-  agentNamespace?: CreateAgentNamespaceOptions;
-}
-
-function getListenHost(): string {
-  const host = process.env.HOST?.trim();
-  return host && host.length > 0 ? host : DEFAULT_HOST;
-}
-
-function mountStaticAssets(app: Express, publicDir: string): void {
-  if (!fs.existsSync(publicDir)) {
-    return;
-  }
-
-  app.use(express.static(publicDir));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(publicDir, 'index.html'));
-  });
-}
-
-export function createWebRuntime(options: CreateWebRuntimeOptions = {}): WebRuntime {
+export function createWebRuntime(): WebRuntime {
   getDatabase();
-
-  const scheduler = options.scheduler ?? new Scheduler();
+  
+  const registry = new AgentSessionRegistry();
   const app = express();
   const httpServer = createServer(app);
-  const io = new SocketServer(httpServer, {
-    cors: { origin: '*' },
+  const io = new SocketServer(httpServer, { cors: { origin: "*" } });
+  
+  const uiNamespace = io.of("/");
+  const broadcast = createUIBroadcast(uiNamespace);
+  
+  const snapshotScheduler = new SnapshotScheduler();
+  
+  const pipeline = new IngestPipeline({
+    onMetricsUpdate: (serverId, report) => broadcast.metricsUpdate(serverId, report),
+    onTaskEvent: (event) => broadcast.taskEvent(event),
+    onAlert: (alert) => broadcast.alert(alert),
+    onSecurityEvent: (event) => broadcast.securityEvent(event),
   });
-  const uiNamespace = io.of('/');
-  const agentNamespace = createAgentNamespace(io, scheduler, {
-    getMetricsTimeoutMs: () => getSettings().agentMetricsTimeoutMs,
-    ...options.agentNamespace,
-    onTaskChanged: (serverId, changedTasks) => {
-      options.agentNamespace?.onTaskChanged?.(serverId, changedTasks);
-      uiNamespace.emit('taskChanged', { serverId });
-      for (const task of changedTasks) {
-        handleTaskUpdateForNotifications(task);
-      }
-    },
-    onServerChanged: () => {
-      options.agentNamespace?.onServerChanged?.();
-      uiNamespace.emit('serversChanged');
-    },
-  });
-
-  const agentCommandService = new AgentCommandService({
-    agentRegistry: agentNamespace.registry,
-    getDataSource: (serverId) => scheduler.getDataSource(serverId),
-    refreshDataSource: (serverId) => scheduler.refreshServerDataSource(serverId),
-  });
-
-  let currentPort = options.port ?? DEFAULT_PORT;
-  let currentHost = getListenHost();
+  
+  let offlineTimer: ReturnType<typeof setInterval> | null = null;
   let started = false;
   let stoppingPromise: Promise<void> | null = null;
-
+  
   app.use(cors());
   app.use(express.json());
-
-  app.post('/api/login', loginHandler);
-
-  // Person mobile routes use their own token auth (before admin JWT)
-  setupMobilePersonRoutes(app, personMobileAuthMiddleware, { scheduler, agentRegistry: agentNamespace.registry, commandService: agentCommandService });
-
-  app.use('/api', authMiddleware);
-
-  setupRestRoutes(app, scheduler);
-  setupAgentReadRoutes(app, {
-    commandService: agentCommandService,
-  });
-  setupOperatorRoutes(app, {
-    scheduler,
-    uiNamespace,
-  });
-
-  setupPersonRoutes(app);
-
-  // Admin mobile routes are behind admin JWT
-  setupMobileAdminRoutes(app, { scheduler });
-
+  app.post("/api/login", loginHandler);
+  app.use("/api", authMiddleware);
+  
+  app.use("/api", serverRoutes(registry));
+  app.use("/api", metricsRoutes(pipeline));
+  app.use("/api", taskRoutes(registry));
+  app.use("/api", personRoutes());
+  app.use("/api", alertRoutes());
+  app.use("/api", securityRoutes());
+  app.use("/api", settingsRoutes());
+  
+  createAgentNamespace(io, registry, pipeline);
+  
   uiNamespace.use(socketAuthMiddleware);
-  setupSocketHandlers(uiNamespace, scheduler);
-
-  // Hook mobile notifications into scheduler events
-  scheduler.on('serverStatus', handleServerStatusForNotifications);
-
-  uiNamespace.on('connection', (socket) => {
+  uiNamespace.on("connection", (socket) => {
     console.log(`[ws] client connected: ${socket.id}`);
-    socket.on('disconnect', () => {
+    socket.on("disconnect", () => {
       console.log(`[ws] client disconnected: ${socket.id}`);
     });
   });
-
-  mountStaticAssets(app, options.publicDir ?? path.join(moduleDir, 'public'));
-
-  const start = async (port = currentPort): Promise<number> => {
-    if (started) {
-      return currentPort;
-    }
-
-    currentPort = port;
-
+  
+  const publicDir = path.join(moduleDir, "public");
+  if (fs.existsSync(publicDir)) {
+    app.use(express.static(publicDir));
+    app.get("*", (_req, res) => {
+      res.sendFile(path.join(publicDir, "index.html"));
+    });
+  }
+  
+  const start = async (port = DEFAULT_PORT): Promise<number> => {
+    if (started) return port;
+    
+    const host = process.env.HOST?.trim() || DEFAULT_HOST;
     await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error) => {
-        httpServer.off('listening', onListening);
-        reject(error);
-      };
-
-      const onListening = () => {
-        httpServer.off('error', onError);
-        const address = httpServer.address();
-        if (address && typeof address === 'object') {
-          currentPort = address.port;
-        }
+      httpServer.once("error", reject);
+      httpServer.once("listening", () => {
+        httpServer.off("error", reject);
         started = true;
         resolve();
-      };
-
-      httpServer.once('error', onError);
-      httpServer.once('listening', onListening);
-      httpServer.listen(currentPort, currentHost);
-    });
-
-    scheduler.start();
-    return currentPort;
-  };
-
-  const stop = async (): Promise<void> => {
-    if (stoppingPromise) {
-      return stoppingPromise;
-    }
-
-    stoppingPromise = (async () => {
-      agentNamespace.stop();
-      scheduler.stop();
-
-      if (!httpServer.listening) {
-        io.close();
-        started = false;
-        return;
-      }
-
-      await new Promise<void>((resolve) => {
-        io.close(() => resolve());
       });
-
-      if (httpServer.listening) {
-        await new Promise<void>((resolve, reject) => {
-          httpServer.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        });
+      httpServer.listen(port, host);
+    });
+    
+    offlineTimer = setInterval(() => {
+      const settings = getSettings();
+      const alerts = checkOffline(registry, settings);
+      for (const alert of alerts) {
+        broadcast.alert(alert);
       }
-
+    }, 10_000);
+    
+    const addr = httpServer.address();
+    return addr && typeof addr === "object" ? addr.port : port;
+  };
+  
+  const stop = async (): Promise<void> => {
+    if (stoppingPromise) return stoppingPromise;
+    stoppingPromise = (async () => {
+      if (offlineTimer) { clearInterval(offlineTimer); offlineTimer = null; }
+      if (!httpServer.listening) { io.close(); started = false; return; }
+      await new Promise<void>(r => io.close(() => r()));
+      if (httpServer.listening) {
+        await new Promise<void>((resolve, reject) => httpServer.close(e => e ? reject(e) : resolve()));
+      }
       started = false;
     })();
-
-    try {
-      await stoppingPromise;
-    } finally {
-      stoppingPromise = null;
-    }
+    return stoppingPromise;
   };
-
-  return {
-    app,
-    httpServer,
-    io,
-    scheduler,
-    agentRegistry: agentNamespace.registry,
-    start,
-    stop,
-  };
+  
+  return { app, httpServer, io, registry, pipeline, start, stop };
 }
