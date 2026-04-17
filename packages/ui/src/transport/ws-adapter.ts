@@ -142,8 +142,10 @@ export class WebSocketAdapter implements TransportAdapter {
     return all[serverId] ?? null;
   }
 
-  async getMetricsHistory(serverId: string, from: number, to: number): Promise<MetricsSnapshot[]> {
-    return this.fetch(`/api/metrics/${serverId}/history?from=${from}&to=${to}`);
+  async getMetricsHistory(serverId: string, from: number, to: number, fields?: string[]): Promise<MetricsSnapshot[]> {
+    const params = new URLSearchParams({ from: String(from), to: String(to) });
+    if (fields?.length) params.set('fields', fields.join(','));
+    return this.fetch(`/api/metrics/${serverId}/history?${params}`);
   }
 
   async getMetricsHistoryBucketed(serverId: string, from: number, to: number, bucketMs?: number): Promise<MetricsHistoryResponse> {

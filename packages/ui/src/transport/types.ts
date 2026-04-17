@@ -49,7 +49,7 @@ export interface TransportAdapter {
 
   // Metrics
   getLatestMetrics(serverId: string): Promise<MetricsSnapshot | null>;
-  getMetricsHistory(serverId: string, from: number, to: number): Promise<MetricsSnapshot[]>;
+  getMetricsHistory(serverId: string, from: number, to: number, fields?: string[]): Promise<MetricsSnapshot[]>;
   getMetricsHistoryBucketed(serverId: string, from: number, to: number, bucketMs?: number): Promise<MetricsHistoryResponse>;
   getServerStatuses(): Promise<ServerStatus[]>;
 

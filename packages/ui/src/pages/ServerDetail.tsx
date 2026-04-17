@@ -157,7 +157,7 @@ export function ServerDetail() {
     const to = Date.now();
     const from = to - 30 * 60 * 1000; // Last 30 minutes
     try {
-      const data = await transport.getMetricsHistory(serverId, from, to);
+      const data = await transport.getMetricsHistory(serverId, from, to, ['cpu', 'memory', 'network', 'disk']);
       if (
         requestScopeRef.current.serverId !== serverId ||
         requestScopeRef.current.version !== scopeVersion ||

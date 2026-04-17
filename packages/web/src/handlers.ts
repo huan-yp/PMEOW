@@ -131,6 +131,26 @@ export function setupRestRoutes(app: any, scheduler: Scheduler): void {
     const from = req.query.from ? Number(req.query.from) : (now - (Number(req.query.hours) || 24) * 3600 * 1000);
     const to = req.query.to ? Number(req.query.to) : now;
     const metrics = getMetricsHistory(req.params.serverId, from, to);
+
+    // Optional field filtering: ?fields=cpu,memory,network,disk
+    // When specified, only the listed top-level fields (plus serverId & timestamp) are returned.
+    const fieldsParam = typeof req.query.fields === 'string' ? req.query.fields : '';
+    if (fieldsParam) {
+      const allowed = new Set(fieldsParam.split(',').map((f: string) => f.trim()).filter(Boolean));
+      const allFields = ['cpu', 'memory', 'disk', 'network', 'gpu', 'processes', 'docker', 'system', 'gpuAllocation'];
+      const pick = allFields.filter(f => allowed.has(f));
+      if (pick.length > 0) {
+        const slim = metrics.map((m: any) => {
+          const out: any = { serverId: m.serverId, timestamp: m.timestamp };
+          for (const f of pick) {
+            if (m[f] !== undefined) out[f] = m[f];
+          }
+          return out;
+        });
+        return res.json(slim);
+      }
+    }
+
     res.json(metrics);
   });
 
