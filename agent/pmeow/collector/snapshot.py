@@ -7,6 +7,7 @@ from typing import Optional, TYPE_CHECKING
 
 from pmeow.models import (
     CollectedSnapshot,
+    DiskIoSnapshot,
     GpuCardReport,
     GpuCardTaskReport,
     GpuCardUnknownProcessReport,
@@ -98,6 +99,10 @@ def collect_snapshot(
         cpu=collect_cpu(),
         memory=collect_memory(),
         disks=list(disk.disks),
+        disk_io=DiskIoSnapshot(
+            read_bytes_per_sec=disk.io_read_kbs * 1024,
+            write_bytes_per_sec=disk.io_write_kbs * 1024,
+        ),
         network=network,
         processes=processes,
         local_users=local_users,

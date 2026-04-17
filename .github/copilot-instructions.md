@@ -1,1 +1,2 @@
 - 运行任何 Python 程序前，先激活位于 `.venv/Scripts/activate` 的虚拟环境。
+- 除非明确要求，否则禁止编写任何 UI 测试

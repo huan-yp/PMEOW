@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import socket
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -17,6 +18,7 @@ def _default_state_dir() -> str:
 class AgentConfig:
     server_url: str = ""
     agent_id: str | None = None
+    log_level: int = logging.INFO
     collection_interval: int = 1
     history_window_seconds: int = 120
     attach_timeout: int = 30
@@ -57,6 +59,27 @@ def validate_optional_path(value: str | None) -> str | None:
     return validate_path(value)
 
 
+def validate_log_level(value: str | int) -> int:
+    """Normalize a logging level from env or CLI-compatible input."""
+    if isinstance(value, int):
+        return value
+
+    raw = str(value).strip()
+    if not raw:
+        return logging.INFO
+
+    if raw.isdigit():
+        return int(raw)
+
+    level = getattr(logging, raw.upper(), None)
+    if isinstance(level, int):
+        return level
+
+    raise ValueError(
+        f"PMEOW_LOG_LEVEL must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL, got {value!r}"
+    )
+
+
 def load_config() -> AgentConfig:
     """Load configuration from environment variables with fallback defaults."""
     env = os.environ
@@ -74,6 +97,7 @@ def load_config() -> AgentConfig:
     collection_interval = validate_interval(
         _int("PMEOW_COLLECTION_INTERVAL", 1), "collection_interval"
     )
+    log_level = validate_log_level(env.get("PMEOW_LOG_LEVEL", "INFO"))
     attach_timeout = validate_interval(
         _int("PMEOW_ATTACH_TIMEOUT", 30), "attach_timeout"
     )
@@ -93,6 +117,7 @@ def load_config() -> AgentConfig:
     return AgentConfig(
         server_url=env.get("PMEOW_SERVER_URL", ""),
         agent_id=agent_id,
+        log_level=log_level,
         collection_interval=collection_interval,
         history_window_seconds=history_window_seconds,
         attach_timeout=attach_timeout,

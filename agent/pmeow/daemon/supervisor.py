@@ -102,7 +102,11 @@ def start_background_daemon(config: AgentConfig, agent_log_file: str) -> int:
         os.dup2(null_out.fileno(), 2)
 
     write_pid_file(config.pid_file, os.getpid())
-    configure_runtime_logging(log_to_console=False, log_file=agent_log_file)
+    configure_runtime_logging(
+        log_to_console=False,
+        log_file=agent_log_file,
+        level=config.log_level,
+    )
 
     try:
         DaemonService(config).start()

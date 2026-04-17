@@ -31,7 +31,7 @@ def _runtime_config(args, *, require_agent_log_file: bool = False):
 def run_foreground(args) -> None:
     config = load_config()
     warn_missing_server_url(config)
-    configure_runtime_logging(log_to_console=True)
+    configure_runtime_logging(log_to_console=True, level=config.log_level)
     DaemonService(config).start()
 
 

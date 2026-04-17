@@ -46,11 +46,11 @@ def append_task_log_line(task_id: str, log_dir: str, message: str) -> None:
 def read_task_log(task_id: str, log_dir: str, tail: int = 100) -> str:
     """Read the last *tail* lines from the log file for *task_id*.
 
-    Returns an empty string if the file does not exist.
+    Raises FileNotFoundError if the file does not exist.
     """
     path = get_task_log_path(task_id, log_dir)
     if not os.path.isfile(path):
-        return ""
+        raise FileNotFoundError(path)
     with open(path, "r", errors="replace") as fh:
         lines = deque(fh, maxlen=tail)
     return "".join(lines)

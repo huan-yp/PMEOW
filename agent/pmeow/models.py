@@ -302,6 +302,12 @@ class DiskSnapshot:
 
 
 @dataclass
+class DiskIoSnapshot:
+    read_bytes_per_sec: float
+    write_bytes_per_sec: float
+
+
+@dataclass
 class NetworkInterface:
     name: str
     rx_bytes: int
@@ -402,6 +408,7 @@ class ResourceSnapshot:
     cpu: Optional[CpuSnapshot] = None
     memory: Optional[MemorySnapshot] = None
     disks: list[DiskInfo] = field(default_factory=list)
+    disk_io: Optional[DiskIoSnapshot] = None
     network: Optional[NetworkSnapshot] = None
     processes: list[ProcessInfo] = field(default_factory=list)
     local_users: list[str] = field(default_factory=list)

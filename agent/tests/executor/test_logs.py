@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from pmeow.executor.logs import (
     append_task_log_line,
     ensure_task_log,
@@ -73,3 +75,21 @@ class TestAppendTaskLogLine:
         content = read_task_log("task-b", log_dir)
         assert "line1" in content
         assert "line2" in content
+
+
+class TestReadTaskLog:
+    def test_missing_file_raises_file_not_found(self, tmp_path) -> None:
+        with pytest.raises(FileNotFoundError):
+            read_task_log("missing-task", str(tmp_path))
+
+    def test_empty_file_returns_empty_string(self, tmp_path) -> None:
+        log_dir = str(tmp_path)
+        ensure_task_log("empty-task", log_dir)
+        assert read_task_log("empty-task", log_dir) == ""
+
+    def test_tail_returns_last_lines_only(self, tmp_path) -> None:
+        log_dir = str(tmp_path)
+        append_task_log_line("tail-task", log_dir, "line1")
+        append_task_log_line("tail-task", log_dir, "line2")
+        append_task_log_line("tail-task", log_dir, "line3")
+        assert read_task_log("tail-task", log_dir, tail=2) == "line2\nline3\n"

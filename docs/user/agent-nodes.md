@@ -55,6 +55,7 @@ Agent 通过环境变量配置，未设置时会使用默认值。
 | `PMEOW_STATE_DIR` | `~/.pmeow/` | 本地状态目录 |
 | `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | CLI 与 daemon 通信的 Unix socket |
 | `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | 任务日志目录 |
+| `PMEOW_LOG_LEVEL` | `INFO` | Agent runtime log 级别，可设为 `DEBUG` |
 | `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | 后台模式 pid 文件 |
 | `PMEOW_AGENT_LOG_FILE` | 空 | 后台模式 runtime log 文件 |
 
@@ -79,6 +80,7 @@ pmeow-agent run
 ```bash
 export PMEOW_SERVER_URL=http://your-server:17200
 export PMEOW_AGENT_LOG_FILE=~/.pmeow/agent.log
+export PMEOW_LOG_LEVEL=DEBUG
 pmeow-agent start
 pmeow-agent is-running
 pmeow-agent stop

@@ -147,6 +147,21 @@ process.env.MONITOR_DB_PATH=':memory:'
 - `~/.pmeow/logs/`
 - daemon 前台输出或 systemd journal
 
+如果需要打开更细的 runtime 调试日志，给 Agent 进程设置：
+
+```text
+PMEOW_LOG_LEVEL=DEBUG
+```
+
+这个开关影响的是 Agent 自身 runtime log，不影响任务 stdout/stderr 的 `PMEOW_LOG_DIR`。
+
+常见组合：
+
+```bash
+PMEOW_LOG_LEVEL=DEBUG pmeow-agent run
+PMEOW_LOG_LEVEL=DEBUG PMEOW_AGENT_LOG_FILE=$PWD/.tmp/agent.log pmeow-agent start
+```
+
 如果问题和任务运行有关，优先看本地日志，而不是服务端 UI。
 
 如果 `PMEOW_SERVER_URL` 没有设置，Agent 会明确提示自己处于 local-only 模式。这时本地 daemon、队列和 CLI 仍然工作，但 Web 服务端不会看到这个节点。
