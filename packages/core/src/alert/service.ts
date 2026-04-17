@@ -7,21 +7,20 @@ export function checkAlerts(serverId: string, report: UnifiedReport, settings: A
   const { resourceSnapshot } = report;
 
   // CPU
-  if (resourceSnapshot.cpu.usage >= settings.alertCpuThreshold) {
-    alerts.push(alertDb.upsertAlert(serverId, 'cpu', resourceSnapshot.cpu.usage, settings.alertCpuThreshold));
+  if (resourceSnapshot.cpu.usagePercent >= settings.alertCpuThreshold) {
+    alerts.push(alertDb.upsertAlert(serverId, 'cpu', resourceSnapshot.cpu.usagePercent, settings.alertCpuThreshold));
   }
 
   // Memory
-  if (resourceSnapshot.memory.percent >= settings.alertMemoryThreshold) {
-    alerts.push(alertDb.upsertAlert(serverId, 'memory', resourceSnapshot.memory.percent, settings.alertMemoryThreshold));
+  if (resourceSnapshot.memory.usagePercent >= settings.alertMemoryThreshold) {
+    alerts.push(alertDb.upsertAlert(serverId, 'memory', resourceSnapshot.memory.usagePercent, settings.alertMemoryThreshold));
   }
 
   // Disk
   for (const disk of resourceSnapshot.disks) {
-    if (settings.alertDiskMountPoints.includes(disk.mountpoint)) {
-      const usage = (disk.usedMb / disk.totalMb * 100);
-      if (usage >= settings.alertDiskThreshold) {
-        alerts.push(alertDb.upsertAlert(serverId, 'disk', usage, settings.alertDiskThreshold));
+    if (settings.alertDiskMountPoints.includes(disk.mountPoint)) {
+      if (disk.usagePercent >= settings.alertDiskThreshold) {
+        alerts.push(alertDb.upsertAlert(serverId, 'disk', disk.usagePercent, settings.alertDiskThreshold));
       }
     }
   }

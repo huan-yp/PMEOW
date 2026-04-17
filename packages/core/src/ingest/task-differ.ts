@@ -13,12 +13,12 @@ export function diffTasks(
   currentTasks: TaskInfo[],
 ): TaskDiffResult[] {
   const results: TaskDiffResult[] = [];
-  const prevMap = new Map(previousTasks.map(t => [t.id, t]));
-  const currMap = new Map(currentTasks.map(t => [t.id, t]));
+  const prevMap = new Map(previousTasks.map(t => [t.taskId, t]));
+  const currMap = new Map(currentTasks.map(t => [t.taskId, t]));
 
   // New and updated tasks
   for (const curr of currentTasks) {
-    const prev = prevMap.get(curr.id);
+    const prev = prevMap.get(curr.taskId);
     if (!prev) {
       // New task
       results.push({ eventType: 'task_submitted', task: curr, serverId });
@@ -39,7 +39,7 @@ export function diffTasks(
 
   // Ended tasks (disappeared from report)
   for (const prev of previousTasks) {
-    if (!currMap.has(prev.id)) {
+    if (!currMap.has(prev.taskId)) {
       results.push({ eventType: 'task_ended', task: prev, serverId });
     }
   }

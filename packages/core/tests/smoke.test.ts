@@ -31,7 +31,7 @@ import {
 function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
   return {
     agentId: 'agent-1',
-    timestamp: Date.now(),
+    timestamp: Math.floor(Date.now() / 1000),
     seq: 1,
     resourceSnapshot: {
       gpuCards: [{
@@ -49,12 +49,12 @@ function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
         userProcesses: [{ pid: 1234, user: 'alice', vramMb: 3000 }],
         unknownProcesses: [],
       }],
-      cpu: { usage: 45, cores: 16, frequency: 3500 },
-      memory: { totalMb: 65536, usedMb: 32000, percent: 49 },
-      disks: [{ mountpoint: '/', totalMb: 500000, usedMb: 200000 }],
-      network: [{ interface: 'eth0', rxBytesPerSec: 1000, txBytesPerSec: 500 }],
-      processes: [{ pid: 1, user: 'root', cpuPercent: 1, memPercent: 0.5, rss: 1024, command: 'init' }],
-      internet: { reachable: true, targets: ['8.8.8.8'] },
+      cpu: { usagePercent: 45, coreCount: 16, modelName: 'AMD EPYC', frequencyMhz: 3500, perCoreUsage: [] },
+      memory: { totalMb: 65536, usedMb: 32000, availableMb: 33536, usagePercent: 49, swapTotalMb: 0, swapUsedMb: 0, swapPercent: 0 },
+      disks: [{ filesystem: 'ext4', mountPoint: '/', totalGB: 500, usedGB: 200, availableGB: 300, usagePercent: 40 }],
+      diskIo: { readBytesPerSec: 2048, writeBytesPerSec: 1024 },
+      network: { rxBytesPerSec: 1000, txBytesPerSec: 500, interfaces: [{ name: 'eth0', rxBytes: 100000, txBytes: 50000 }], internetReachable: true, internetLatencyMs: 12, internetProbeTarget: '8.8.8.8:53', internetProbeCheckedAt: Math.floor(Date.now() / 1000) },
+      processes: [{ pid: 1, ppid: null, user: 'root', cpuPercent: 1, memPercent: 0.5, rss: 1024, command: 'init', gpuMemoryMb: 0 }],
       localUsers: ['alice', 'bob'],
     },
     taskQueue: {
@@ -67,7 +67,7 @@ function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
 
 function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
   return {
-    id: 'task-1',
+    taskId: 'task-1',
     status: 'queued',
     command: 'python train.py',
     cwd: '/home/alice',
@@ -145,19 +145,20 @@ describe('snapshots CRUD', () => {
     expect(latest!.tier).toBe('recent');
     expect(latest!.gpuSnapshots).toHaveLength(1);
     expect(latest!.gpuSnapshots[0].name).toBe('RTX 4090');
+    expect(latest!.diskIo.readBytesPerSec).toBe(2048);
 
-    const history = getSnapshotHistory(server.id, 0, Date.now() + 1000);
+    const history = getSnapshotHistory(server.id, 0, Math.floor(Date.now() / 1000) + 1000);
     expect(history).toHaveLength(1);
   });
 
   it('prunes old recent snapshots', () => {
     const server = createServer({ name: 'node', agentId: 'a1' });
     for (let i = 0; i < 5; i++) {
-      const report = makeReport({ timestamp: Date.now() + i * 1000, seq: i });
+      const report = makeReport({ timestamp: Math.floor(Date.now() / 1000) + i, seq: i });
       saveSnapshot(server.id, report, 'recent', i);
     }
     deleteOldRecentSnapshots(server.id, 2);
-    const remaining = getSnapshotHistory(server.id, 0, Date.now() + 100000, 'recent');
+    const remaining = getSnapshotHistory(server.id, 0, Math.floor(Date.now() / 1000) + 100000, 'recent');
     expect(remaining).toHaveLength(2);
   });
 });
@@ -188,7 +189,7 @@ describe('tasks CRUD', () => {
   it('paginates tasks', () => {
     const server = createServer({ name: 'node', agentId: 'a1' });
     for (let i = 0; i < 5; i++) {
-      upsertTask(server.id, makeTask({ id: `task-${i}`, createdAt: Date.now() + i }));
+      upsertTask(server.id, makeTask({ taskId: `task-${i}`, createdAt: Date.now() + i }));
     }
     const page = getTasks({ limit: 2, offset: 0 });
     expect(page).toHaveLength(2);

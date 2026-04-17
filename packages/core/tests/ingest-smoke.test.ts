@@ -13,7 +13,7 @@ import {
 function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
   return {
     agentId: 'agent-1',
-    timestamp: Date.now(),
+    timestamp: Math.floor(Date.now() / 1000),
     seq: 1,
     resourceSnapshot: {
       gpuCards: [{
@@ -31,12 +31,12 @@ function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
         userProcesses: [],
         unknownProcesses: [],
       }],
-      cpu: { usage: 45, cores: 16, frequency: 3500 },
-      memory: { totalMb: 65536, usedMb: 32000, percent: 49 },
-      disks: [{ mountpoint: '/', totalMb: 500000, usedMb: 200000 }],
-      network: [{ interface: 'eth0', rxBytesPerSec: 1000, txBytesPerSec: 500 }],
+      cpu: { usagePercent: 45, coreCount: 16, modelName: 'AMD EPYC', frequencyMhz: 3500, perCoreUsage: [] },
+      memory: { totalMb: 65536, usedMb: 32000, availableMb: 33536, usagePercent: 49, swapTotalMb: 0, swapUsedMb: 0, swapPercent: 0 },
+      disks: [{ filesystem: 'ext4', mountPoint: '/', totalGB: 500, usedGB: 200, availableGB: 300, usagePercent: 40 }],
+      diskIo: { readBytesPerSec: 2048, writeBytesPerSec: 1024 },
+      network: { rxBytesPerSec: 1000, txBytesPerSec: 500, interfaces: [{ name: 'eth0', rxBytes: 100000, txBytes: 50000 }], internetReachable: true, internetLatencyMs: 12, internetProbeTarget: '8.8.8.8:53', internetProbeCheckedAt: Math.floor(Date.now() / 1000) },
       processes: [],
-      internet: { reachable: true, targets: ['8.8.8.8'] },
       localUsers: ['alice'],
     },
     taskQueue: { queued: [], running: [] },
@@ -46,7 +46,7 @@ function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
 
 function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
   return {
-    id: 'task-1',
+    taskId: 'task-1',
     status: 'queued',
     command: 'python train.py',
     cwd: '/home/alice',
@@ -118,7 +118,7 @@ describe('IngestPipeline', () => {
     // First report with a queued task
     const report1 = makeReport({
       taskQueue: {
-        queued: [makeTask({ id: 'task-a' })],
+        queued: [makeTask({ taskId: 'task-a' })],
         running: [],
       },
     });
@@ -129,10 +129,10 @@ describe('IngestPipeline', () => {
     // Second report: task starts running
     const report2 = makeReport({
       seq: 2,
-      timestamp: Date.now() + 1000,
+      timestamp: Math.floor(Date.now() / 1000) + 1,
       taskQueue: {
         queued: [],
-        running: [makeTask({ id: 'task-a', status: 'running', pid: 1234, startedAt: Date.now() })],
+        running: [makeTask({ taskId: 'task-a', status: 'running', pid: 1234, startedAt: Date.now() })],
       },
     });
     pipeline.processReport(server.id, report2);
@@ -142,7 +142,7 @@ describe('IngestPipeline', () => {
     // Third report: task disappears (ended)
     const report3 = makeReport({
       seq: 3,
-      timestamp: Date.now() + 2000,
+      timestamp: Math.floor(Date.now() / 1000) + 2,
       taskQueue: { queued: [], running: [] },
     });
     pipeline.processReport(server.id, report3);
@@ -169,7 +169,7 @@ describe('IngestPipeline', () => {
     const report = makeReport({
       resourceSnapshot: {
         ...makeReport().resourceSnapshot,
-        cpu: { usage: 95, cores: 16, frequency: 3500 },
+        cpu: { usagePercent: 95, coreCount: 16, modelName: 'AMD EPYC', frequencyMhz: 3500, perCoreUsage: [] },
       },
     });
     pipeline.processReport(server.id, report);

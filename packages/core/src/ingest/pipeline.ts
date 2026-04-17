@@ -42,7 +42,7 @@ export class IngestPipeline {
     for (const diff of diffs) {
       // DB Ops
       if (diff.eventType === 'task_ended') {
-        taskDb.endTask(diff.task.id, now);
+        taskDb.endTask(diff.task.taskId, now);
       } else {
         taskDb.upsertTask(serverId, diff.task);
       }
