@@ -1,5 +1,6 @@
 import { getDatabase } from './database.js';
 import type { PersonBindingRecord, PersonBindingCandidate } from '../types.js';
+import { getPersonById } from './persons.js';
 
 export function createBinding(input: {
   personId: string;
@@ -11,18 +12,24 @@ export function createBinding(input: {
   effectiveTo?: number | null;
 }): PersonBindingRecord {
   const db = getDatabase();
-  const now = Date.now();
+  const existingActive = getActiveBinding(input.serverId, input.systemUser);
+  if (existingActive) {
+    if (existingActive.personId !== input.personId) {
+      throw new Error(`Active binding already exists for ${input.serverId}:${input.systemUser}`);
+    }
 
+    return updateBinding(existingActive.id, {
+      source: input.source,
+      enabled: input.enabled,
+      effectiveFrom: input.effectiveFrom,
+      effectiveTo: input.effectiveTo,
+    })!;
+  }
+
+  const now = Date.now();
   const res = db.prepare(
     `INSERT INTO person_bindings (person_id, server_id, system_user, source, enabled, effective_from, effective_to, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(server_id, system_user) DO UPDATE SET
-       person_id = excluded.person_id,
-       source = excluded.source,
-       enabled = excluded.enabled,
-       effective_from = excluded.effective_from,
-       effective_to = excluded.effective_to,
-       updated_at = excluded.updated_at`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     input.personId,
     input.serverId,
@@ -35,8 +42,7 @@ export function createBinding(input: {
     now,
   );
 
-  const id = Number(res.lastInsertRowid);
-  return getBindingById(id)!;
+  return getBindingById(Number(res.lastInsertRowid))!;
 }
 
 export function updateBinding(
@@ -50,10 +56,11 @@ export function updateBinding(
   const now = Date.now();
   db.prepare(
     `UPDATE person_bindings SET
-       person_id = ?, enabled = ?, effective_from = ?, effective_to = ?, updated_at = ?
+       person_id = ?, source = ?, enabled = ?, effective_from = ?, effective_to = ?, updated_at = ?
      WHERE id = ?`
   ).run(
     input.personId ?? existing.personId,
+    input.source ?? existing.source,
     input.enabled !== undefined ? (input.enabled ? 1 : 0) : (existing.enabled ? 1 : 0),
     input.effectiveFrom !== undefined ? input.effectiveFrom : existing.effectiveFrom,
     input.effectiveTo !== undefined ? input.effectiveTo : existing.effectiveTo,
@@ -66,16 +73,29 @@ export function updateBinding(
 
 export function getBindingsByPersonId(personId: string): PersonBindingRecord[] {
   const db = getDatabase();
-  const rows = db.prepare('SELECT * FROM person_bindings WHERE person_id = ?').all(personId) as Record<string, unknown>[];
+  const rows = db.prepare(
+    'SELECT * FROM person_bindings WHERE person_id = ? ORDER BY enabled DESC, updated_at DESC, created_at DESC'
+  ).all(personId) as Record<string, unknown>[];
   return rows.map(mapRow);
 }
 
 export function getActiveBinding(serverId: string, systemUser: string): PersonBindingRecord | undefined {
   const db = getDatabase();
   const row = db.prepare(
-    'SELECT * FROM person_bindings WHERE server_id = ? AND system_user = ? AND enabled = 1'
-  ).get(serverId, systemUser) as Record<string, unknown> | undefined;
+    `SELECT * FROM person_bindings
+     WHERE server_id = ?
+       AND system_user = ?
+       AND enabled = 1
+       AND (effective_from IS NULL OR effective_from <= ?)
+       AND (effective_to IS NULL OR effective_to > ?)
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT 1`
+  ).get(serverId, systemUser, Date.now(), Date.now()) as Record<string, unknown> | undefined;
   return row ? mapRow(row) : undefined;
+}
+
+export function deactivateBinding(id: number, effectiveTo = Date.now()): PersonBindingRecord | undefined {
+  return updateBinding(id, { enabled: false, effectiveTo });
 }
 
 export function listBindingCandidates(): PersonBindingCandidate[] {
@@ -95,11 +115,18 @@ export function listBindingCandidates(): PersonBindingCandidate[] {
     const serverId = r.server_id as string;
     const systemUser = r.system_user as string;
     const binding = getActiveBinding(serverId, systemUser);
+    const activePerson = binding ? getPersonById(binding.personId) ?? null : null;
     return {
       serverId,
       serverName: r.server_name as string,
       systemUser,
       activeBinding: binding ?? null,
+      activePerson: activePerson ? {
+        id: activePerson.id,
+        displayName: activePerson.displayName,
+        email: activePerson.email,
+        qq: activePerson.qq,
+      } : null,
     };
   });
 }

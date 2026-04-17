@@ -17,6 +17,9 @@ const SNAPSHOT_COLUMNS = [
   'local_users',
 ];
 
+const LEGACY_PERSON_BINDINGS_UNIQUE = 'UNIQUE (server_id, system_user)';
+const ACTIVE_PERSON_BINDINGS_INDEX = 'idx_person_bindings_active_unique';
+
 let db: Database.Database | null = null;
 
 export function getDatabase(dataDir?: string): Database.Database {
@@ -174,7 +177,6 @@ function initSchema(db: Database.Database): void {
     );
   `);
 
-  migrateLegacyPersonBindings(db);
 }
 
 export function closeDatabase(): void {
@@ -202,7 +204,11 @@ function needsDatabaseReset(dbPath: string): boolean {
 
     const columns = probe.prepare('PRAGMA table_info(snapshots)').all() as Array<{ name: string }>;
     const names = columns.map((column) => column.name);
-    return names.length !== SNAPSHOT_COLUMNS.length || names.some((name, index) => name !== SNAPSHOT_COLUMNS[index]);
+    if (names.length !== SNAPSHOT_COLUMNS.length || names.some((name, index) => name !== SNAPSHOT_COLUMNS[index])) {
+      return true;
+    }
+
+    return hasLegacyPersonBindingsSchema(probe);
   } catch {
     return true;
   } finally {
@@ -230,39 +236,22 @@ function moveInvalidDatabaseFiles(dbPath: string): void {
   }
 }
 
-function migrateLegacyPersonBindings(db: Database.Database): void {
+function hasLegacyPersonBindingsSchema(db: Database.Database): boolean {
   const table = db.prepare(
     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'person_bindings'"
   ).get() as { sql?: string } | undefined;
 
-  if (!table?.sql?.includes('UNIQUE (server_id, system_user)')) {
-    return;
+  if (!table?.sql) {
+    return false;
   }
 
-  db.transaction(() => {
-    db.exec(`
-      ALTER TABLE person_bindings RENAME TO person_bindings_legacy;
+  if (table.sql.includes(LEGACY_PERSON_BINDINGS_UNIQUE)) {
+    return true;
+  }
 
-      CREATE TABLE person_bindings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        person_id TEXT NOT NULL REFERENCES persons(id),
-        server_id TEXT NOT NULL,
-        system_user TEXT NOT NULL,
-        source TEXT NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 1,
-        effective_from INTEGER,
-        effective_to INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
+  const index = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ? LIMIT 1"
+  ).get(ACTIVE_PERSON_BINDINGS_INDEX);
 
-      INSERT INTO person_bindings (id, person_id, server_id, system_user, source, enabled, effective_from, effective_to, created_at, updated_at)
-      SELECT id, person_id, server_id, system_user, source, enabled, effective_from, effective_to, created_at, updated_at
-      FROM person_bindings_legacy;
-
-      DROP TABLE person_bindings_legacy;
-
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique ON person_bindings (server_id, system_user) WHERE enabled = 1;
-    `);
-  })();
+  return !index;
 }

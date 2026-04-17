@@ -281,6 +281,13 @@ export interface PersonBindingRecord {
   updatedAt: number;
 }
 
+export interface PersonTimelinePoint {
+  timestamp: number;
+  vramMb: number;
+  serverId: string;
+  gpuIndex: number;
+}
+
 // Settings
 export interface AppSettings {
   alertCpuThreshold: number;

@@ -14,6 +14,7 @@ const Tasks = lazy(() => import('./pages/Tasks.js'));
 const TaskDetail = lazy(() => import('./pages/TaskDetail.js'));
 const Alerts = lazy(() => import('./pages/Alerts.js'));
 const People = lazy(() => import('./pages/People.js'));
+const PersonCreateWizard = lazy(() => import('./pages/PersonCreateWizard.js'));
 const PersonDetail = lazy(() => import('./pages/PersonDetail.js'));
 const Security = lazy(() => import('./pages/Security.js'));
 const Settings = lazy(() => import('./pages/Settings.js'));
@@ -108,6 +109,7 @@ function AppContent() {
               <Route path="/tasks/:taskId" element={<TaskDetail />} />
               <Route path="/security" element={<Security />} />
               <Route path="/people" element={<People />} />
+              <Route path="/people/new" element={<PersonCreateWizard />} />
               <Route path="/people/:id" element={<PersonDetail />} />
               <Route path="/settings" element={<Settings />} />
               {/* Legacy redirects */}

@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   createPerson, getPersonById, listPersons, updatePerson,
   createBinding, updateBinding, getBindingsByPersonId, listBindingCandidates,
-  getPersonTimeline, getPersonTasks,
+  createPersonFromWizard, getPersonTimeline, getPersonTasks, PersonWizardConflictError,
 } from "@monitor/core";
 
 export function personRoutes(): Router {
@@ -16,6 +16,27 @@ export function personRoutes(): Router {
   router.post("/persons", (req, res) => {
     const person = createPerson(req.body);
     res.status(201).json(person);
+  });
+
+  router.post("/persons/wizard", (req, res) => {
+    try {
+      const result = createPersonFromWizard(req.body);
+      res.status(201).json(result);
+    } catch (error) {
+      if (error instanceof PersonWizardConflictError) {
+        res.status(409).json({
+          error: "binding_conflict",
+          message: "所选系统账号已绑定给其他人员，请确认迁移后重试。",
+          conflicts: error.conflicts,
+        });
+        return;
+      }
+
+      res.status(400).json({
+        error: "invalid_person_wizard_request",
+        message: error instanceof Error ? error.message : "Invalid person wizard request",
+      });
+    }
   });
   
   router.get("/persons/:id", (req, res) => {
@@ -36,7 +57,7 @@ export function personRoutes(): Router {
   
   router.get("/persons/:id/timeline", (req, res) => {
     const from = Number(req.query.from) || 0;
-    const to = Number(req.query.to) || Date.now();
+    const to = Number(req.query.to) || Math.floor(Date.now() / 1000);
     res.json(getPersonTimeline(req.params.id, from, to));
   });
   
@@ -47,8 +68,15 @@ export function personRoutes(): Router {
   });
   
   router.post("/person-bindings", (req, res) => {
-    const binding = createBinding(req.body);
-    res.status(201).json(binding);
+    try {
+      const binding = createBinding(req.body);
+      res.status(201).json(binding);
+    } catch (error) {
+      res.status(409).json({
+        error: "binding_conflict",
+        message: error instanceof Error ? error.message : "Binding conflict",
+      });
+    }
   });
   
   router.put("/person-bindings/:id", (req, res) => {
@@ -58,7 +86,7 @@ export function personRoutes(): Router {
   });
   
   router.get("/person-binding-candidates", (_req, res) => {
-    res.json(listBindingCandidates());
+    res.json({ candidates: listBindingCandidates() });
   });
   
   return router;
