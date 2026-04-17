@@ -23,18 +23,18 @@ export function serverRoutes(registry: AgentSessionRegistry): Router {
   
   router.get("/statuses", (_req, res) => {
     const servers = getAllServers();
-    const statuses = servers.map(s => {
-      const agentId = s.agentId;
-      const session = registry.getSession(agentId);
-      const lastReportAt = registry.getLastReportAt(agentId);
-      return {
+    const result: Record<string, { serverId: string; status: string; lastSeenAt: number | null; version: string }> = {};
+    for (const s of servers) {
+      const session = registry.getSession(s.agentId);
+      const lastReportAt = registry.getLastReportAt(s.agentId);
+      result[s.id] = {
         serverId: s.id,
-        name: s.name,
-        online: !!session,
+        status: session ? 'online' : 'offline',
         lastSeenAt: lastReportAt ?? null,
+        version: '',
       };
-    });
-    res.json(statuses);
+    }
+    res.json(result);
   });
   
   return router;

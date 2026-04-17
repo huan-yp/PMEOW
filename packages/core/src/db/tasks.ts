@@ -97,6 +97,19 @@ export function updateTaskScheduleHistory(taskId: string, history: ScheduleEvalu
   db.prepare('UPDATE tasks SET schedule_history = ? WHERE id = ?').run(JSON.stringify(history), taskId);
 }
 
+export function countTasks(filter: { serverId?: string; status?: string; user?: string } = {}): number {
+  const db = getDatabase();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+  if (filter.serverId) { conditions.push('server_id = ?'); params.push(filter.serverId); }
+  if (filter.status) { conditions.push('status = ?'); params.push(filter.status); }
+  if (filter.user) { conditions.push('user = ?'); params.push(filter.user); }
+  let sql = 'SELECT COUNT(*) as cnt FROM tasks';
+  if (conditions.length > 0) sql += ' WHERE ' + conditions.join(' AND ');
+  const row = db.prepare(sql).get(...params) as { cnt: number };
+  return row.cnt;
+}
+
 function mapTaskRow(r: Record<string, unknown>): TaskRecord {
   return {
     id: r.id as string,

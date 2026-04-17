@@ -144,11 +144,22 @@ class DaemonService:
 
     def collect_cycle(self) -> None:
         """Run one collection → schedule → launch → report iteration."""
+        t0 = time.time()
         snapshot = collect_snapshot(
             server_id=self.config.agent_id or "local",
             task_queue=self.task_queue,
             redundancy_coefficient=self.config.vram_redundancy_coefficient,
             internet_probe=self.internet_probe,
+        )
+        collect_ms = (time.time() - t0) * 1000
+        log.info(
+            "collected snapshot: cpu=%.1f%% mem=%.0f/%dMB gpus=%d procs=%d (%.0fms)",
+            snapshot.cpu.usage if snapshot.cpu else 0,
+            snapshot.memory.used_mb if snapshot.memory else 0,
+            snapshot.memory.total_mb if snapshot.memory else 0,
+            len(snapshot.gpu.gpu_names) if snapshot.gpu and snapshot.gpu.gpu_names else 0,
+            len(snapshot.processes),
+            collect_ms,
         )
 
         per_gpu = (
@@ -206,8 +217,16 @@ class DaemonService:
             report = self.reporter.build(snapshot, task_snapshot)
 
         if self.transport:
+            d = report.to_dict()
+            log.info(
+                "sending report seq=%d ts=%.1f tasks=%d+%d keys=%s",
+                report.seq,
+                report.timestamp,
+                len(report.task_queue.queued),
+                len(report.task_queue.running),
+                list(d.get("resourceSnapshot", {}).keys()),
+            )
             self.transport.send_report(report)
-            log.debug("sent unified report to server")
 
     # ------------------------------------------------------------------
     # Task management (thread-safe)

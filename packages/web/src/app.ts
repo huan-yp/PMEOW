@@ -79,7 +79,7 @@ export function createWebRuntime(): WebRuntime {
   app.use("/api", securityRoutes());
   app.use("/api", settingsRoutes());
   
-  createAgentNamespace(io, registry, pipeline);
+  createAgentNamespace(io, registry, pipeline, broadcast);
   
   uiNamespace.use(socketAuthMiddleware);
   uiNamespace.on("connection", (socket) => {

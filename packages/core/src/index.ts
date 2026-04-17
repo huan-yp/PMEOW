@@ -6,7 +6,7 @@ export { getDatabase, closeDatabase } from "./db/database.js";
 export { getAllServers, getServerById, getServerByAgentId, createServer, updateServer, deleteServer } from "./db/servers.js";
 export { saveSnapshot, deleteOldRecentSnapshots, getSnapshotHistory, getLatestSnapshot } from "./db/snapshots.js";
 export type { SnapshotWithGpus } from "./db/snapshots.js";
-export { upsertTask, endTask, getTasks, getTaskById, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
+export { upsertTask, endTask, getTasks, countTasks, getTaskById, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
 export { upsertAlert, getAlerts, suppressAlert, unsuppressAlert, deleteAlertsByServerId } from "./db/alerts.js";
 export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "./db/security-events.js";
 export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";

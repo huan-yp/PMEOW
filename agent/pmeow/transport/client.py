@@ -119,8 +119,13 @@ class AgentTransportClient:
     def send_report(self, report: UnifiedReport) -> None:
         """Send a unified report to the server."""
         if not self._connected:
+            log.warning("skipping report: not connected")
             return
-        self._emit_safe("agent:report", report.to_dict())
+        ok = self._emit_safe("agent:report", report.to_dict())
+        if ok:
+            log.debug("emitted agent:report seq=%d", report.seq)
+        else:
+            log.warning("failed to emit agent:report seq=%d", report.seq)
 
     # ------------------------------------------------------------------
     # Inbound command registration
