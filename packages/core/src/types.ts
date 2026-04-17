@@ -89,7 +89,7 @@ export interface GpuMetrics {
 // Agent Runtime Data
 // ========================
 
-export type AgentTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type AgentTaskStatus = 'queued' | 'launching' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface GpuTaskAllocation {
   taskId: string;

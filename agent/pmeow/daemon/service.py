@@ -114,10 +114,11 @@ class DaemonService:
         """Return current task queue snapshot for web server pull requests."""
         with self._lock:
             queued = db_list_tasks(self.db, TaskStatus.queued)
+            launching = db_list_tasks(self.db, TaskStatus.launching)
             running = db_list_tasks(self.db, TaskStatus.running)
             recent = list_recent_terminal_tasks(self.db, limit=20)
             return {
-                "queued": [self._serialize_task(t) for t in queued],
+                "queued": [self._serialize_task(t) for t in queued + launching],
                 "running": [self._serialize_task(t) for t in running],
                 "recent": [self._serialize_task(t) for t in recent],
             }
