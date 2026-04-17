@@ -101,6 +101,36 @@ def _cmd_submit(args: argparse.Namespace) -> None:
     print(json.dumps(resp["result"], indent=2))
 
 
+def _cmd_tasks(args: argparse.Namespace) -> None:
+    from pmeow.daemon.socket_server import send_request
+
+    params: dict = {}
+    if args.status:
+        params["status"] = args.status
+    resp = send_request(_socket_path(args), "list_tasks", params)
+    if not resp.get("ok"):
+        print(f"error: {resp.get('error')}", file=sys.stderr)
+        raise SystemExit(1)
+    tasks = resp["result"]
+    if not tasks:
+        print("no tasks")
+        return
+    # table header
+    fmt = "{:<8}  {:<10}  {:<6}  {:<10}  {:<40}"
+    print(fmt.format("ID", "STATUS", "PRI", "USER", "COMMAND"))
+    print("-" * 80)
+    for t in tasks:
+        tid = t["id"][:8]
+        cmd = (t.get("command") or "-")[:40]
+        print(fmt.format(
+            tid,
+            t.get("status", "-"),
+            t.get("priority", 0),
+            t.get("user", "-")[:10],
+            cmd,
+        ))
+
+
 def _cmd_pause(args: argparse.Namespace) -> None:
     from pmeow.daemon.socket_server import send_request
 
@@ -167,6 +197,13 @@ def build_parser() -> argparse.ArgumentParser:
     submit_parser.add_argument("--priority", type=int, default=10, help="Priority")
     submit_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Command to run")
 
+    tasks_parser = sub.add_parser("tasks", help="List tasks")
+    tasks_parser.add_argument(
+        "--status", default=None,
+        choices=["queued", "launching", "running", "completed", "failed", "cancelled"],
+        help="Filter by status",
+    )
+
     sub.add_parser("pause", help="Pause the task queue")
     sub.add_parser("resume", help="Resume the task queue")
 
@@ -183,6 +220,7 @@ _HANDLERS = {
     "install-service": lambda args: cli_runtime.install_service(args),
     "uninstall-service": lambda args: cli_runtime.uninstall_service(args),
     "status": _cmd_status,
+    "tasks": _cmd_tasks,
     "cancel": _cmd_cancel,
     "logs": _cmd_logs,
     "submit": _cmd_submit,
