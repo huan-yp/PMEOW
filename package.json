@@ -10,6 +10,7 @@
   "scripts": {
     "dev:ui": "npm run build:core && npm run dev --workspace=@monitor/ui",
     "dev:web": "npm run build:core && npm run dev --workspace=@monitor/web",
+    "start:dev": "npm run build:core && npm run start:dev --workspace=@monitor/web",
     "build:core": "npm run build --workspace=@monitor/core",
     "build:ui": "npm run build:core && npm run build --workspace=@monitor/ui",
     "build:web": "npm run build:ui && npm run build --workspace=@monitor/web",

@@ -13,7 +13,7 @@ export interface UIBroadcast {
 export function createUIBroadcast(namespace: Namespace): UIBroadcast {
   return {
     metricsUpdate(serverId, report) {
-      namespace.emit("metricsUpdate", { serverId, snapshot: report.resourceSnapshot });
+      namespace.emit("metricsUpdate", { serverId, snapshot: report });
     },
     taskEvent(event) {
       namespace.emit("taskEvent", { serverId: event.serverId, eventType: event.eventType, task: event.task });

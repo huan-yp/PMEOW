@@ -19,6 +19,11 @@ import {
 } from "@monitor/core";
 import { loginHandler, authMiddleware, socketAuthMiddleware } from "./auth.js";
 import { createAgentNamespace } from "./agent-namespace.js";
+import {
+  createAgentReportDebugLogger,
+  isAgentReportDebugEnabled,
+  resolveAgentReportDebugLogPath,
+} from "./agent-report-debug-log.js";
 import { createUIBroadcast } from "./ui-broadcast.js";
 import { serverRoutes } from "./routes/server-routes.js";
 import { metricsRoutes } from "./routes/metrics-routes.js";
@@ -52,6 +57,11 @@ export function createWebRuntime(): WebRuntime {
   
   const uiNamespace = io.of("/");
   const broadcast = createUIBroadcast(uiNamespace);
+  const reportDebugLogger = createAgentReportDebugLogger();
+
+  if (isAgentReportDebugEnabled()) {
+    console.info(`[agent-report-debug] enabled: every 5 reports -> ${resolveAgentReportDebugLogPath()}`);
+  }
   
   const snapshotScheduler = new SnapshotScheduler();
   
@@ -79,13 +89,28 @@ export function createWebRuntime(): WebRuntime {
   app.use("/api", securityRoutes());
   app.use("/api", settingsRoutes());
   
-  createAgentNamespace(io, registry, pipeline, broadcast);
+  createAgentNamespace(io, registry, pipeline, broadcast, reportDebugLogger);
   
   uiNamespace.use(socketAuthMiddleware);
+  uiNamespace.on("connect_error", (error) => {
+    console.warn(`[ws] namespace connect_error: ${error.message}`);
+  });
   uiNamespace.on("connection", (socket) => {
-    console.log(`[ws] client connected: ${socket.id}`);
-    socket.on("disconnect", () => {
-      console.log(`[ws] client disconnected: ${socket.id}`);
+    const authUser = socket.data.user as Record<string, unknown> | undefined;
+    console.info(
+      `[ws] client connected: ${socket.id} address=${socket.handshake.address} transport=${socket.conn.transport.name} role=${String(authUser?.role ?? 'unknown')}`,
+    );
+    socket.conn.on("upgrade", () => {
+      console.info(`[ws] transport upgraded: ${socket.id} -> ${socket.conn.transport.name}`);
+    });
+    socket.on("disconnecting", (reason) => {
+      console.info(`[ws] client disconnecting: ${socket.id} reason=${reason}`);
+    });
+    socket.on("disconnect", (reason) => {
+      console.info(`[ws] client disconnected: ${socket.id} reason=${reason}`);
+    });
+    socket.on("error", (error) => {
+      console.warn(`[ws] socket error: ${socket.id} message=${error instanceof Error ? error.message : String(error)}`);
     });
   });
   

@@ -73,9 +73,16 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 /** Socket.IO auth middleware */
 export function socketAuthMiddleware(socket: any, next: (err?: Error) => void): void {
   const token = socket.handshake.auth?.token;
-  if (!token) return next(new Error('未认证'));
+  if (!token) {
+    console.warn(`[ws-auth] rejected socket ${socket.id}: missing token`);
+    return next(new Error('未认证'));
+  }
   const payload = verifyToken(token);
-  if (!payload) return next(new Error('Token 无效'));
+  if (!payload) {
+    console.warn(`[ws-auth] rejected socket ${socket.id}: invalid token`);
+    return next(new Error('Token 无效'));
+  }
   socket.data.user = payload;
+  console.info(`[ws-auth] accepted socket ${socket.id}: role=${String(payload.role ?? 'unknown')}`);
   next();
 }

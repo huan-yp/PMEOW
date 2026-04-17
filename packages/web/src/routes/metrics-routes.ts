@@ -16,7 +16,7 @@ export function metricsRoutes(pipeline: IngestPipeline): Router {
   router.get("/metrics/:serverId/history", (req, res) => {
     const { serverId } = req.params;
     const from = Number(req.query.from) || 0;
-    const to = Number(req.query.to) || Date.now();
+    const to = Number(req.query.to) || Math.floor(Date.now() / 1000);
     const tier = (req.query.tier as string) || undefined;
     const snapshots = getSnapshotHistory(serverId, from, to, tier as "recent" | "archive" | undefined);
     res.json(snapshots);
