@@ -5,12 +5,15 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { TransportProvider } from '../src/transport/TransportProvider.js';
 import { useStore } from '../src/store/useStore.js';
 import NodeDetail from '../src/pages/NodeDetail.js';
-import type { Server, ServerStatus, SnapshotWithGpu, TransportAdapter, UnifiedReport } from '../src/transport/types.js';
+import type { Server, ServerStatus, SnapshotWithGpu, TaskInfo, TransportAdapter, UnifiedReport } from '../src/transport/types.js';
+
+const timeSeriesChartSpy = vi.fn();
 
 vi.mock('../src/components/TimeSeriesChart.js', () => ({
-  TimeSeriesChart: ({ series }: { series: Array<{ name: string }> }) => (
-    <div data-testid="time-series-chart">{series.map((item) => item.name).join(',')}</div>
-  ),
+  TimeSeriesChart: (props: { series: Array<{ name: string }>; yAxes?: unknown[] }) => {
+    timeSeriesChartSpy(props);
+    return <div data-testid="time-series-chart">{props.series.map((item) => item.name).join(',')}</div>;
+  },
 }));
 
 function createServer(id: string, name: string): Server {
@@ -27,6 +30,25 @@ function createStatus(serverId: string): ServerStatus {
 }
 
 function createReport(timestamp = 1_713_312_000): UnifiedReport {
+  const runningTask: TaskInfo = {
+    taskId: 'task-1',
+    status: 'running',
+    command: 'python train.py',
+    cwd: '/workspace',
+    user: 'alice',
+    launchMode: 'attached_python',
+    requireVramMb: 4096,
+    requireGpuCount: 1,
+    gpuIds: [0],
+    priority: 1,
+    createdAt: timestamp - 120,
+    startedAt: timestamp - 60,
+    pid: 4321,
+    assignedGpus: [0],
+    declaredVramPerGpu: 4096,
+    scheduleHistory: [],
+  };
+
   return {
     agentId: 'agent-a',
     timestamp,
@@ -63,7 +85,7 @@ function createReport(timestamp = 1_713_312_000): UnifiedReport {
       localUsers: ['alice'],
       system: { hostname: 'node-a', uptime: '1d', loadAvg1: 0.1, loadAvg5: 0.2, loadAvg15: 0.3, kernelVersion: '6.8' },
     },
-    taskQueue: { queued: [], running: [] },
+    taskQueue: { queued: [], running: [runningTask] },
   };
 }
 
@@ -146,8 +168,16 @@ function renderNodeDetail(transport: TransportAdapter, routeState?: unknown) {
   );
 }
 
+function findChartProps(seriesNames: string[]) {
+  return timeSeriesChartSpy.mock.calls
+    .map(([props]) => props as { series: Array<{ name: string }>; yAxes?: unknown[] })
+    .reverse()
+    .find((props) => props.series.map((item) => item.name).join(',') === seriesNames.join(','));
+}
+
 describe('NodeDetail', () => {
   beforeEach(() => {
+    timeSeriesChartSpy.mockClear();
     const server = createServer('server-a', 'GPU Node A');
     const report = createReport();
     useStore.setState({
@@ -211,5 +241,97 @@ describe('NodeDetail', () => {
     expect(screen.getByText('快照进程列表')).toBeTruthy();
     expect(screen.getAllByText('磁盘使用情况')).toHaveLength(1);
     expect(screen.queryByTestId('time-series-chart')).toBeNull();
+  });
+
+  it('shows per-GPU occupancy and memory bandwidth as separate metrics', async () => {
+    const transport = createMockTransport();
+    const user = userEvent.setup();
+
+    renderNodeDetail(transport);
+
+    expect(screen.getByText('默认折叠，展开后查看每张 GPU 的利用率、显存占用与显存带宽利用率')).toBeTruthy();
+    expect(screen.getByText('当前 GPU 55% · 显存占用 33% · 显存带宽利用率 41%')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: /GPU 0: RTX 4090/ }));
+
+    expect(screen.getByText('GPU 利用率,显存占用,显存带宽利用率')).toBeTruthy();
+  });
+
+  it('switches realtime network and disk charts to dual axes when ranges diverge', () => {
+    const report = createReport();
+    report.resourceSnapshot.network.rxBytesPerSec = 5 * 1024 * 1024;
+    report.resourceSnapshot.network.txBytesPerSec = 256 * 1024;
+    report.resourceSnapshot.diskIo.readBytesPerSec = 8 * 1024 * 1024;
+    report.resourceSnapshot.diskIo.writeBytesPerSec = 128 * 1024;
+
+    useStore.setState({
+      latestSnapshots: new Map([['server-a', report]]),
+    });
+
+    renderNodeDetail(createMockTransport());
+
+    expect(screen.getAllByText('左 MB/s / 右 KB/s')).toHaveLength(2);
+
+    const networkChart = findChartProps(['接收', '发送']);
+    const diskChart = findChartProps(['读取', '写入']);
+
+    expect(networkChart?.yAxes).toHaveLength(2);
+    expect(diskChart?.yAxes).toHaveLength(2);
+  });
+
+  it('keeps a shared axis for history charts when ranges are similar', async () => {
+    const historySpy = vi.fn(async () => ({
+      snapshots: [
+        (() => {
+          const snapshot = createSnapshot(1_713_311_400);
+          snapshot.network.rxBytesPerSec = 8 * 1024;
+          snapshot.network.txBytesPerSec = 6 * 1024;
+          snapshot.diskIo.readBytesPerSec = 4 * 1024;
+          snapshot.diskIo.writeBytesPerSec = 2 * 1024;
+          return snapshot;
+        })(),
+        (() => {
+          const snapshot = createSnapshot(1_713_312_000);
+          snapshot.network.rxBytesPerSec = 12 * 1024;
+          snapshot.network.txBytesPerSec = 9 * 1024;
+          snapshot.diskIo.readBytesPerSec = 6 * 1024;
+          snapshot.diskIo.writeBytesPerSec = 3 * 1024;
+          return snapshot;
+        })(),
+      ],
+    }));
+    const transport = createMockTransport({ getMetricsHistory: historySpy });
+    const user = userEvent.setup();
+
+    renderNodeDetail(transport);
+    timeSeriesChartSpy.mockClear();
+    await user.click(screen.getByRole('button', { name: '历史' }));
+
+    await waitFor(() => expect(historySpy).toHaveBeenCalled());
+
+    expect(screen.queryByText('左 KB/s / 右 KB/s')).toBeNull();
+
+    const networkChart = findChartProps(['接收', '发送']);
+    const diskChart = findChartProps(['读取', '写入']);
+
+    expect(networkChart?.yAxes).toHaveLength(1);
+    expect(diskChart?.yAxes).toHaveLength(1);
+  });
+
+  it('renders user-grouped gpu allocation for realtime and historical fallback note for snapshots', async () => {
+    const snapshotSpy = vi.fn(async () => ({ snapshots: [createSnapshot(1_713_312_000)] }));
+    const transport = createMockTransport({ getMetricsHistory: snapshotSpy });
+    const user = userEvent.setup();
+
+    renderNodeDetail(transport);
+
+    expect(screen.getAllByText('alice')).toHaveLength(1);
+    expect(screen.getByText('用户颜色说明')).toBeTruthy();
+    expect(screen.getByText('同一用户跨 GPU 只显示一次')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '快照' }));
+    await waitFor(() => expect(snapshotSpy).toHaveBeenCalled());
+
+    expect(screen.getByText('历史快照缺少任务归属，托管任务以未归因分组展示。')).toBeTruthy();
   });
 });

@@ -1,44 +1,46 @@
-import { useState } from 'react';
-import type { GpuCardReport } from '../transport/types.js';
+import type { GpuCardReport, TaskInfo } from '../transport/types.js';
 import { formatVramGB } from '../utils/vram.js';
-import { getOwnerColor } from '../utils/ownerColor.js';
+import { FREE_COLOR, UNKNOWN_COLOR } from '../utils/ownerColor.js';
+import { buildGpuOwnerGroups } from '../utils/gpuAllocation.js';
 
 interface Props {
   gpu: GpuCardReport;
+  tasks?: TaskInfo[];
+  historical?: boolean;
 }
 
-export function GpuBar({ gpu }: Props) {
-  const [showTooltip, setShowTooltip] = useState(false);
+function mixColor(color: string, target: string, amount: number): string {
+  const source = color.replace('#', '');
+  const destination = target.replace('#', '');
+  if (source.length !== 6 || destination.length !== 6) {
+    return color;
+  }
+
+  const red = Math.round(parseInt(source.slice(0, 2), 16) * (1 - amount) + parseInt(destination.slice(0, 2), 16) * amount);
+  const green = Math.round(parseInt(source.slice(2, 4), 16) * (1 - amount) + parseInt(destination.slice(2, 4), 16) * amount);
+  const blue = Math.round(parseInt(source.slice(4, 6), 16) * (1 - amount) + parseInt(destination.slice(4, 6), 16) * amount);
+
+  return `rgb(${red}, ${green}, ${blue})`;
+}
+
+function getMutedOwnerColor(baseColor: string): string {
+  return mixColor(baseColor, '#d9e1ec', 0.35);
+}
+
+function getReservedStripe(baseColor: string): string {
+  const stripe = mixColor(baseColor, '#ffffff', 0.35);
+  return `repeating-linear-gradient(135deg, ${stripe} 0 7px, ${baseColor} 7px 14px)`;
+}
+
+export function GpuBar({ gpu, tasks, historical = false }: Props) {
   const total = gpu.memoryTotalMb;
   if (total <= 0) return null;
 
-  const segments: { label: string; mb: number; color: string; tooltip: string }[] = [];
-
-  // Managed task allocations
-  for (const alloc of gpu.taskAllocations) {
-    segments.push({
-      label: alloc.taskId.slice(0, 8),
-      mb: alloc.declaredVramMb,
-      color: getOwnerColor(alloc.taskId, 'task'),
-      tooltip: `任务 ${alloc.taskId.slice(0, 8)}: ${formatVramGB(alloc.declaredVramMb)}`,
-    });
-  }
-
-  // Unmanaged
-  if (gpu.unmanagedPeakMb > 0) {
-    segments.push({
-      label: 'unmanaged',
-      mb: gpu.unmanagedPeakMb,
-      color: '#64748b',
-      tooltip: `未管理: ${formatVramGB(gpu.unmanagedPeakMb)}`,
-    });
-  }
-
-  const usedMb = segments.reduce((sum, s) => sum + s.mb, 0);
-  const freeMb = Math.max(0, total - usedMb);
+  const { groups, unknownMb, totalDisplayedMb, freeMb } = buildGpuOwnerGroups(gpu, tasks, historical);
+  const displayDenominator = Math.max(total, totalDisplayedMb, 1);
 
   return (
-    <div className="space-y-1" onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}>
+    <div className="space-y-3">
       <div className="flex items-center gap-2 text-xs text-slate-400">
         <span className="font-mono">GPU {gpu.index}: {gpu.name}</span>
         <span className="text-slate-600">|</span>
@@ -47,42 +49,56 @@ export function GpuBar({ gpu }: Props) {
         <span>利用率 {gpu.utilizationGpu}%</span>
       </div>
 
-      <div className="flex h-5 w-full overflow-hidden rounded-full bg-dark-bg border border-dark-border">
-        {segments.map((seg, i) => (
-          <div
-            key={i}
-            className="h-full transition-all duration-300"
-            style={{ width: `${(seg.mb / total) * 100}%`, backgroundColor: seg.color }}
-            title={seg.tooltip}
-          />
-        ))}
-        {freeMb > 0 && (
-          <div className="h-full flex-1" title={`空闲: ${formatVramGB(freeMb)}`} />
-        )}
+      <div className="overflow-hidden rounded-2xl border border-dark-border bg-dark-bg/70">
+        <div className="flex h-7 w-full overflow-hidden">
+          {groups.map((group) => (
+            <div key={`${group.key}-segments`} className="contents">
+              {group.managedReservedMb > 0 && (
+                <div
+                  className="relative h-full border-r border-dark-border/60"
+                  style={{ width: `${(group.managedReservedMb / displayDenominator) * 100}%`, backgroundColor: group.baseColor, backgroundImage: getReservedStripe(group.baseColor) }}
+                  title={`${group.label} · 托管任务：已用 ${formatVramGB(group.managedActualMb)} / 预留 ${formatVramGB(group.managedReservedMb)}`}
+                >
+                  <div
+                    className="absolute inset-y-0 left-0"
+                    style={{ width: `${group.managedReservedMb > 0 ? (group.managedActualMb / group.managedReservedMb) * 100 : 0}%`, backgroundColor: group.baseColor }}
+                  />
+                </div>
+              )}
+              {group.unmanagedMb > 0 && (
+                <div
+                  className="h-full border-r border-dark-border/60"
+                  style={{ width: `${(group.unmanagedMb / displayDenominator) * 100}%`, backgroundColor: getMutedOwnerColor(group.baseColor) }}
+                  title={`${group.label} · 未托管进程：${formatVramGB(group.unmanagedMb)}`}
+                />
+              )}
+            </div>
+          ))}
+
+          {unknownMb > 0 && (
+            <div
+              className="h-full border-r border-dark-border/60"
+              style={{ width: `${(unknownMb / displayDenominator) * 100}%`, backgroundColor: UNKNOWN_COLOR }}
+              title={`未知进程：${formatVramGB(unknownMb)}`}
+            />
+          )}
+
+          {freeMb > 0 && (
+            <div
+              className="h-full flex-1"
+              style={{ backgroundColor: FREE_COLOR }}
+              title={`空闲：${formatVramGB(freeMb)}`}
+            />
+          )}
+        </div>
       </div>
 
       <div className="flex justify-between text-[10px] text-slate-500 font-mono">
-        <span>已用 {formatVramGB(gpu.memoryUsedMb)}</span>
+        <span>实际已用 {formatVramGB(gpu.memoryUsedMb)}</span>
         <span>调度可用 {formatVramGB(gpu.effectiveFreeMb)}</span>
         <span>总计 {formatVramGB(total)}</span>
       </div>
 
-      {showTooltip && (gpu.userProcesses.length > 0 || gpu.unknownProcesses.length > 0) && (
-        <div className="mt-1 rounded-lg border border-dark-border bg-dark-card p-2 text-xs space-y-1">
-          {gpu.userProcesses.map((p, i) => (
-            <div key={i} className="flex justify-between text-slate-300">
-              <span>{p.user} (PID {p.pid})</span>
-              <span className="text-accent-blue">{formatVramGB(p.vramMb)}</span>
-            </div>
-          ))}
-          {gpu.unknownProcesses.map((p, i) => (
-            <div key={`u-${i}`} className="flex justify-between text-slate-500">
-              <span>未知 (PID {p.pid})</span>
-              <span>{formatVramGB(p.vramMb)}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -23,9 +23,9 @@ describe('rates utilities', () => {
     ]);
 
     expect(chart.usesDualAxes).toBe(false);
-    expect(chart.unitLabel).toBe('MB/s');
+    expect(chart.unitLabel).toBe('KB/s');
     expect(chart.series.every((series) => series.yAxisIndex === 0)).toBe(true);
-    expect(chart.series[0].unit).toBe('MB/s');
+    expect(chart.series[0].unit).toBe('KB/s');
     expect(chart.yAxes).toHaveLength(1);
   });
 
@@ -50,11 +50,11 @@ describe('rates utilities', () => {
     ], AUTO_DUAL_RATE_AXIS_RATIO);
 
     expect(chart.usesDualAxes).toBe(true);
-    expect(chart.unitLabel).toBe('左 MB/s / 右 KB/s');
+    expect(chart.unitLabel).toBe('左 KB/s / 右 B/s');
     expect(chart.series[0].yAxisIndex).toBe(0);
     expect(chart.series[1].yAxisIndex).toBe(1);
-    expect(chart.series[0].unit).toBe('MB/s');
-    expect(chart.series[1].unit).toBe('KB/s');
+    expect(chart.series[0].unit).toBe('KB/s');
+    expect(chart.series[1].unit).toBe('B/s');
     expect(chart.yAxes).toHaveLength(2);
   });
 

@@ -7,8 +7,12 @@ import type { TimeSeriesChartSeries } from '../components/TimeSeriesChart.js';
 import { GpuBar } from '../components/GpuBar.js';
 import { ProcessTable } from '../components/ProcessTable.js';
 import { SnapshotTimePicker } from '../components/SnapshotTimePicker.js';
-import type { SnapshotWithGpu, UnifiedReport } from '../transport/types.js';
-import { formatBytesPerSecond } from '../utils/rates.js';
+import type { SnapshotWithGpu, TaskInfo, UnifiedReport } from '../transport/types.js';
+import { buildAdaptiveRateChart, formatBytesPerSecond } from '../utils/rates.js';
+import { getConnectionStatusVisual, getInternetReachabilityState, getInternetStatusVisual } from '../utils/nodeStatus.js';
+import { formatVramGB } from '../utils/vram.js';
+import { aggregateOwnerGroups, buildGpuOwnerGroups, type OwnerGroup } from '../utils/gpuAllocation.js';
+import { UNKNOWN_COLOR } from '../utils/ownerColor.js';
 
 type Tab = 'realtime' | 'processes' | 'history' | 'snapshot';
 type ChartPoint = { time: number; value: number };
@@ -27,7 +31,8 @@ interface HistoryRangeQuery {
 
 interface PerGpuRealtimeHistory {
   utilization: ChartPoint[];
-  vram: ChartPoint[];
+  memoryUsage: ChartPoint[];
+  memoryBandwidth: ChartPoint[];
 }
 
 const REALTIME_WINDOW_SECONDS = 10 * 60;
@@ -110,10 +115,11 @@ export default function NodeDetail() {
     setGpuRealtimeHistory((prev) => {
       const next: Record<number, PerGpuRealtimeHistory> = {};
       for (const gpu of report.resourceSnapshot.gpuCards) {
-        const current = prev[gpu.index] ?? { utilization: [], vram: [] };
+        const current = prev[gpu.index] ?? { utilization: [], memoryUsage: [], memoryBandwidth: [] };
         next[gpu.index] = {
           utilization: appendChartPoint(current.utilization, now, gpu.utilizationGpu, cutoff),
-          vram: appendChartPoint(current.vram, now, gpu.utilizationMemory, cutoff),
+          memoryUsage: appendChartPoint(current.memoryUsage, now, computeGpuMemoryUsagePercent(gpu), cutoff),
+          memoryBandwidth: appendChartPoint(current.memoryBandwidth, now, gpu.utilizationMemory, cutoff),
         };
       }
       return next;
@@ -187,7 +193,7 @@ export default function NodeDetail() {
 
   const realtimeGpuTotalsSeries = useMemo<TimeSeriesChartSeries[]>(() => ([
     { name: 'GPU 利用率', data: gpuTotalUtilHistory, color: '#8b5cf6', unit: '%' },
-    { name: 'VRAM 利用率', data: gpuTotalVramHistory, color: '#ec4899', unit: '%' },
+    { name: '显存占用率', data: gpuTotalVramHistory, color: '#ec4899', unit: '%' },
   ]), [gpuTotalUtilHistory, gpuTotalVramHistory]);
 
   const historyUsageSeries = useMemo<TimeSeriesChartSeries[]>(() => ([
@@ -213,7 +219,7 @@ export default function NodeDetail() {
       unit: '%',
     },
     {
-      name: 'VRAM 利用率',
+      name: '显存占用率',
       data: historySnapshots.map((snapshot) => ({ time: snapshot.timestamp * 1000, value: computeGpuTotals(snapshot.gpuCards).totalVramPercent })),
       color: '#ec4899',
       unit: '%',
@@ -235,17 +241,42 @@ export default function NodeDetail() {
 
   const snap = report?.resourceSnapshot;
   const realtimeGpuCards = snap?.gpuCards ?? [];
+  const realtimeTasks = useMemo<TaskInfo[]>(() => {
+    if (!report) {
+      return [];
+    }
+    return [...report.taskQueue.running, ...report.taskQueue.queued];
+  }, [report]);
   const currentGpuTotals = useMemo(() => computeGpuTotals(realtimeGpuCards), [realtimeGpuCards]);
+  const realtimeGpuAllocation = useMemo(() => buildGpuAllocationLegendModel(realtimeGpuCards, realtimeTasks, false), [realtimeGpuCards, realtimeTasks]);
+  const snapshotGpuAllocation = useMemo(() => buildGpuAllocationLegendModel(selectedSnapshot?.gpuCards ?? [], undefined, true), [selectedSnapshot]);
+  const connectionVisual = getConnectionStatusVisual(status?.status ?? 'offline');
+  const internetVisual = getInternetStatusVisual(getInternetReachabilityState(snap?.network.internetReachable));
+  const agentLabel = server.agentId.length > 12 ? server.agentId.slice(0, 12) : server.agentId;
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className={`node-surface-shell ${connectionVisual.surfaceClassName} rounded-[28px] p-5 sm:p-6`}>
         <button onClick={() => navigate(backTarget)} className="text-xs text-accent-blue hover:underline mb-2">← {backLabel}</button>
-        <h2 className="text-xl font-bold text-slate-100">{server.name}</h2>
-        <p className="text-sm text-slate-500">
-          {status?.status === 'online' ? '🟢 在线' : '🔴 离线'}
-          {status?.version ? ` · v${status.version}` : ''}
-        </p>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className={`node-badge-base ${connectionVisual.badgeClassName}`}>
+              <span className={`h-2.5 w-2.5 rounded-full ${connectionVisual.dotClassName}`} />
+              {connectionVisual.label}
+            </span>
+            <span className={`node-badge-base ${internetVisual.badgeClassName}`}>
+              <span className={`h-2.5 w-2.5 rounded-full ${internetVisual.dotClassName}`} />
+              {internetVisual.label}
+            </span>
+            <span className="node-badge-base node-badge-source-agent">Agent {agentLabel}</span>
+            {status?.version && <span className="node-badge-base node-badge-status-neutral">v{status.version}</span>}
+          </div>
+          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-50 sm:text-[2.35rem]">{server.name}</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-xl">
+            <IdentityPill label="节点类型" value="Agent 节点" accent="cyan" />
+            <IdentityPill label="实时状态" value={snap ? '指标已接入' : '等待最新快照'} accent={snap ? 'green' : 'amber'} />
+          </div>
+        </div>
       </div>
 
       <div className="flex gap-1 border-b border-dark-border">
@@ -263,16 +294,22 @@ export default function NodeDetail() {
               <TimeSeriesChart series={realtimeUsageSeries} height={180} yAxisFormatter={formatPercentAxis} yAxisMin={0} yAxisMax={100} />
             </div>
             <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
-              <h3 className="mb-3 text-sm font-medium text-slate-300">GPU 总利用率 / VRAM 总利用率</h3>
+              <h3 className="mb-3 text-sm font-medium text-slate-300">GPU 总利用率 / 显存占用率</h3>
               <TimeSeriesChart series={realtimeGpuTotalsSeries} height={180} yAxisFormatter={formatPercentAxis} yAxisMin={0} yAxisMax={100} />
             </div>
             <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
-              <h3 className="mb-3 text-sm font-medium text-slate-300">网络 IO</h3>
-              <TimeSeriesChart series={realtimeNetworkChart.series} height={180} yAxisFormatter={realtimeNetworkChart.yAxisFormatter} />
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-slate-300">网络 IO</h3>
+                {realtimeNetworkChart.usesDualAxes && <span className="text-xs text-slate-500">{realtimeNetworkChart.unitLabel}</span>}
+              </div>
+              <TimeSeriesChart series={realtimeNetworkChart.series} height={180} yAxes={realtimeNetworkChart.yAxes} />
             </div>
             <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
-              <h3 className="mb-3 text-sm font-medium text-slate-300">磁盘 IO</h3>
-              <TimeSeriesChart series={realtimeDiskIoChart.series} height={180} yAxisFormatter={realtimeDiskIoChart.yAxisFormatter} />
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-slate-300">磁盘 IO</h3>
+                {realtimeDiskIoChart.usesDualAxes && <span className="text-xs text-slate-500">{realtimeDiskIoChart.unitLabel}</span>}
+              </div>
+              <TimeSeriesChart series={realtimeDiskIoChart.series} height={180} yAxes={realtimeDiskIoChart.yAxes} />
             </div>
           </div>
 
@@ -280,21 +317,22 @@ export default function NodeDetail() {
             <div className="rounded-2xl border border-dark-border bg-dark-card p-4 space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-medium text-slate-300">单卡 GPU 趋势</h3>
-                <span className="text-xs text-slate-500">默认折叠，展开后查看每张 GPU 的利用率与显存利用率</span>
+                <span className="text-xs text-slate-500">默认折叠，展开后查看每张 GPU 的利用率、显存占用与显存带宽利用率</span>
               </div>
               <div className="space-y-3">
                 {realtimeGpuCards.map((gpu) => (
                   <GpuTrendDisclosure
                     key={`realtime-${gpu.index}`}
                     title={`GPU ${gpu.index}: ${gpu.name}`}
-                    subtitle={`当前 GPU ${gpu.utilizationGpu.toFixed(0)}% · VRAM ${gpu.utilizationMemory.toFixed(0)}%`}
+                    subtitle={`当前 GPU ${gpu.utilizationGpu.toFixed(0)}% · 显存占用 ${computeGpuMemoryUsagePercent(gpu).toFixed(0)}% · 显存带宽利用率 ${gpu.utilizationMemory.toFixed(0)}%`}
                     open={expandedGpuCharts[gpu.index] ?? false}
                     onToggle={() => setExpandedGpuCharts((prev) => ({ ...prev, [gpu.index]: !(prev[gpu.index] ?? false) }))}
                   >
                     <TimeSeriesChart
                       series={[
                         { name: 'GPU 利用率', data: gpuRealtimeHistory[gpu.index]?.utilization ?? [], color: '#8b5cf6', unit: '%' },
-                        { name: 'VRAM 利用率', data: gpuRealtimeHistory[gpu.index]?.vram ?? [], color: '#ec4899', unit: '%' },
+                        { name: '显存占用', data: gpuRealtimeHistory[gpu.index]?.memoryUsage ?? [], color: '#ec4899', unit: '%' },
+                        { name: '显存带宽利用率', data: gpuRealtimeHistory[gpu.index]?.memoryBandwidth ?? [], color: '#f97316', unit: '%' },
                       ]}
                       height={180}
                       yAxisFormatter={formatPercentAxis}
@@ -310,7 +348,8 @@ export default function NodeDetail() {
           {snap && snap.gpuCards.length > 0 && (
             <div className="rounded-2xl border border-dark-border bg-dark-card p-4 space-y-4">
               <h3 className="text-sm font-medium text-slate-300">GPU 显存分配</h3>
-              {snap.gpuCards.map((gpu) => <GpuBar key={gpu.index} gpu={gpu} />)}
+              {snap.gpuCards.map((gpu) => <GpuBar key={gpu.index} gpu={gpu} tasks={realtimeTasks} />)}
+              <GpuAllocationLegend model={realtimeGpuAllocation} />
             </div>
           )}
 
@@ -363,16 +402,22 @@ export default function NodeDetail() {
                   <TimeSeriesChart series={historyUsageSeries} height={180} yAxisFormatter={formatPercentAxis} yAxisMin={0} yAxisMax={100} />
                 </div>
                 <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
-                  <h3 className="mb-3 text-sm font-medium text-slate-300">GPU 总利用率 / VRAM 总利用率</h3>
+                  <h3 className="mb-3 text-sm font-medium text-slate-300">GPU 总利用率 / 显存占用率</h3>
                   <TimeSeriesChart series={historyGpuTotalsSeries} height={180} yAxisFormatter={formatPercentAxis} yAxisMin={0} yAxisMax={100} />
                 </div>
                 <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
-                  <h3 className="mb-3 text-sm font-medium text-slate-300">网络 IO</h3>
-                  <TimeSeriesChart series={historyNetworkChart.series} height={180} yAxisFormatter={historyNetworkChart.yAxisFormatter} />
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-medium text-slate-300">网络 IO</h3>
+                    {historyNetworkChart.usesDualAxes && <span className="text-xs text-slate-500">{historyNetworkChart.unitLabel}</span>}
+                  </div>
+                  <TimeSeriesChart series={historyNetworkChart.series} height={180} yAxes={historyNetworkChart.yAxes} />
                 </div>
                 <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
-                  <h3 className="mb-3 text-sm font-medium text-slate-300">磁盘 IO</h3>
-                  <TimeSeriesChart series={historyDiskIoChart.series} height={180} yAxisFormatter={historyDiskIoChart.yAxisFormatter} />
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-medium text-slate-300">磁盘 IO</h3>
+                    {historyDiskIoChart.usesDualAxes && <span className="text-xs text-slate-500">{historyDiskIoChart.unitLabel}</span>}
+                  </div>
+                  <TimeSeriesChart series={historyDiskIoChart.series} height={180} yAxes={historyDiskIoChart.yAxes} />
                 </div>
               </div>
 
@@ -434,7 +479,8 @@ export default function NodeDetail() {
               {selectedSnapshot.gpuCards.length > 0 && (
                 <div className="rounded-2xl border border-dark-border bg-dark-card p-4 space-y-4">
                   <h3 className="text-sm font-medium text-slate-300">GPU 显存分配</h3>
-                  {selectedSnapshot.gpuCards.map((gpu) => <GpuBar key={`snapshot-${gpu.index}`} gpu={gpu} />)}
+                  {selectedSnapshot.gpuCards.map((gpu) => <GpuBar key={`snapshot-${gpu.index}`} gpu={gpu} historical />)}
+                  <GpuAllocationLegend model={snapshotGpuAllocation} />
                 </div>
               )}
               <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
@@ -489,12 +535,89 @@ function SnapshotSummary({ snapshot }: { snapshot: SnapshotWithGpu }) {
   );
 }
 
+interface GpuAllocationLegendModel {
+  owners: OwnerGroup[];
+  unknownTotalMb: number;
+  note: string | null;
+}
+
+function buildGpuAllocationLegendModel(gpuCards: SnapshotWithGpu['gpuCards'], tasks: TaskInfo[] | undefined, historical: boolean): GpuAllocationLegendModel {
+  const perGpu = gpuCards.map((gpu) => buildGpuOwnerGroups(gpu, tasks, historical));
+  const mergedOwners = aggregateOwnerGroups(perGpu.map((item) => item.groups));
+  const owners = mergedOwners.filter((group) => group.key !== 'managed:historical' && group.key !== 'managed:unresolved');
+  const fallbackOwners = mergedOwners.filter((group) => group.key === 'managed:historical' || group.key === 'managed:unresolved');
+
+  return {
+    owners: owners.length > 0 ? owners : fallbackOwners,
+    unknownTotalMb: perGpu.reduce((sum, item) => sum + item.unknownMb, 0),
+    note: perGpu.find((item) => item.note)?.note ?? null,
+  };
+}
+
+function GpuAllocationLegend({ model }: { model: GpuAllocationLegendModel }) {
+  if (model.owners.length === 0 && model.unknownTotalMb <= 0 && !model.note) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-dark-border bg-dark-bg/40 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">用户颜色说明</h4>
+        <span className="text-[11px] text-slate-500">同一用户跨 GPU 只显示一次</span>
+      </div>
+
+      {model.note && (
+        <div className="rounded-xl border border-dark-border bg-dark-card/70 px-3 py-2 text-[11px] text-slate-400">
+          {model.note}
+        </div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {model.owners.map((owner) => (
+          <div key={owner.key} className="flex items-center justify-between gap-3 rounded-xl border border-dark-border/80 bg-dark-card/70 px-3 py-2 text-sm text-slate-200">
+            <div className="inline-flex min-w-0 items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: owner.baseColor }} />
+              <span className="truncate">{owner.label}</span>
+            </div>
+            <span className="shrink-0 font-mono text-xs text-slate-400">{formatVramGB(owner.managedReservedMb + owner.unmanagedMb)}</span>
+          </div>
+        ))}
+
+        {model.unknownTotalMb > 0 && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-dark-border/80 bg-dark-card/70 px-3 py-2 text-sm text-slate-200">
+            <div className="inline-flex min-w-0 items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: UNKNOWN_COLOR }} />
+              <span className="truncate">未知进程</span>
+            </div>
+            <span className="shrink-0 font-mono text-xs text-slate-400">{formatVramGB(model.unknownTotalMb)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div className="rounded-xl border border-dark-border bg-dark-card p-3">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-mono font-semibold text-slate-100">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-slate-500">{sub}</p>}
+    </div>
+  );
+}
+
+function IdentityPill({ label, value, accent }: { label: string; value: string; accent: 'cyan' | 'green' | 'amber' }) {
+  const accentClass = accent === 'green'
+    ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100'
+    : accent === 'amber'
+      ? 'border-amber-400/20 bg-amber-500/10 text-amber-100'
+      : 'border-cyan-400/20 bg-cyan-500/10 text-cyan-100';
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${accentClass}`}>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/55">{label}</p>
+      <p className="mt-1 text-base font-medium tracking-tight">{value}</p>
     </div>
   );
 }
@@ -618,42 +741,29 @@ function computeGpuTotals(gpuCards: SnapshotWithGpu['gpuCards']) {
 }
 
 function buildRateChart(seriesList: Array<{ name: string; data: ChartPoint[]; color: string }>) {
-  const maxValue = Math.max(0, ...seriesList.flatMap((series) => series.data.map((point) => point.value)));
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'] as const;
-  let divisor = 1;
-  let unitIndex = 0;
-
-  while (maxValue / divisor >= 1024 && unitIndex < units.length - 1) {
-    divisor *= 1024;
-    unitIndex += 1;
-  }
-
-  const unit = units[unitIndex];
-
-  return {
-    series: seriesList.map<TimeSeriesChartSeries>((series) => ({
-      name: series.name,
-      color: series.color,
-      unit,
-      data: series.data.map((point) => ({ time: point.time, value: point.value / divisor })),
-    })),
-    yAxisFormatter: (value: number) => formatRateAxis(value, unit),
-  };
+  return buildAdaptiveRateChart(seriesList);
 }
 
 function buildHistoryGpuSeries(snapshots: SnapshotWithGpu[]) {
-  const seriesByGpu = new Map<number, { label: string; utilization: ChartPoint[]; vram: ChartPoint[] }>();
+  const seriesByGpu = new Map<number, {
+    label: string;
+    utilization: ChartPoint[];
+    memoryUsage: ChartPoint[];
+    memoryBandwidth: ChartPoint[];
+  }>();
 
   for (const snapshot of snapshots) {
     for (const gpu of snapshot.gpuCards) {
       const entry = seriesByGpu.get(gpu.index) ?? {
         label: `${gpu.name}`,
         utilization: [],
-        vram: [],
+        memoryUsage: [],
+        memoryBandwidth: [],
       };
-      entry.label = `${gpu.name} · GPU ${gpu.utilizationGpu.toFixed(0)}% · VRAM ${gpu.utilizationMemory.toFixed(0)}%`;
+      entry.label = `${gpu.name} · GPU ${gpu.utilizationGpu.toFixed(0)}% · 显存占用 ${computeGpuMemoryUsagePercent(gpu).toFixed(0)}% · 显存带宽利用率 ${gpu.utilizationMemory.toFixed(0)}%`;
       entry.utilization.push({ time: snapshot.timestamp * 1000, value: gpu.utilizationGpu });
-      entry.vram.push({ time: snapshot.timestamp * 1000, value: gpu.utilizationMemory });
+      entry.memoryUsage.push({ time: snapshot.timestamp * 1000, value: computeGpuMemoryUsagePercent(gpu) });
+      entry.memoryBandwidth.push({ time: snapshot.timestamp * 1000, value: gpu.utilizationMemory });
       seriesByGpu.set(gpu.index, entry);
     }
   }
@@ -663,9 +773,14 @@ function buildHistoryGpuSeries(snapshots: SnapshotWithGpu[]) {
     label: entry.label,
     series: [
       { name: 'GPU 利用率', data: entry.utilization, color: '#8b5cf6', unit: '%' },
-      { name: 'VRAM 利用率', data: entry.vram, color: '#ec4899', unit: '%' },
+      { name: '显存占用', data: entry.memoryUsage, color: '#ec4899', unit: '%' },
+      { name: '显存带宽利用率', data: entry.memoryBandwidth, color: '#f97316', unit: '%' },
     ] satisfies TimeSeriesChartSeries[],
   }));
+}
+
+function computeGpuMemoryUsagePercent(gpu: SnapshotWithGpu['gpuCards'][number]): number {
+  return gpu.memoryTotalMb > 0 ? (gpu.memoryUsedMb / gpu.memoryTotalMb) * 100 : 0;
 }
 
 function buildPresetRange(preset: Exclude<HistoryPreset, 'custom'>): HistoryRangeQuery {
@@ -709,11 +824,6 @@ function describeHistoryRange(range: HistoryRangeQuery): string {
 
 function formatPercentAxis(value: number): string {
   return `${value.toFixed(0)}%`;
-}
-
-function formatRateAxis(value: number, unit: string): string {
-  const digits = value >= 100 ? 0 : 1;
-  return `${value.toFixed(digits)} ${unit}`;
 }
 
 function formatSnapshotTime(timestamp: number): string {

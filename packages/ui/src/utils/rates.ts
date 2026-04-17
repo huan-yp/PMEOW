@@ -6,8 +6,14 @@ interface AdaptiveRateSeriesInput {
   color?: string;
 }
 
+export interface AdaptiveRateChartAxis {
+  position?: 'left' | 'right';
+  formatter?: (value: number) => string;
+  color?: string;
+  splitLine?: boolean;
+}
+
 const BYTE_RATE_UNITS = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s'] as const;
-const CHART_RATE_UNITS = ['KB/s', 'MB/s', 'GB/s', 'TB/s'] as const;
 export const AUTO_DUAL_RATE_AXIS_RATIO = 8;
 
 export function formatBytesPerSecond(bytes: number): string {
@@ -37,23 +43,23 @@ export function formatRateTooltipValue(value: number, unit: string): string {
 }
 
 export function getRateChartScale(seriesList: ChartPoint[][]): { unit: string; divisor: number } {
-  const maxValueInKBs = Math.max(
+  const maxValue = Math.max(
     0,
     ...seriesList.flatMap((series) => series.map((point) => point.value)),
   );
 
   let unitIndex = 0;
   let divisor = 1;
-  let normalizedMax = maxValueInKBs;
+  let normalizedMax = maxValue;
 
-  while (normalizedMax >= 1024 && unitIndex < CHART_RATE_UNITS.length - 1) {
+  while (normalizedMax >= 1024 && unitIndex < BYTE_RATE_UNITS.length - 1) {
     normalizedMax /= 1024;
     divisor *= 1024;
     unitIndex += 1;
   }
 
   return {
-    unit: CHART_RATE_UNITS[unitIndex],
+    unit: BYTE_RATE_UNITS[unitIndex],
     divisor,
   };
 }
