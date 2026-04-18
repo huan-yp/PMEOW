@@ -37,6 +37,9 @@ def render_environment_file(config: AgentConfig) -> str:
     lines = [
         f"PMEOW_SERVER_URL={config.server_url}",
         f"PMEOW_AGENT_ID={config.agent_id or ''}",
+        f"PMEOW_WS_RECONNECT_DELAY={config.ws_reconnect_delay}",
+        f"PMEOW_WS_RECONNECT_DELAY_MAX={config.ws_reconnect_delay_max}",
+        f"PMEOW_WS_REQUEST_TIMEOUT={config.ws_request_timeout}",
         f"PMEOW_COLLECTION_INTERVAL={config.collection_interval}",
         f"PMEOW_ATTACH_TIMEOUT={config.attach_timeout}",
         f"PMEOW_HISTORY_WINDOW={config.history_window_seconds}",

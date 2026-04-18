@@ -18,7 +18,6 @@ from pmeow.models import UnifiedReport
 log = logging.getLogger(__name__)
 
 _NAMESPACE = "/agent"
-_MAX_BACKOFF = 60
 
 _VALID_SCHEMES = {"http", "https", "ws", "wss"}
 
@@ -47,6 +46,9 @@ class AgentTransportClient:
         self,
         server_url: str,
         agent_id: str,
+        reconnect_delay: float = 0.5,
+        reconnect_delay_max: float = 5.0,
+        request_timeout: float = 3.0,
     ) -> None:
         self._server_url = _normalize_server_url(server_url)
         self._agent_id = agent_id
@@ -54,10 +56,12 @@ class AgentTransportClient:
         self._client = socketio.Client(
             reconnection=True,
             reconnection_attempts=0,
-            reconnection_delay=1,
-            reconnection_delay_max=_MAX_BACKOFF,
+            reconnection_delay=reconnect_delay,
+            reconnection_delay_max=reconnect_delay_max,
+            randomization_factor=0.1,
             logger=False,
             engineio_logger=False,
+            request_timeout=request_timeout,
         )
         self._connected = False
 

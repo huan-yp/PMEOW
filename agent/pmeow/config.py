@@ -19,6 +19,9 @@ class AgentConfig:
     server_url: str = ""
     agent_id: str | None = None
     log_level: int = logging.INFO
+    ws_reconnect_delay: float = 0.5
+    ws_reconnect_delay_max: float = 5.0
+    ws_request_timeout: float = 3.0
     collection_interval: int = 1
     history_window_seconds: int = 5
     attach_timeout: int = 30
@@ -45,6 +48,14 @@ def validate_redundancy_coefficient(value: float) -> float:
         raise ValueError(
             f"vram_redundancy_coefficient must be >= 0 and < 1.0, got {value}"
         )
+    return value
+
+
+def validate_positive_float(value: float, name: str) -> float:
+    """Normalize and validate a positive float setting."""
+    value = float(value)
+    if value <= 0:
+        raise ValueError(f"{name} must be > 0, got {value}")
     return value
 
 
@@ -98,6 +109,20 @@ def load_config() -> AgentConfig:
         _int("PMEOW_COLLECTION_INTERVAL", 1), "collection_interval"
     )
     log_level = validate_log_level(env.get("PMEOW_LOG_LEVEL", "INFO"))
+    ws_reconnect_delay = validate_positive_float(
+        _float("PMEOW_WS_RECONNECT_DELAY", 0.5), "ws_reconnect_delay"
+    )
+    ws_reconnect_delay_max = validate_positive_float(
+        _float("PMEOW_WS_RECONNECT_DELAY_MAX", 5.0), "ws_reconnect_delay_max"
+    )
+    if ws_reconnect_delay_max < ws_reconnect_delay:
+        raise ValueError(
+            "ws_reconnect_delay_max must be >= ws_reconnect_delay, got "
+            f"{ws_reconnect_delay_max} < {ws_reconnect_delay}"
+        )
+    ws_request_timeout = validate_positive_float(
+        _float("PMEOW_WS_REQUEST_TIMEOUT", 3.0), "ws_request_timeout"
+    )
     attach_timeout = validate_interval(
         _int("PMEOW_ATTACH_TIMEOUT", 30), "attach_timeout"
     )
@@ -118,6 +143,9 @@ def load_config() -> AgentConfig:
         server_url=env.get("PMEOW_SERVER_URL", ""),
         agent_id=agent_id,
         log_level=log_level,
+        ws_reconnect_delay=ws_reconnect_delay,
+        ws_reconnect_delay_max=ws_reconnect_delay_max,
+        ws_request_timeout=ws_request_timeout,
         collection_interval=collection_interval,
         history_window_seconds=history_window_seconds,
         attach_timeout=attach_timeout,

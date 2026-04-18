@@ -148,6 +148,9 @@ Agent 通过环境变量配置；未设置时会使用默认值。
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `PMEOW_SERVER_URL` | 空 | PMEOW Web 服务基础 URL，例如 `http://server:17200` |
+| `PMEOW_WS_RECONNECT_DELAY` | `0.5` | Socket.IO 断线后首次重连等待时间，单位秒 |
+| `PMEOW_WS_RECONNECT_DELAY_MAX` | `5.0` | Socket.IO 重连退避上限，单位秒 |
+| `PMEOW_WS_REQUEST_TIMEOUT` | `3.0` | Socket.IO 建连 / 请求超时，单位秒 |
 | `PMEOW_AGENT_ID` | hostname | 当前 Agent 的唯一标识 |
 | `PMEOW_COLLECTION_INTERVAL` | `5` | 指标采集间隔，单位秒 |
 | `PMEOW_HEARTBEAT_INTERVAL` | `30` | 心跳上报间隔，单位秒 |
@@ -160,6 +163,8 @@ Agent 通过环境变量配置；未设置时会使用默认值。
 | `PMEOW_AGENT_LOG_FILE` | 空 | 后台模式使用的专用运行日志文件 |
 
 `PMEOW_SERVER_URL` 需要指向 PMEOW Web 服务的基础 URL。Agent transport 会自动连接 Socket.IO `/agent` namespace；不要自己拼 `/agent`，也不要改成原始 WebSocket URL。
+
+如果节点网络抖动较多，优先调 `PMEOW_WS_RECONNECT_DELAY_MAX` 和 `PMEOW_WS_REQUEST_TIMEOUT`；默认值已经比旧配置更激进，断线后会更快重新尝试连接。
 
 ## 状态目录
 

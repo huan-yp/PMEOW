@@ -75,6 +75,9 @@ class DaemonService:
             self.transport = AgentTransportClient(
                 server_url=config.server_url,
                 agent_id=agent_id,
+                reconnect_delay=config.ws_reconnect_delay,
+                reconnect_delay_max=config.ws_reconnect_delay_max,
+                request_timeout=config.ws_request_timeout,
             )
         self._last_per_gpu: list | None = None
 
