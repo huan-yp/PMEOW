@@ -110,7 +110,8 @@ def collect_snapshot(
 
     network = measure_stage("network", collect_network)
     if internet_probe is not None:
-        probe_result = measure_stage("internet_probe", internet_probe.get)
+        measure_stage("internet_probe", internet_probe.refresh_async)
+        probe_result = internet_probe.get()
         if probe_result is not None:
             network.internet_reachable = probe_result.reachable
             network.internet_latency_ms = probe_result.latency_ms

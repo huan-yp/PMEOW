@@ -14,8 +14,10 @@ privileges, while TCP 443 is almost always allowed outbound.
 
 from __future__ import annotations
 
+import logging
 import os
 import socket
+import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -23,6 +25,8 @@ from typing import Optional
 _DEFAULT_TARGETS = "1.1.1.1:443,8.8.8.8:443"
 _DEFAULT_TIMEOUT_SECONDS = 3.0
 _DEFAULT_INTERVAL_SECONDS = 30.0
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -133,8 +137,12 @@ class InternetProbe:
         self._targets = targets if targets is not None else _parse_targets(_DEFAULT_TARGETS)
         self._timeout_seconds = timeout_seconds
         self._interval_seconds = interval_seconds
+        self._lock = threading.Lock()
         self._last_result: Optional[InternetProbeResult] = None
         self._last_run_monotonic: Optional[float] = None
+        self._refreshing = False
+        self._worker: threading.Thread | None = None
+        self._stopped = False
 
     @property
     def enabled(self) -> bool:
@@ -142,22 +150,65 @@ class InternetProbe:
         return bool(self._targets)
 
     def get(self, now_monotonic: Optional[float] = None) -> Optional[InternetProbeResult]:
-        """Return the current cached probe result, refreshing if stale.
+        """Return the current cached probe result without blocking.
 
         Returns ``None`` when the probe is disabled (no targets configured);
         callers should treat this as "no data to report".
         """
         if not self._targets:
             return None
+        with self._lock:
+            return self._last_result
+
+    def refresh_async(self, now_monotonic: Optional[float] = None) -> bool:
+        """Schedule a background probe refresh when the cache is stale."""
+        if not self._targets:
+            return False
+
         now = now_monotonic if now_monotonic is not None else time.monotonic()
-        if (
-            self._last_result is None
-            or self._last_run_monotonic is None
-            or (now - self._last_run_monotonic) >= self._interval_seconds
-        ):
-            self._last_result = probe_internet(self._targets, self._timeout_seconds)
-            self._last_run_monotonic = now
-        return self._last_result
+        with self._lock:
+            if self._stopped or self._refreshing:
+                return False
+            if (
+                self._last_run_monotonic is not None
+                and (now - self._last_run_monotonic) < self._interval_seconds
+            ):
+                return False
+
+            self._refreshing = True
+            worker = threading.Thread(
+                target=self._run_refresh,
+                args=(now,),
+                name="pmeow-internet-probe",
+                daemon=True,
+            )
+            self._worker = worker
+            worker.start()
+            return True
+
+    def stop(self, timeout: float = 0.0) -> None:
+        """Prevent new refreshes and optionally wait for the active worker."""
+        with self._lock:
+            self._stopped = True
+            worker = self._worker
+        if worker is not None and timeout > 0:
+            worker.join(timeout=timeout)
+
+    def _run_refresh(self, started_monotonic: float) -> None:
+        result: Optional[InternetProbeResult] = None
+        try:
+            result = probe_internet(self._targets, self._timeout_seconds)
+        except Exception:
+            log.exception("internet probe refresh failed")
+        finally:
+            current = threading.current_thread()
+            with self._lock:
+                if result is not None:
+                    self._last_result = result
+                    self._last_run_monotonic = started_monotonic
+                self._refreshing = False
+                if self._worker is current:
+                    self._worker = None
 
 
 def load_probe_from_env(env: Optional[dict[str, str]] = None) -> InternetProbe:

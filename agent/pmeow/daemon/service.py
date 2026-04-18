@@ -35,6 +35,15 @@ from pmeow.transport.client import AgentTransportClient
 log = logging.getLogger(__name__)
 
 
+def _remaining_collection_delay(
+    interval_seconds: float,
+    cycle_started_monotonic: float,
+    now_monotonic: float,
+) -> float:
+    """Return the remaining delay before the next collection cycle."""
+    return max(0.0, interval_seconds - (now_monotonic - cycle_started_monotonic))
+
+
 class DaemonService:
     """Central service that coordinates collection, scheduling, and task execution."""
 
@@ -100,16 +109,28 @@ class DaemonService:
             )
 
         log.info("daemon started (interval=%ds)", self.config.collection_interval)
+        if self.internet_probe is not None:
+            self.internet_probe.refresh_async()
+
         try:
             while not self._shutdown.is_set():
+                cycle_started = time.monotonic()
                 try:
                     self.collect_cycle()
                 except Exception:
                     log.exception("collection cycle error")
-                self._shutdown.wait(timeout=self.config.collection_interval)
+                delay = _remaining_collection_delay(
+                    self.config.collection_interval,
+                    cycle_started,
+                    time.monotonic(),
+                )
+                if self._shutdown.wait(timeout=delay):
+                    break
         finally:
             self.runtime_monitor.stop()
             monitor_thread.join(timeout=5)
+            if self.internet_probe is not None:
+                self.internet_probe.stop()
             if self.transport:
                 self.transport.disconnect()
             srv.shutdown()

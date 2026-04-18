@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from unittest.mock import patch
 
 import pmeow.collector.internet as internet_mod
