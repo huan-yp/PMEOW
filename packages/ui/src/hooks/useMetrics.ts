@@ -87,12 +87,13 @@ function toTaskRecord(task: TaskInfo, serverId: string): Task {
     priority: task.priority,
     createdAt: task.createdAt,
     startedAt: task.startedAt,
-    finishedAt: null,
+    finishedAt: task.finishedAt ?? null,
     pid: task.pid,
-    exitCode: null,
+    exitCode: task.exitCode ?? null,
     assignedGpus: task.assignedGpus,
     declaredVramPerGpu: task.declaredVramPerGpu,
     scheduleHistory: task.scheduleHistory,
+    endReason: task.endReason ?? null,
   };
 }
 
@@ -100,16 +101,19 @@ export function useLoadInitialData() {
   const transport = useTransport();
   const setServers = useStore((s) => s.setServers);
   const setStatuses = useStore((s) => s.setStatuses);
+  const setLatestSnapshots = useStore((s) => s.setLatestSnapshots);
 
   useEffect(() => {
     async function load() {
-      const [servers, statuses] = await Promise.all([
+      const [servers, statuses, latestMetrics] = await Promise.all([
         transport.getServers(),
         transport.getStatuses(),
+        transport.getLatestMetrics(),
       ]);
       setServers(servers);
       setStatuses(statuses);
+      setLatestSnapshots(latestMetrics);
     }
     load().catch(() => undefined);
-  }, [transport, setServers, setStatuses]);
+  }, [transport, setServers, setStatuses, setLatestSnapshots]);
 }

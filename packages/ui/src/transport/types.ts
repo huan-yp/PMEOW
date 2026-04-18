@@ -33,6 +33,7 @@ export interface UnifiedReport {
   taskQueue: {
     queued: TaskInfo[];
     running: TaskInfo[];
+    recentlyEnded: TaskInfo[];
   };
 }
 
@@ -122,7 +123,7 @@ export interface GpuCardReport {
 
 export interface TaskInfo {
   taskId: string;
-  status: 'queued' | 'running';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abnormal';
   command: string;
   cwd: string;
   user: string;
@@ -133,7 +134,10 @@ export interface TaskInfo {
   priority: number;
   createdAt: number;
   startedAt: number | null;
+  finishedAt: number | null;
   pid: number | null;
+  exitCode: number | null;
+  endReason: string | null;
   assignedGpus: number[] | null;
   declaredVramPerGpu: number | null;
   scheduleHistory: ScheduleEvaluation[];
@@ -150,7 +154,7 @@ export interface ScheduleEvaluation {
 export interface Task {
   id: string;
   serverId: string;
-  status: 'queued' | 'running' | 'ended';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abnormal';
   command: string;
   cwd: string;
   user: string;
@@ -167,6 +171,7 @@ export interface Task {
   assignedGpus: number[] | null;
   declaredVramPerGpu: number | null;
   scheduleHistory: ScheduleEvaluation[] | null;
+  endReason: string | null;
 }
 
 // Alert (from spec §3.1 alerts table)

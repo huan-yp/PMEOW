@@ -200,14 +200,15 @@ function SummaryMetricCard(props: {
 
 function UsageGradientBar({ value, caption }: { value: number; caption: string }) {
   const clamped = clampPercent(value);
+  const barTone = getUsageTone(clamped);
+  const barPresentation = getBarPresentation(barTone);
 
   return (
     <div className="mt-4 space-y-2">
       <div className="relative h-3 overflow-hidden rounded-full bg-slate-900/80 ring-1 ring-white/6">
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(52,211,153,0.95)_0%,rgba(52,211,153,0.95)_60%,rgba(251,191,36,0.95)_60%,rgba(251,191,36,0.95)_90%,rgba(248,113,113,0.98)_90%,rgba(248,113,113,0.98)_100%)]" />
         <div
-          className="absolute inset-y-0 right-0 bg-slate-950/88 transition-all duration-300"
-          style={{ width: `${100 - clamped}%` }}
+          className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${barPresentation.fillClass}`}
+          style={{ width: `${clamped}%` }}
         />
         <div className="absolute inset-y-0 left-[60%] w-px bg-slate-950/80" />
         <div className="absolute inset-y-0 left-[90%] w-px bg-slate-950/80" />
@@ -222,10 +223,6 @@ function UsageGradientBar({ value, caption }: { value: number; caption: string }
 
 function SemiGauge({ value, tone }: { value: number; tone: SummaryTone }) {
   const clamped = clampPercent(value);
-  const angle = -90 + (clamped / 100) * 180;
-  const radians = (angle * Math.PI) / 180;
-  const x = 50 + 36 * Math.cos(radians);
-  const y = 50 + 36 * Math.sin(radians);
   const toneMap = getTonePresentation(tone);
 
   return (
@@ -241,7 +238,6 @@ function SemiGauge({ value, tone }: { value: number; tone: SummaryTone }) {
           pathLength={100}
           strokeDasharray={`${clamped} 100`}
         />
-        <circle cx={x} cy={y} r="4.5" fill={toneMap.stroke} stroke="rgba(15,23,42,0.9)" strokeWidth="2" />
       </svg>
       <span className={`-mt-4 text-xs font-semibold uppercase tracking-[0.22em] ${toneMap.textClass}`}>{toneMap.label}</span>
     </div>
@@ -267,8 +263,27 @@ function MetricGlyph({ kind, tone }: { kind: 'cpu' | 'memory' | 'disk' | 'networ
 
 function getUsageTone(value: number): SummaryTone {
   if (value >= 90) return 'danger';
-  if (value >= 70) return 'warn';
+  if (value >= 60) return 'warn';
   return 'good';
+}
+
+function getBarPresentation(tone: SummaryTone) {
+  switch (tone) {
+    case 'danger':
+      return {
+        fillClass: 'bg-red-400/95 shadow-[0_0_18px_rgba(248,113,113,0.3)]',
+      };
+    case 'warn':
+      return {
+        fillClass: 'bg-amber-400/95 shadow-[0_0_18px_rgba(251,191,36,0.28)]',
+      };
+    case 'good':
+    case 'network':
+    default:
+      return {
+        fillClass: 'bg-emerald-400/95 shadow-[0_0_18px_rgba(52,211,153,0.24)]',
+      };
+  }
 }
 
 function getTonePresentation(tone: SummaryTone) {

@@ -23,7 +23,7 @@ export default function TaskDetail() {
   if (loading) return <div className="p-8 text-center text-slate-500">加载中...</div>;
   if (!task) return <div className="p-8 text-center text-slate-500">任务不存在。<button onClick={() => navigate('/tasks')} className="ml-2 text-accent-blue hover:underline">返回列表</button></div>;
 
-  const statusLabels: Record<string, string> = { queued: '排队中', running: '运行中', ended: '已结束' };
+  const statusLabels: Record<string, string> = { queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', cancelled: '已取消', abnormal: '异常结束' };
 
   return (
     <div className="space-y-6">
@@ -43,6 +43,7 @@ export default function TaskDetail() {
         <InfoCard label="请求 VRAM" value={`${task.requireVramMb} MB × ${task.requireGpuCount} GPU`} />
         <InfoCard label="PID" value={task.pid ? String(task.pid) : '—'} />
         <InfoCard label="退出码" value={task.exitCode !== null ? String(task.exitCode) : '—'} />
+        <InfoCard label="结束原因" value={task.endReason ?? '—'} />
         <InfoCard label="创建时间" value={new Date(task.createdAt * 1000).toLocaleString('zh-CN')} />
         <InfoCard label="开始时间" value={task.startedAt ? new Date(task.startedAt * 1000).toLocaleString('zh-CN') : '—'} />
         <InfoCard label="结束时间" value={task.finishedAt ? new Date(task.finishedAt * 1000).toLocaleString('zh-CN') : '—'} />
@@ -72,7 +73,7 @@ export default function TaskDetail() {
         </div>
       )}
 
-      {task.status !== 'ended' && (
+      {(task.status === 'queued' || task.status === 'running') && (
         <div className="flex gap-3">
           <button
             onClick={async () => {

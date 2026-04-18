@@ -20,6 +20,7 @@ interface AppState {
   // Realtime snapshots (in-memory, from WebSocket)
   latestSnapshots: Map<string, UnifiedReport>;
   setLatestSnapshot: (serverId: string, report: UnifiedReport) => void;
+  setLatestSnapshots: (reports: Record<string, UnifiedReport>) => void;
 
   // Tasks
   tasks: Task[];
@@ -73,6 +74,11 @@ export const useStore = create<AppState>((set) => ({
     const next = new Map(s.latestSnapshots);
     next.set(serverId, report);
     return { latestSnapshots: next };
+  }),
+  setLatestSnapshots: (reports) => set(() => {
+    const map = new Map<string, UnifiedReport>();
+    for (const [k, v] of Object.entries(reports)) map.set(k, v);
+    return { latestSnapshots: map };
   }),
 
   // Tasks

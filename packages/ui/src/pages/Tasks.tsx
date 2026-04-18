@@ -40,7 +40,10 @@ export default function Tasks() {
           <option value="">全部状态</option>
           <option value="queued">排队中</option>
           <option value="running">运行中</option>
-          <option value="ended">已结束</option>
+          <option value="succeeded">已完成</option>
+          <option value="failed">失败</option>
+          <option value="cancelled">已取消</option>
+          <option value="abnormal">异常结束</option>
         </select>
       </div>
 
@@ -94,8 +97,11 @@ function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     queued: 'bg-amber-500/20 text-amber-300',
     running: 'bg-blue-500/20 text-blue-300',
-    ended: 'bg-slate-500/20 text-slate-400',
+    succeeded: 'bg-emerald-500/20 text-emerald-300',
+    failed: 'bg-red-500/20 text-red-300',
+    cancelled: 'bg-slate-500/20 text-slate-400',
+    abnormal: 'bg-orange-500/20 text-orange-300',
   };
-  const labels: Record<string, string> = { queued: '排队中', running: '运行中', ended: '已结束' };
-  return <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${styles[status] ?? styles.ended}`}>{labels[status] ?? status}</span>;
+  const labels: Record<string, string> = { queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', cancelled: '已取消', abnormal: '异常结束' };
+  return <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${styles[status] ?? 'bg-slate-500/20 text-slate-400'}`}>{labels[status] ?? status}</span>;
 }

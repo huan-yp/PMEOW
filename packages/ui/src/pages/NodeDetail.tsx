@@ -96,7 +96,84 @@ export default function NodeDetail() {
     setSnapshotTimeline([]);
     setSelectedSnapshotTs(null);
     setTab('realtime');
-  }, [id]);
+
+    // Hydrate realtime charts with recent history so the page isn't blank after refresh
+    if (!id) return;
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const fromSeconds = nowSeconds - REALTIME_WINDOW_SECONDS;
+    transport.getMetricsHistory(id, { from: fromSeconds, to: nowSeconds, tier: 'recent' })
+      .then((res) => {
+        if (res.snapshots.length === 0) return;
+        const cutoff = (nowSeconds - REALTIME_WINDOW_SECONDS) * 1000;
+        const cpuPts: ChartPoint[] = [];
+        const memPts: ChartPoint[] = [];
+        const rxPts: ChartPoint[] = [];
+        const txPts: ChartPoint[] = [];
+        const diskRPts: ChartPoint[] = [];
+        const diskWPts: ChartPoint[] = [];
+        const gpuUtilPts: ChartPoint[] = [];
+        const gpuVramPts: ChartPoint[] = [];
+        const perGpu: Record<number, PerGpuRealtimeHistory> = {};
+
+        for (const snap of res.snapshots) {
+          const t = snap.timestamp * 1000;
+          if (t <= cutoff) continue;
+          cpuPts.push({ time: t, value: snap.cpu.usagePercent });
+          memPts.push({ time: t, value: snap.memory.usagePercent });
+          rxPts.push({ time: t, value: snap.network.rxBytesPerSec });
+          txPts.push({ time: t, value: snap.network.txBytesPerSec });
+          diskRPts.push({ time: t, value: snap.diskIo.readBytesPerSec });
+          diskWPts.push({ time: t, value: snap.diskIo.writeBytesPerSec });
+          const totals = computeGpuTotals(snap.gpuCards);
+          gpuUtilPts.push({ time: t, value: totals.averageUtilization });
+          gpuVramPts.push({ time: t, value: totals.totalVramPercent });
+          for (const gpu of snap.gpuCards) {
+            const cur = perGpu[gpu.index] ?? { utilization: [], memoryUsage: [], memoryBandwidth: [] };
+            cur.utilization.push({ time: t, value: gpu.utilizationGpu });
+            cur.memoryUsage.push({ time: t, value: computeGpuMemoryUsagePercent(gpu) });
+            cur.memoryBandwidth.push({ time: t, value: gpu.utilizationMemory });
+            perGpu[gpu.index] = cur;
+          }
+        }
+
+        // Merge with any points already appended by live updates (use functional updater)
+        const merge = (prev: ChartPoint[], seed: ChartPoint[]) => {
+          if (seed.length === 0) return prev;
+          const merged = new Map<number, number>();
+          for (const p of seed) merged.set(p.time, p.value);
+          for (const p of prev) merged.set(p.time, p.value); // live points win
+          const now = Date.now();
+          const liveCutoff = now - REALTIME_WINDOW_SECONDS * 1000;
+          return Array.from(merged.entries())
+            .filter(([t]) => t > liveCutoff)
+            .sort(([a], [b]) => a - b)
+            .map(([time, value]) => ({ time, value }));
+        };
+
+        setCpuHistory((prev) => merge(prev, cpuPts));
+        setMemHistory((prev) => merge(prev, memPts));
+        setNetworkRxHistory((prev) => merge(prev, rxPts));
+        setNetworkTxHistory((prev) => merge(prev, txPts));
+        setDiskReadHistory((prev) => merge(prev, diskRPts));
+        setDiskWriteHistory((prev) => merge(prev, diskWPts));
+        setGpuTotalUtilHistory((prev) => merge(prev, gpuUtilPts));
+        setGpuTotalVramHistory((prev) => merge(prev, gpuVramPts));
+        setGpuRealtimeHistory((prev) => {
+          const next: Record<number, PerGpuRealtimeHistory> = { ...prev };
+          for (const [idx, seed] of Object.entries(perGpu)) {
+            const i = Number(idx);
+            const cur = next[i] ?? { utilization: [], memoryUsage: [], memoryBandwidth: [] };
+            next[i] = {
+              utilization: merge(cur.utilization, seed.utilization),
+              memoryUsage: merge(cur.memoryUsage, seed.memoryUsage),
+              memoryBandwidth: merge(cur.memoryBandwidth, seed.memoryBandwidth),
+            };
+          }
+          return next;
+        });
+      })
+      .catch(() => { /* ignore — live updates will still work */ });
+  }, [id, transport]);
 
   useEffect(() => {
     if (!report) return;
@@ -722,7 +799,9 @@ function GpuTrendDisclosure(props: {
 }
 
 function appendChartPoint(history: ChartPoint[], time: number, value: number, cutoff: number): ChartPoint[] {
-  return [...history.filter((point) => point.time > cutoff), { time, value }];
+  const filtered = history.filter((point) => point.time > cutoff && point.time !== time);
+  filtered.push({ time, value });
+  return filtered;
 }
 
 function computeGpuTotals(gpuCards: SnapshotWithGpu['gpuCards']) {
