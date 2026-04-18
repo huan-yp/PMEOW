@@ -1,3 +1,11 @@
+/**
+ * 任务查询和控制的唯一对外入口（TaskService）。
+ *
+ * 提供 listTasks / getTask / countTasks 查询接口，
+ * 以及 cancelTask / setPriority 控制接口（通过 AgentSession 下发指令）。
+ *
+ * @module
+ */
 import * as taskDb from '../db/tasks.js';
 import { AgentSessionRegistry } from '../node/registry.js';
 import { SERVER_COMMAND } from '../agent/protocol.js';

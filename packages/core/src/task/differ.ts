@@ -1,3 +1,11 @@
+/**
+ * 任务 diff 算法。
+ *
+ * 基于上一轮 active 集合、本轮 active 集合和本轮 recentlyEnded，
+ * 按 taskId 建索引，计算出 submitted / started / ended 三类变化。
+ *
+ * @module
+ */
 import type { TaskInfo } from '../types.js';
 import type { TaskEventType } from './events.js';
 

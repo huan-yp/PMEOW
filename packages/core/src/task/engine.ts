@@ -1,3 +1,12 @@
+/**
+ * 任务摄入的唯一业务入口。
+ *
+ * 从一份 Agent 汇报中提取 active / recentlyEnded 视图，
+ * 调用 diffTasks 生成状态变化，逐条执行 upsertTask / endTask 落库，
+ * 并返回 TaskEvent[] 供上层广播。
+ *
+ * @module
+ */
 import type { UnifiedReport } from '../types.js';
 import type { TaskEvent } from './events.js';
 import { diffTasks } from './differ.js';
