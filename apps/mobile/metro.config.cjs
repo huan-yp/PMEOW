@@ -15,6 +15,10 @@ const androidNativeBuildDirs = [
   path.join(__dirname, 'android', 'build'),
 ];
 
+const mobileNodeModules = path.resolve(__dirname, 'node_modules');
+
+const singleInstancePackages = ['react', 'react-native'];
+
 module.exports = mergeConfig(defaultConfig, {
   watchFolders: [workspaceRoot],
   resolver: {
@@ -26,5 +30,18 @@ module.exports = mergeConfig(defaultConfig, {
     nodeModulesPaths: [
       path.resolve(workspaceRoot, 'node_modules'),
     ],
+    resolveRequest: (context, moduleName, platform) => {
+      const pkg = singleInstancePackages.find(
+        (name) => moduleName === name || moduleName.startsWith(name + '/'),
+      );
+      if (pkg && !context.originModulePath.startsWith(mobileNodeModules + path.sep + pkg + path.sep)) {
+        return context.resolveRequest(
+          { ...context, nodeModulesPaths: [mobileNodeModules] },
+          moduleName,
+          platform,
+        );
+      }
+      return context.resolveRequest(context, moduleName, platform);
+    },
   },
 });

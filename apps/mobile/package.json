@@ -10,17 +10,18 @@
     "@babel/runtime": "^7.29.2",
     "@monitor/app-common": "file:../common",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "react": "18.3.0",
-    "react-native": "^0.76.7",
+    "react": "19.0.0",
+    "react-native": "0.79.0",
+    "react-native-svg": "^15.15.4",
     "socket.io-client": "^4.8.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
-    "@react-native/gradle-plugin": "^0.76.7",
-    "@react-native/metro-config": "^0.76.7",
-    "@react-native/typescript-config": "^0.76.7",
-    "@types/react": "^18.3.0",
+    "@react-native/gradle-plugin": "0.79.0",
+    "@react-native/metro-config": "0.79.0",
+    "@react-native/typescript-config": "0.79.0",
+    "@types/react": "19.0.0",
     "typescript": "^5.7.0"
   }
 }
