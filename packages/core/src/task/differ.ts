@@ -1,5 +1,5 @@
 import type { TaskInfo } from '../types.js';
-import type { TaskEventType } from '../task/events.js';
+import type { TaskEventType } from './events.js';
 
 export interface TaskDiffResult {
   eventType: TaskEventType;
@@ -16,28 +16,12 @@ export interface TaskDiffResult {
  *   recentlyEnded  – tasks the agent explicitly reports as terminated
  *
  * Rules:
- *   1. New active task (not in prev)          → task_submitted (+ task_started if running)
- *   2. Status queued→running                  → task_started
- *   3. Priority changed                       → task_priority_changed
- *   4. scheduleHistory changed                → task_schedule_updated
- *   5. Present in recentlyEnded               → task_ended (with full terminal info)
- *   6. In prev but missing from both curr     → task_ended (disappeared / abnormal)
+ *   1. New active task (not in prev)          → submitted (+ started if running)
+ *   2. Status queued→running                  → started
+ *   3. Present in recentlyEnded               → ended (with full terminal info)
+ *   4. In prev but missing from both curr     → ended (disappeared / abnormal)
  *      AND recentlyEnded
  */
-
-function hasScheduleHistoryChanged(prev: TaskInfo, curr: TaskInfo): boolean {
-  if (prev.scheduleHistory.length !== curr.scheduleHistory.length) {
-    return true;
-  }
-
-  for (let index = 0; index < curr.scheduleHistory.length; index += 1) {
-    if (JSON.stringify(prev.scheduleHistory[index]) !== JSON.stringify(curr.scheduleHistory[index])) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 export function diffTasks(
   serverId: string,
@@ -61,12 +45,6 @@ export function diffTasks(
     } else {
       if (prev.status === 'queued' && curr.status === 'running') {
         results.push({ eventType: 'started', task: curr, serverId });
-      }
-      if (prev.priority !== curr.priority) {
-        results.push({ eventType: 'priority_changed', task: curr, serverId });
-      }
-      if (hasScheduleHistoryChanged(prev, curr)) {
-        results.push({ eventType: 'schedule_updated', task: curr, serverId });
       }
     }
   }

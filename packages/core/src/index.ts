@@ -6,7 +6,7 @@ export { getDatabase, closeDatabase } from "./db/database.js";
 export { getAllServers, getServerById, getServerByAgentId, createServer, updateServer, deleteServer } from "./db/servers.js";
 export { saveSnapshot, deleteOldRecentSnapshots, getSnapshotHistory, getLatestSnapshot } from "./db/snapshots.js";
 export type { SnapshotWithGpus } from "./db/snapshots.js";
-export { upsertTask, endTask, getTasks, countTasks, getTaskById, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
+export { upsertTask, endTask, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
 export { getAlerts, getActiveAlerts, getAlertByKey, reconcileAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts, deleteAlertsByServerId } from "./db/alerts.js";
 export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "./db/security-events.js";
 export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";
@@ -28,15 +28,19 @@ export { createAgentSession } from "./node/session.js";
 // Ingest
 export { IngestPipeline } from "./ingest/pipeline.js";
 export type { IngestCallbacks } from "./ingest/pipeline.js";
-export { diffTasks } from "./ingest/task-differ.js";
 export { SnapshotScheduler } from "./ingest/snapshot-scheduler.js";
 
 // Task
-export { listTasks, getTask, cancelTask, setPriority } from "./task/service.js";
+export { TaskEngine } from "./task/engine.js";
+export { diffTasks } from "./task/differ.js";
+export type { TaskDiffResult } from "./task/differ.js";
+export { listTasks, getTask, countTasks, cancelTask, setPriority } from "./task/service.js";
+export type { TaskFilter } from "./task/service.js";
 export type { TaskEvent, TaskEventType } from "./task/events.js";
 
 // Alert
-export { collectAlertCandidates, collectOfflineCandidates } from "./alert/service.js";
+export { AlertEngine } from "./alert/engine.js";
+export { AlertStateStore } from "./alert/state-store.js";
 
 // Security
 export { analyzeReport } from "./security/analyzer.js";

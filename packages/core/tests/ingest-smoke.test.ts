@@ -3,11 +3,12 @@ import {
   getDatabase,
   createServer,
   IngestPipeline,
+  AlertEngine,
   diffTasks,
   type UnifiedReport,
   type TaskInfo,
   type TaskEvent,
-  type AlertRecord,
+  type AlertStateChange,
 } from '../src/index.js';
 
 function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
@@ -91,14 +92,6 @@ describe('task diff', () => {
     expect(diffs[0].eventType).toBe('started');
   });
 
-  it('detects priority change', () => {
-    const prev = [makeTask({ priority: 10 })];
-    const curr = [makeTask({ priority: 5 })];
-    const diffs = diffTasks('server-1', prev, curr);
-    expect(diffs).toHaveLength(1);
-    expect(diffs[0].eventType).toBe('priority_changed');
-  });
-
   it('detects task ended (disappeared)', () => {
     const diffs = diffTasks('server-1', [makeTask()], []);
     expect(diffs).toHaveLength(1);
@@ -110,12 +103,10 @@ describe('IngestPipeline', () => {
   it('processes a report and fires callbacks', () => {
     const server = createServer({ name: 'node-1', agentId: 'agent-1' });
     const events: TaskEvent[] = [];
-    const alerts: AlertRecord[] = [];
 
     const pipeline = new IngestPipeline({
       onMetricsUpdate: () => {},
       onTaskEvent: (e) => events.push(e),
-      onAlert: (a) => alerts.push(a),
     });
 
     // First report with a queued task
@@ -166,10 +157,10 @@ describe('IngestPipeline', () => {
 
   it('triggers alerts on high CPU', () => {
     const server = createServer({ name: 'node-1', agentId: 'agent-1' });
-    const alerts: AlertRecord[] = [];
+    const changes: AlertStateChange[] = [];
     const pipeline = new IngestPipeline({
-      onAlert: (a) => alerts.push(a),
-    });
+      onAlertStateChange: (change) => changes.push(change),
+    }, new AlertEngine());
 
     const report = makeReport({
       resourceSnapshot: {
@@ -178,9 +169,10 @@ describe('IngestPipeline', () => {
       },
     });
     pipeline.processReport(server.id, report);
-    
-    const cpuAlerts = alerts.filter(a => a.alertType === 'cpu');
-    expect(cpuAlerts.length).toBeGreaterThanOrEqual(1);
-    expect(cpuAlerts[0].value).toBe(95);
+
+    const cpuChanges = changes.filter((change) => change.alert.alertType === 'cpu');
+    expect(cpuChanges.length).toBeGreaterThanOrEqual(1);
+    expect(cpuChanges[0].toStatus).toBe('active');
+    expect(cpuChanges[0].alert.value).toBe(95);
   });
 });

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getTasks, countTasks, getTaskById, cancelTask, setPriority, type AgentSessionRegistry, type TaskRecord } from "@monitor/core";
+import { listTasks, countTasks, getTask, cancelTask, setPriority, type AgentSessionRegistry, type TaskRecord } from "@monitor/core";
 
 function toApiTask(r: TaskRecord) {
   return {
@@ -23,13 +23,13 @@ export function taskRoutes(registry: AgentSessionRegistry): Router {
       limit,
       offset: (page - 1) * limit,
     };
-    const tasks = getTasks(filter).map(toApiTask);
+    const tasks = listTasks(filter).map(toApiTask);
     const total = countTasks(filter);
     res.json({ tasks, total });
   });
   
   router.get("/tasks/:taskId", (req, res) => {
-    const task = getTaskById(req.params.taskId);
+    const task = getTask(req.params.taskId);
     if (!task) { res.status(404).json({ error: "not found" }); return; }
     res.json(toApiTask(task));
   });

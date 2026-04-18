@@ -1,5 +1,5 @@
 import { getDatabase } from './database.js';
-import type { AlertRecord, AlertStatus, AlertType, AlertCandidate, AlertStateChange } from '../types.js';
+import type { AlertRecord, AlertStatus, AlertType, AlertAnomaly, AlertStateChange } from '../types.js';
 
 // ---------------------------------------------------------------------------
 // Read helpers
@@ -46,14 +46,14 @@ export function getAlertByKey(serverId: string, alertType: AlertType, fingerprin
  */
 export function reconcileAlerts(
   serverId: string,
-  candidates: AlertCandidate[],
+  candidates: AlertAnomaly[],
   source: 'detection' | 'user_action' = 'detection',
 ): AlertStateChange[] {
   const db = getDatabase();
   const now = Date.now();
   const changes: AlertStateChange[] = [];
 
-  const candidateMap = new Map<string, AlertCandidate>();
+  const candidateMap = new Map<string, AlertAnomaly>();
   for (const c of candidates) {
     candidateMap.set(alertKey(c.alertType, c.fingerprint), c);
   }
@@ -161,13 +161,13 @@ function alertKey(alertType: string, fingerprint: string): string {
   return `${alertType}:${fingerprint}`;
 }
 
-function candidateValues(c: AlertCandidate) {
+function candidateValues(c: AlertAnomaly) {
   return { value: c.value, threshold: c.threshold, details: c.details };
 }
 
 import type Database from 'better-sqlite3';
 
-function insertAlert(db: Database.Database, serverId: string, c: AlertCandidate, now: number): AlertRecord {
+function insertAlert(db: Database.Database, serverId: string, c: AlertAnomaly, now: number): AlertRecord {
   const detailsJson = c.details ? JSON.stringify(c.details) : null;
   db.prepare(
     `INSERT INTO alerts (server_id, alert_type, value, threshold, fingerprint, details, status, created_at, updated_at)
@@ -178,7 +178,7 @@ function insertAlert(db: Database.Database, serverId: string, c: AlertCandidate,
   return mapAlertRow(row);
 }
 
-function updateAlertValue(db: Database.Database, id: number, c: AlertCandidate, now: number): void {
+function updateAlertValue(db: Database.Database, id: number, c: AlertAnomaly, now: number): void {
   const detailsJson = c.details ? JSON.stringify(c.details) : null;
   db.prepare('UPDATE alerts SET value = ?, threshold = ?, details = ?, updated_at = ? WHERE id = ?')
     .run(c.value, c.threshold, detailsJson, now, id);

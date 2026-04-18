@@ -10,13 +10,13 @@ import {
   getLatestSnapshot,
   deleteOldRecentSnapshots,
   upsertTask,
-  getTasks,
-  getTaskById,
+  listTasks,
+  getTask,
   endTask,
-  upsertAlert,
   getAlerts,
-  suppressAlert,
-  unsuppressAlert,
+  reconcileAlerts,
+  silenceAlert,
+  unsilenceAlert,
   createPerson,
   getPersonById,
   listPersons,
@@ -173,7 +173,7 @@ describe('tasks CRUD', () => {
     const task = makeTask();
     upsertTask(server.id, task);
 
-    const found = getTaskById('task-1');
+    const found = getTask('task-1');
     expect(found).toBeDefined();
     expect(found!.id).toBe('task-1');
     expect(found!.status).toBe('queued');
@@ -185,7 +185,7 @@ describe('tasks CRUD', () => {
     upsertTask(server.id, makeTask());
     endTask('task-1', Date.now());
 
-    const found = getTaskById('task-1');
+    const found = getTask('task-1');
     expect(found!.status).toBe('ended');
     expect(found!.finishedAt).toBeTruthy();
   });
@@ -195,7 +195,7 @@ describe('tasks CRUD', () => {
     for (let i = 0; i < 5; i++) {
       upsertTask(server.id, makeTask({ taskId: `task-${i}`, createdAt: Date.now() + i }));
     }
-    const page = getTasks({ limit: 2, offset: 0 });
+    const page = listTasks({ limit: 2, offset: 0 });
     expect(page).toHaveLength(2);
   });
 });
@@ -203,27 +203,48 @@ describe('tasks CRUD', () => {
 describe('alerts CRUD', () => {
   it('upserts alerts with dedup', () => {
     const server = createServer({ name: 'node', agentId: 'a1' });
-    upsertAlert(server.id, 'cpu', 95, 90);
-    upsertAlert(server.id, 'cpu', 97, 90); // should update, not insert
+    reconcileAlerts(server.id, [{
+      alertType: 'cpu',
+      value: 95,
+      threshold: 90,
+      fingerprint: '',
+      details: null,
+    }]);
+    reconcileAlerts(server.id, [{
+      alertType: 'cpu',
+      value: 97,
+      threshold: 90,
+      fingerprint: '',
+      details: null,
+    }]); // should update, not insert
 
-    const alerts = getAlerts(server.id);
+    const alerts = getAlerts({ serverId: server.id });
     expect(alerts).toHaveLength(1);
     expect(alerts[0].value).toBe(97);
+    expect(alerts[0].status).toBe('active');
   });
 
   it('suppresses and unsuppresses', () => {
     const server = createServer({ name: 'node', agentId: 'a1' });
-    upsertAlert(server.id, 'memory', 92, 90);
-    const alerts = getAlerts(server.id);
+    reconcileAlerts(server.id, [{
+      alertType: 'memory',
+      value: 92,
+      threshold: 90,
+      fingerprint: '',
+      details: null,
+    }]);
+    const alerts = getAlerts({ serverId: server.id });
     expect(alerts).toHaveLength(1);
 
-    suppressAlert(alerts[0].id, Date.now() + 86400000);
-    const suppressed = getAlerts(server.id);
-    expect(suppressed[0].suppressedUntil).toBeTruthy();
+    const silenced = silenceAlert(alerts[0].id);
+    expect(silenced?.toStatus).toBe('silenced');
+    const suppressed = getAlerts({ serverId: server.id });
+    expect(suppressed[0].status).toBe('silenced');
 
-    unsuppressAlert(alerts[0].id);
-    const unsup = getAlerts(server.id);
-    expect(unsup[0].suppressedUntil).toBeNull();
+    const unsilenced = unsilenceAlert(alerts[0].id);
+    expect(unsilenced?.toStatus).toBe('resolved');
+    const unsup = getAlerts({ serverId: server.id });
+    expect(unsup[0].status).toBe('resolved');
   });
 });
 

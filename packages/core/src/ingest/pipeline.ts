@@ -1,13 +1,10 @@
-import { UnifiedReport, AlertStateChange, SecurityEventRecord, TaskInfo, AppSettings, AlertCandidate } from '../types.js';
+import { UnifiedReport, AlertStateChange, SecurityEventRecord } from '../types.js';
 import { TaskEvent } from '../task/events.js';
-import { diffTasks } from './task-differ.js';
+import { TaskEngine } from '../task/engine.js';
 import { SnapshotScheduler } from './snapshot-scheduler.js';
 import * as snapshotDb from '../db/snapshots.js';
-import * as taskDb from '../db/tasks.js';
 import * as settingsDb from '../db/settings.js';
-import * as alertDb from '../db/alerts.js';
-import { collectAlertCandidates } from '../alert/service.js';
-import { GpuIdleMemoryTracker } from '../alert/gpu-idle-tracker.js';
+import { AlertEngine } from '../alert/engine.js';
 import { processSecurityCheck } from '../security/pipeline.js';
 
 export interface IngestCallbacks {
@@ -20,56 +17,41 @@ export interface IngestCallbacks {
 export class IngestPipeline {
   private latestReports = new Map<string, UnifiedReport>();
   private scheduler = new SnapshotScheduler();
-  private gpuIdleTracker = new GpuIdleMemoryTracker();
+  private taskEngine = new TaskEngine();
   
-  constructor(private callbacks: IngestCallbacks = {}) {}
+  constructor(
+    private callbacks: IngestCallbacks = {},
+    private alertEngine?: AlertEngine,
+  ) {}
   
   processReport(serverId: string, report: UnifiedReport): void {
     const prevReport = this.latestReports.get(serverId);
     const settings = settingsDb.getSettings();
     const now = Date.now();
-    const nowSeconds = Math.floor(now / 1000);
 
     // 1. Store in latestReports cache
     this.latestReports.set(serverId, report);
 
-    // 2. Call Metrics Update
+    // 2. Metrics update
     if (this.callbacks.onMetricsUpdate) {
       this.callbacks.onMetricsUpdate(serverId, report);
     }
 
-    // 3. Task diffing
-    const prevTasks = prevReport ? [...prevReport.taskQueue.queued, ...prevReport.taskQueue.running] : [];
-    const currTasks = [...report.taskQueue.queued, ...report.taskQueue.running];
-    const recentlyEnded = report.taskQueue.recentlyEnded ?? [];
-    const diffs = diffTasks(serverId, prevTasks, currTasks, recentlyEnded);
-    
-    for (const diff of diffs) {
-      if (diff.eventType === 'ended') {
-        const finishedAt = diff.task.finishedAt ?? nowSeconds;
-        taskDb.endTask(diff.task.taskId, finishedAt, diff.task.exitCode ?? null, diff.task.status, diff.task.endReason ?? null);
-      } else {
-        taskDb.upsertTask(serverId, diff.task);
-      }
-
+    // 3. Task processing — delegate to task domain
+    const taskEvents = this.taskEngine.processReport(serverId, prevReport, report);
+    for (const event of taskEvents) {
       if (this.callbacks.onTaskEvent) {
-        this.callbacks.onTaskEvent({
-          serverId,
-          eventType: diff.eventType,
-          task: diff.task
-        });
+        this.callbacks.onTaskEvent(event);
       }
     }
 
-    // 4. Alert closed-loop: collect all anomaly candidates, then reconcile
-    const thresholdCandidates = collectAlertCandidates(report, settings);
-    const gpuIdleCandidates = this.gpuIdleTracker.check(serverId, report, settings);
-    const allCandidates: AlertCandidate[] = [...thresholdCandidates, ...gpuIdleCandidates];
-
-    const alertChanges = alertDb.reconcileAlerts(serverId, allCandidates);
-    for (const change of alertChanges) {
-      if (this.callbacks.onAlertStateChange) {
-        this.callbacks.onAlertStateChange(change);
+    // 4. Alert closed-loop: delegate to AlertEngine
+    if (this.alertEngine) {
+      const { broadcastable } = this.alertEngine.processReport(serverId, report, settings);
+      for (const change of broadcastable) {
+        if (this.callbacks.onAlertStateChange) {
+          this.callbacks.onAlertStateChange(change);
+        }
       }
     }
 

@@ -37,7 +37,7 @@
 	- `metrics-routes.ts`：最新快照和历史快照查询。
 	- `task-routes.ts`：任务列表、任务详情、取消、优先级调整。
 	- `person-routes.ts`：人员、绑定关系、候选账号、时间线、任务视图、向导建档。
-	- `alert-routes.ts`：告警查询、单条和批量静默/取消静默。
+	- `alert-routes.ts`：告警查询、单条和批量压制/解除压制。
 	- `security-routes.ts`：安全事件查询、标记安全、取消处置。
 	- `settings-routes.ts`：系统设置读取和更新。
 - `scripts/copy-ui-dist.mjs`
@@ -47,19 +47,20 @@
 	- 承载持久化访问层。
 	- `database.ts` 负责 SQLite 初始化、schema 建立、数据库自检和异常库迁移。
 	- `servers.ts`、`snapshots.ts`、`tasks.ts`、`alerts.ts`、`security-events.ts`、`persons.ts`、`person-bindings.ts`、`settings.ts` 负责各领域表的读写。
-	- 其中 `alerts.ts` 同时承载告警闭环状态机：按 `(serverId, alertType, fingerprint)` 对齐当前异常集合，维护 `ACTIVE / RESOLVED / SILENCED` 三态，以及 `alert_transitions` 状态变迁历史。
 - `core/src/ingest/`
 	- 承载 Agent 汇报落库与事件化主链路。
-	- `pipeline.ts` 负责 latest cache、任务 diff、告警候选收集、告警状态闭环、安全检查和快照写入总编排。
+	- `pipeline.ts` 负责 latest cache、任务 diff、告警检查、安全检查和快照写入总编排。
 	- `snapshot-scheduler.ts` 负责 recent / archive 两层窗口写入节流。
-	- `task-differ.ts` 负责把前后两份任务队列差异转成 started / updated / ended 等事件。
 - `core/src/task/`
 	- 承载任务领域服务。
-	- 负责任务查询、任务控制命令封装，以及把取消/调优请求通过在线 session 回发给 Agent。
+	- `engine.ts` 负责从一份 `UnifiedReport` 中收敛任务状态、执行落库并生成 `TaskEvent[]`。
+	- `differ.ts` 负责把前后两份任务 active 视图差异转成 `submitted` / `started` / `ended`。
+	- `service.ts` 负责任务查询、任务控制命令封装，以及把取消/调优请求通过在线 session 回发给 Agent。
 - `core/src/alert/`
 	- 承载告警领域逻辑。
-	- `service.ts` 负责 CPU / 内存 / 磁盘 / GPU 温度阈值异常候选，以及离线异常候选生成。
-	- `gpu-idle-tracker.ts` 负责空闲显存类异常候选生成。
+	- `engine.ts` — `AlertEngine` 统一入口，提供 `processReport` / `sweepOffline` 两个方法。
+	- `state-store.ts` — `AlertStateStore` 进程内存状态表，各检测器共享。
+	- `detectors.ts` — 阈值检测（CPU / 内存 / 磁盘 / GPU 温度）、空闲显存检测、离线检测。
 - `core/src/security/`
 	- 承载安全事件分析逻辑。
 	- `analyzer.ts` 负责从汇报中抽取安全 finding，`pipeline.ts` 负责按指纹去重并写入事件表。
@@ -116,9 +117,8 @@ Agent 连接 `/agent`
 → 协议层把 wire payload 解析为 `UnifiedReport`
 → `IngestPipeline.processReport` 接管
 → 更新 latest report 缓存
-→ diff 任务队列并持久化任务状态
-→ 收集阈值类与空闲显存类异常候选
-→ 与当前告警状态做 reconcile，生成 `ACTIVE / RESOLVED / SILENCED` 状态变迁
+→ 调用 `TaskEngine` 收敛任务状态并生成任务事件
+→ 检查阈值告警和空闲显存告警
 → 检查安全事件
 → 按窗口策略写 recent / archive 快照
 → 通过 `ui-broadcast.ts` 把最新变化推送给 UI
@@ -156,23 +156,27 @@ UI 发起取消任务或调整优先级
 ### 告警与安全事件流
 
 ```text
-新的 `UnifiedReport` 到达
-→ `service.ts` 生成 CPU / 内存 / 磁盘 / GPU 温度异常候选
-→ `gpu-idle-tracker.ts` 生成空闲显存异常候选
-→ `db/alerts.ts.reconcileAlerts` 以 `(serverId, alertType, fingerprint)` 为复合键，对比“当前候选集合”和“数据库中当前告警状态”
-→ 对同一条告警记录执行状态闭环：新出现异常进入 `ACTIVE`，异常消失转 `RESOLVED`，人工静默转 `SILENCED`
-→ 每次状态变化写入 `alert_transitions` 历史表
-→ 通过 WebSocket 推送 `alertStateChange` 事件给 UI
+新的 `UnifiedReport` 到达 `IngestPipeline`
+→ pipeline 将 report 交给 `AlertEngine.processReport(serverId, report, settings)`
+→ AlertEngine 内部：
+  → 阈值检测器 `detectThresholds` 生成异常列表
+  → 空闲显存检测器 `detectGpuIdle` 查询/更新 `AlertStateStore`，生成异常列表
+  → 合并所有异常 `AlertAnomaly[]`
+  → 调用 `reconcileAlerts` 闭环状态机
+→ 返回 `{ allChanges, broadcastable }`
+→ pipeline 仅推送 `broadcastable`（新 ACTIVE / RESOLVED↔ACTIVE）
 
 同一份汇报继续进入安全分析
 → 生成安全 finding
 → 仅当没有同指纹未解决事件时创建新的安全事件
 → 写入数据库并推送 `securityEvent`
 
-WEB 运行时每 10 秒执行一次离线检查
-→ 根据 `lastReportAt` 生成 offline 异常候选
-→ 同样通过 `reconcileAlerts` 进入统一告警闭环
-→ 把离线产生的状态变化也作为 `alertStateChange` 推送 UI
+WEB 运行时每 10 秒调用 `AlertEngine.sweepOffline(registry, settings)`
+→ 离线检测器根据 `lastReportAt` 生成 offline 异常
+→ 复用同一套闭环状态机
+→ 仅推送 `broadcastable` 变化
+
+进程重启时状态表为空，首次工况汇报后自动基于初始状态表计算
 ```
 
 ### 快照与历史数据流
@@ -185,6 +189,178 @@ Agent 汇报进入 `IngestPipeline`
 → 同时按 archive 周期写入长期快照
 → UI 查询 `/metrics/latest` 读取内存态最新值
 → UI 查询 `/metrics/:serverId/history` 读取 SQLite 中的历史窗口
+```
+
+## 任务情况数据流追溯
+
+### 任务状态摄入与 diff 主链路
+
+主入口：`packages/web/src/agent-namespace.ts` 中 `socket.on(AGENT_EVENT.report)`，随后进入 `packages/core/src/ingest/pipeline.ts` 的 `IngestPipeline.processReport`
+
+```text
+Agent 发来一份 `UnifiedReport`
+→ `parseUnifiedReport` 把 wire payload 规范化为统一结构
+→ `IngestPipeline.processReport` 取出上一份 `prevReport`
+→ 调用 `packages/core/src/task/engine.ts` 的 `TaskEngine.processReport`
+→ 由 TaskEngine 提取上一轮和本轮 active tasks
+→ 读取 `report.taskQueue.recentlyEnded` 作为显式结束集合
+→ 调用 `packages/core/src/task/differ.ts` 的 `diffTasks`
+→ 把前后两份任务视图转成 `submitted` / `started` / `ended`
+→ 进入逐条落库与事件生成阶段
+```
+
+### 任务 diff 规则主链路
+
+主入口：`packages/core/src/task/differ.ts` 的 `diffTasks`
+
+```text
+当前任务不在上一轮 active 集合里
+→ 生成 `submitted`
+→ 如果当前状态已经是 `running`，再补一个 `started`
+
+上一轮是 `queued`，这一轮变成 `running`
+→ 生成 `started`
+
+Agent 显式放进 `recentlyEnded`
+→ 直接生成 `ended`
+
+上一轮存在，但这一轮既不在 active 也不在 `recentlyEnded`
+→ 合成一个 `status=abnormal`、`endReason=disappeared` 的结束事件
+→ 生成 `ended`
+```
+
+### 任务状态处理与落库主链路
+
+主入口：`packages/core/src/task/engine.ts` 的 `TaskEngine.processReport`
+
+```text
+TaskEngine 遍历每一条 task diff
+→ 如果事件是 `ended`
+→ 调用 `packages/core/src/db/tasks.ts` 的 `endTask`
+→ 写入 `status` / `finished_at` / `exit_code` / `end_reason`
+
+→ 如果事件不是 `ended`
+→ 调用 `packages/core/src/db/tasks.ts` 的 `upsertTask`
+→ 写入或更新 active task 的状态、PID、assignedGpus、priority、scheduleHistory 等字段
+
+→ 无论哪种事件
+→ 统一回调 `onTaskEvent`
+→ 由 `packages/web/src/app.ts` 中 `createWebRuntime` 注册的回调继续向外广播
+→ `packages/web/src/ui-broadcast.ts` 发出 `taskEvent`
+→ UI 增量刷新任务视图
+```
+
+### 任务查询与回放主链路
+
+主入口：`packages/web/src/routes/task-routes.ts`
+
+```text
+UI 调用 `GET /api/tasks`
+→ `task-routes.ts` 解析 `serverId` / `status` / `user` / `page` / `limit`
+→ 调用 `packages/core/src/task/service.ts` 的 `listTasks` 和 `countTasks`
+→ 从 SQLite 读取任务记录并分页返回
+→ 路由层把 `gpuIds` / `assignedGpus` / `scheduleHistory` 从 JSON 字符串解包成 API 对象
+
+UI 调用 `GET /api/tasks/:taskId`
+→ `task-routes.ts` 调用 `getTask`
+→ 返回单个任务的完整状态
+```
+
+### 任务控制回发 Agent 主链路
+
+主入口：`packages/web/src/routes/task-routes.ts` 的取消和优先级接口
+
+```text
+UI 调用 `POST /api/servers/:serverId/tasks/:taskId/cancel`
+→ `task-routes.ts` 调用 `packages/core/src/task/service.ts` 的 `cancelTask`
+→ 通过 `AgentSessionRegistry.getSessionByServerId` 找到在线 session
+→ 发出 `server:cancelTask`
+
+UI 调用 `POST /api/servers/:serverId/tasks/:taskId/priority`
+→ `task-routes.ts` 调用 `setPriority`
+→ 通过在线 session 发出 `server:setPriority`
+
+→ Agent 执行后并不会直接改库
+→ 而是在后续新的 `UnifiedReport` 中体现任务状态变化
+→ 系统再次走前面的任务 diff 和落库主链路闭环完成状态收敛
+```
+
+## 测量指标数据流追溯
+
+### 指标摄入与最新态更新主链路
+
+主入口：`packages/web/src/agent-namespace.ts` 中 `socket.on(AGENT_EVENT.report)`，随后进入 `packages/core/src/ingest/pipeline.ts` 的 `IngestPipeline.processReport`
+
+```text
+Agent 发来 `UnifiedReport`
+→ `parseUnifiedReport` 完成字段规范化
+→ `IngestPipeline.processReport` 读取当前 server 的上一份 report
+→ 先把当前 report 放入 `latestReports` 内存缓存
+→ 立即触发 `onMetricsUpdate`
+→ `packages/web/src/app.ts` 注册的回调转发到 `ui-broadcast.metricsUpdate`
+→ UI 先拿到一份最新实时指标，不需要等待快照落库
+```
+
+### 指标 recent 窗口写入主链路
+
+主入口：`packages/core/src/ingest/pipeline.ts` 中 recent 分支
+
+```text
+`processReport` 读取 `getSettings()`
+→ 使用 `snapshotRecentIntervalSeconds` 判断是否到达短期窗口写入时机
+→ 默认间隔来自 `DEFAULT_SETTINGS`，当前是 60 秒
+→ `SnapshotScheduler.shouldWriteRecent(serverId, now, interval)` 返回 true
+→ 调用 `packages/core/src/db/snapshots.ts` 的 `saveSnapshot(serverId, report, 'recent', report.seq)`
+→ 把 CPU / 内存 / 磁盘 / 网络 / 进程 / 本地用户写入 `snapshots`
+→ 把每张 GPU 的温度、利用率、显存、任务分配、用户进程写入 `gpu_snapshots`
+→ 调用 `deleteOldRecentSnapshots(serverId, keepCount)` 清理窗口外旧数据
+→ 默认 `snapshotRecentKeepCount` 是 120
+→ `SnapshotScheduler.markRecentWritten` 记录本次写入时间
+```
+
+### 指标 archive 归档主链路
+
+主入口：`packages/core/src/ingest/pipeline.ts` 中 archive 分支
+
+```text
+同一份 `processReport` 继续检查 archive 窗口
+→ 使用 `snapshotArchiveIntervalSeconds` 判断是否到达归档时机
+→ 默认归档间隔来自 `DEFAULT_SETTINGS`，当前是 1800 秒
+→ `SnapshotScheduler.shouldWriteArchive(serverId, now, interval)` 返回 true
+→ 调用 `saveSnapshot(serverId, report, 'archive', report.seq)`
+→ 以 archive tier 写入长期历史快照
+→ `SnapshotScheduler.markArchiveWritten` 记录本次归档时间
+```
+
+### 指标历史查询主链路
+
+主入口：`packages/web/src/routes/metrics-routes.ts`
+
+```text
+UI 调用 `GET /api/metrics/latest`
+→ `metrics-routes.ts` 调用 `pipeline.getLatestReports()`
+→ 直接返回内存中的最新 report 视图
+
+UI 调用 `GET /api/metrics/:serverId/history?from=&to=&tier=`
+→ `metrics-routes.ts` 调用 `packages/core/src/db/snapshots.ts` 的 `getSnapshotHistory`
+→ 从 `snapshots` 按时间区间读取基础快照行
+→ 再按 `snapshot_id` 回查 `gpu_snapshots`
+→ `mapSnapshotRow` 把数据库行重新组装成 `SnapshotWithGpus`
+→ 返回给 UI 做历史曲线、快照回放和 GPU 详情展示
+```
+
+### 指标衍生链路主入口
+
+主入口：`packages/core/src/ingest/pipeline.ts` 的 `processReport`
+
+```text
+同一份资源指标进入 `processReport`
+→ 一路进入 `TaskEngine.processReport`，影响任务状态表和 `taskEvent`
+→ 一路进入 `AlertEngine.processReport` 与 `reconcileAlerts`，产出 `alertStateChange`
+→ 一路进入 `processSecurityCheck`，产出安全事件
+
+这些都是基于同一份测量指标派生出来的副产物流
+→ 但 latest cache、recent 窗口、archive 归档仍然是指标主存储链路
 ```
 
 ## WEB 当前边界

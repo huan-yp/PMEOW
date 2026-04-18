@@ -247,12 +247,17 @@ export interface AlertStateChange {
 
 export type AlertType = 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline' | 'gpu_idle_memory';
 
-export interface AlertCandidate {
+export interface AlertAnomaly {
   alertType: AlertType;
   value: number;
   threshold: number;
   fingerprint: string;
   details: Record<string, unknown> | null;
+}
+
+export interface AlertEngineResult {
+  allChanges: AlertStateChange[];
+  broadcastable: AlertStateChange[];
 }
 
 // Security types
