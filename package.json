@@ -12,6 +12,8 @@
     "build:web": "node ./scripts/workspace-task.mjs build:web",
     "run:web": "node ./scripts/run-web-server.mjs",
     "dev:web": "node ./scripts/workspace-task.mjs dev:web",
+    "dev:mobile": "node ./scripts/workspace-task.mjs dev:mobile",
+    "dev:mobile:logs": "node ./scripts/workspace-task.mjs dev:mobile:logs",
     "build:apk": "node ./scripts/workspace-task.mjs build:apk",
     "check:web": "node ./scripts/workspace-task.mjs check:web"
   },

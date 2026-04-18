@@ -75,6 +75,8 @@ npm run build:apk
 
 详细前置依赖、产物路径和安装方式见 [developer/build/构建 APK.md](../developer/build/%E6%9E%84%E5%BB%BA%20APK.md)。
 
+当前正式文档只保证这个 APK 构建入口。React Native 本地联调请参考 [apps/mobile/README.md](../../apps/mobile/README.md) 并按本机环境单独配置 Metro、adb 和 Android 调试链路。
+
 ## 常见问题
 
 - 连接失败：先确认服务器地址是否是完整的 PMEOW Web 基础 URL，协议和端口都要写对。
