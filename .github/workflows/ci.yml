@@ -30,9 +30,6 @@ jobs:
       - name: Check web stack
         run: pnpm check:web
 
-      - name: Check mobile stack
-        run: pnpm check:mobile
-
   python:
     name: Python Agent checks
     runs-on: ubuntu-latest

@@ -12,11 +12,8 @@
     "build:web": "node ./scripts/workspace-task.mjs build:web",
     "run:web": "node ./scripts/run-web-server.mjs",
     "dev:web": "node ./scripts/workspace-task.mjs dev:web",
-    "dev:mobile": "node ./scripts/workspace-task.mjs dev:mobile",
-    "run:mobile:android": "node ./scripts/workspace-task.mjs run:mobile:android",
-    "build:mobile:apk": "node ./scripts/workspace-task.mjs build:mobile:apk",
-    "check:web": "node ./scripts/workspace-task.mjs check:web",
-    "check:mobile": "node ./scripts/workspace-task.mjs check:mobile"
+    "build:apk": "node ./scripts/workspace-task.mjs build:apk",
+    "check:web": "node ./scripts/workspace-task.mjs check:web"
   },
   "engines": {
     "node": ">=20.0.0"

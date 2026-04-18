@@ -6,10 +6,16 @@ data/
 *.db-wal
 *.db-shm
 .env
+.java-home.local
 .DS_Store
 apps/web/android/app/build/
 apps/web/android/.gradle/
 apps/web/android/app/src/main/assets/public/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/app/.cxx/
+apps/mobile/android/local.properties
 apps/mobile/android/app/debug.keystore
 
 CLAUDE.md
