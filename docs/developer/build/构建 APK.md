@@ -7,6 +7,8 @@
 
 这次链路收缩和构建修复过程中遇到的问题、根因和处理过程，见 [移动端清理与 Release APK 构建问题复盘.md](./移动端清理与%20Release%20APK%20构建问题复盘.md)。
 
+如果你在 Windows 上执行 `pnpm dev:mobile` 时遇到 `adb server version mismatch`、`device offline` 或 APK 安装失败，另见 [移动端 adb 冲突复盘.md](./移动端%20adb%20冲突复盘.md)。
+
 ## 前置依赖
 
 构建前需要本机已经具备：
@@ -72,6 +74,7 @@ pnpm dev:mobile:logs
 - 不负责共享包源码 watch；如果你修改 [apps/common](../../../apps/common) ，需要重新触发对应构建
 - `pnpm dev:mobile` 会自动对当前 adb 设备执行 `adb reverse tcp:8081 tcp:8081`
 - 原生 Android 代码改动仍需重新安装 debug 包，不能指望 Metro 直接生效
+- 当前移动端任务显式绑定 Android SDK 中的 adb；如果本机还有其他 adb 发行版并持续抢占 5037 daemon，需先清理外部 adb 再重试
 
 ## 安装
 
