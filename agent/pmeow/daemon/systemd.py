@@ -59,6 +59,7 @@ def resolve_agent_executable() -> str:
 
 
 def install_systemd_service(*, config: AgentConfig, executable_path: str, working_directory: str, paths: SystemdServicePaths, enable: bool, start: bool) -> None:
+    Path(working_directory).mkdir(parents=True, exist_ok=True)
     paths.unit_path.parent.mkdir(parents=True, exist_ok=True)
     paths.environment_path.parent.mkdir(parents=True, exist_ok=True)
     paths.unit_path.write_text(

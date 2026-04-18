@@ -83,7 +83,7 @@ def install_service(args) -> None:
     install_systemd_service(
         config=config,
         executable_path=resolve_agent_executable(),
-        working_directory=str(Path.cwd().resolve()),
+        working_directory=config.state_dir,
         paths=paths,
         enable=args.enable,
         start=args.start,
