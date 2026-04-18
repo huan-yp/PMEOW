@@ -15,7 +15,7 @@
 
 ### 症状
 
-- `pnpm start:web` 直接退出
+- `pnpm run:web` 直接退出
 - 浏览器无法打开 `17200`
 - Docker 容器启动后立即重启
 
@@ -28,7 +28,7 @@
 
 ### 说明
 
-当前生产模式入口是 `packages/web/dist/server.js`。如果没有先构建，`start:web` 不会自动替你编译。
+当前生产模式入口是仓库根目录的 `scripts/run-web-server.mjs`，它会加载 `server/runtime/dist/server.js` 并托管 `apps/web/dist`。如果没有先构建，`run:web` 不会自动替你编译。
 
 ## 登录后很快又回到登录页
 
@@ -60,7 +60,7 @@ DELETE FROM settings WHERE key = 'password';
 数据库位置通常是：
 
 - 本地默认部署：`data/monitor.db`
-- 使用根目录 workspace 脚本启动 Web 时，通常是 `packages/web/data/monitor.db`
+- 使用根目录 workspace 脚本启动 Web 时，通常是 `server/runtime/data/monitor.db`
 - 自定义部署：`MONITOR_DB_PATH` 指向的位置
 - Docker 默认部署：容器内 `/data/monitor.db`
 

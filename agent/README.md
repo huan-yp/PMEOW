@@ -18,6 +18,23 @@
 pip install pmeow-agent
 ```
 
+### 推荐的系统级安装（独立虚拟环境）
+
+生产环境更推荐给 Agent 单独建一个系统级虚拟环境，而不是把它装进某个项目自己的 venv：
+
+```bash
+sudo mkdir -p /opt/pmeow-agent
+sudo python3 -m venv /opt/pmeow-agent/.venv
+sudo /opt/pmeow-agent/.venv/bin/pip install --upgrade pip
+sudo /opt/pmeow-agent/.venv/bin/pip install pmeow-agent
+sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow-agent /usr/local/bin/pmeow-agent
+sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow /usr/local/bin/pmeow
+```
+
+这样 `pmeow-agent` 和 `pmeow` 在节点上只有一份固定安装，systemd 也可以稳定指向这套解释器；与此同时，用户在别的虚拟环境里调用 `pmeow` 时，CLI 仍会优先解析调用侧当前激活环境的 Python，而不是 Agent 自己的安装解释器。
+
+如果某个项目虚拟环境里也安装了另一份 `pmeow-agent`，shell 会优先命中那一份；想强制走系统级命令时，请显式调用 `/usr/local/bin/pmeow` 或 `/usr/local/bin/pmeow-agent`。
+
 ### 从源码安装（开发模式）
 
 ```bash
@@ -62,6 +79,8 @@ sudo pmeow-agent uninstall-service
 
 systemd 会以前台模式托管进程，运行日志进入 journal。
 
+如果你按上面的独立虚拟环境方式安装，`install-service` 会把 `ExecStart` 固定到系统级 `pmeow-agent` 可执行文件，并把 `WorkingDirectory` 设为 `PMEOW_STATE_DIR`，不再依赖你执行安装命令时所在的目录。
+
 ### 提交任务
 
 ```bash
@@ -80,7 +99,7 @@ pmeow-agent submit --pvram 0 --gpu 0 -- bash run_preprocessing.sh
 `submit` 模式的执行语义有两点需要注意：
 
 - 提交时会冻结当前工作目录和当前进程环境；任务真正开始时，daemon 会用这份 cwd 和整份环境快照启动命令。
-- 如果命令看起来是 `python ...`、`py ...` 或 `python3 ...`，并且后面跟的是脚本、`-m` 或 `-c`，CLI 会把它规范成当前 `sys.executable`，避免排队后落到 daemon 自己 PATH 里的另一个 Python。
+- 如果命令看起来是 `python ...`、`py ...` 或 `python3 ...`，并且后面跟的是脚本、`-m` 或 `-c`，CLI 会优先解析调用侧当前激活环境的 Python；解析顺序是 `PMEOW_PYTHON_EXECUTABLE`、`VIRTUAL_ENV` / `CONDA_PREFIX`、当前 `PATH` 里的 `python`，最后才回退到 CLI 自己的解释器。
 
 ### 查看队列状态
 

@@ -17,18 +17,12 @@
 
 ```bash
 pnpm install
-
-# 终端 1
 pnpm dev:web
-
-# 终端 2
-pnpm dev:ui
 ```
 
 特点：
 
-- `packages/web/src/server.ts` 通过 `tsx watch` 启动后端。
-- `packages/ui` 由 Vite 提供开发服务器。
+- `pnpm dev:web` 会统一启动 `server/runtime` 的 watch 后端和 `apps/web` 的 Vite 开发服务器。
 - 浏览器通常访问 `http://localhost:5129`。
 
 ### 生产模式
@@ -38,27 +32,19 @@ pnpm dev:ui
 ```bash
 pnpm install
 pnpm build:web
-pnpm start:web
+pnpm run:web
 ```
 
 其中 `pnpm build:web` 会按顺序完成：
 
-1. 构建 `packages/core`
-2. 构建 `packages/ui`
-3. 构建 `packages/web` 并把 UI 产物复制到 `packages/web/dist/public`
+1. 构建 `server/core`
+2. 构建 `apps/common`
+3. 构建 `apps/web`
+4. 构建 `server/runtime`
+
+`pnpm run:web` 不再直接进入 runtime workspace，而是调用仓库根目录的独立启动脚本；这个脚本会把 `apps/web/dist` 作为静态目录传给后端并启动 `server/runtime/dist/server.js`。
 
 生产模式下默认绑定 `0.0.0.0:17200`。本机访问用 `http://localhost:17200`，远端访问改成服务器实际 IP 或域名。
-
-### 发行包模式
-
-如果你不准备保留整个仓库，而是希望把 Web 服务端当作发行包安装，可以直接使用：
-
-```bash
-npm install -g pmeow-web
-pmeow-web
-```
-
-当前 `pmeow-web` 本质上仍然是对 `packages/web` 构建产物的发行封装，因此环境变量、数据库路径和 JWT 行为与本页下面的说明保持一致。
 
 ### Docker 模式
 
@@ -106,10 +92,10 @@ docker compose up -d
 
 这里的“当前工作目录”指的是 Web 服务进程自己的 cwd，不一定是你打开终端时看到的仓库根目录。
 
-在当前项目里，如果你直接从仓库根目录运行 `npm run start:web` 或 `pnpm start:web` 这类 workspace 脚本，Web 进程通常会以 `packages/web` 作为 cwd，因此默认数据库通常会出现在：
+在当前项目里，如果你直接从仓库根目录运行 `npm run run:web` 或 `pnpm run:web`，根级启动脚本会以 `server/runtime` 作为 cwd 拉起后端，因此默认数据库通常会出现在：
 
 ```text
-packages/web/data/monitor.db
+server/runtime/data/monitor.db
 ```
 
 数据库采用 SQLite，并启用了：
@@ -167,7 +153,7 @@ DELETE FROM settings WHERE key = 'password';
 ### 常见数据库位置
 
 - 本地默认部署：`data/monitor.db`
-- 使用根目录 workspace 脚本启动 Web 时，通常是 `packages/web/data/monitor.db`
+- 使用根目录 workspace 脚本启动 Web 时，通常是 `server/runtime/data/monitor.db`
 - 显式设置了 `MONITOR_DB_PATH`：以该环境变量指定的绝对路径为准
 - Docker 默认部署：容器内 `/data/monitor.db`
 
@@ -200,7 +186,7 @@ pnpm --filter @monitor/core exec node --input-type=module -e "import Database fr
 如果你是按 README 中的根目录 workspace 脚本方式启动 Web，更稳妥的写法通常是：
 
 ```bash
-pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('packages/web/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('server/runtime/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
 ```
 
 如果你使用的是 Docker 部署，但不方便在容器内使用 `sqlite3`，也可以使用任意 SQLite 工具直接对容器内的 `/data/monitor.db` 执行上面的 SQL，或者在容器内运行同样的 Node 命令。

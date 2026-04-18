@@ -32,16 +32,12 @@ PMEOW 当前采用两层运行模型：
 
 ```bash
 pnpm install
-
-# 终端 1
 pnpm dev:web
-
-# 终端 2
-pnpm dev:ui
 ```
 
 开发模式下：
 
+- `pnpm dev:web` 会统一启动 Web 后端和 `apps/web` 的 Vite 开发服务器
 - Web 后端默认绑定 `0.0.0.0:17200`
 - UI 开发服务器默认监听 `5129`
 - 浏览器访问 `http://localhost:5129`
@@ -50,10 +46,10 @@ pnpm dev:ui
 
 ```bash
 pnpm build:web
-pnpm start:web
+pnpm run:web
 ```
 
-这时本机直接访问 `http://localhost:17200`；远端访问改成服务器实际 IP 或域名。
+这时本机直接访问 `http://localhost:17200`；远端访问改成服务器实际 IP 或域名。根目录会先前置构建 `apps/web` 和 `server/runtime`，再通过独立启动脚本托管前端静态资源。
 
 ## 2. 完成第一次管理员登录
 
@@ -116,8 +112,8 @@ pmeow-agent run
 
 1. 打开“人员”页，新建一条人员记录。
 2. 进入该人员详情页，创建一个移动端访问令牌。
-3. 如果你使用手机浏览器，可以让个人用户访问 `/m/me`。
-4. 如果你使用 Android APK 或 Capacitor 原生壳，首次进入会先落到 `/connect`，再选择个人模式或管理员模式。
+3. 如果你要验证移动端，安装 PMEOW Mobile Android App。
+4. 首次打开会进入连接页，输入后端 URL，然后选择管理员模式或个人模式继续登录。
 
 ## 第一次上线的推荐顺序
 

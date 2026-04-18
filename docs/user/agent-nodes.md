@@ -29,6 +29,23 @@ Agent 运行在计算节点本地，负责：
 pip install pmeow-agent
 ```
 
+### 推荐的系统级安装（独立虚拟环境）
+
+如果节点上会有多个项目虚拟环境，推荐给 Agent 单独准备一套系统级虚拟环境，而不是把它装进某个训练项目自己的 venv：
+
+```bash
+sudo mkdir -p /opt/pmeow-agent
+sudo python3 -m venv /opt/pmeow-agent/.venv
+sudo /opt/pmeow-agent/.venv/bin/pip install --upgrade pip
+sudo /opt/pmeow-agent/.venv/bin/pip install pmeow-agent
+sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow-agent /usr/local/bin/pmeow-agent
+sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow /usr/local/bin/pmeow
+```
+
+这套方式的目标是把 Agent 自己的运行时固定下来，同时允许用户在别的虚拟环境里继续使用 `pmeow` 提交任务。当前 CLI 在提交 Python 任务时会优先选用调用侧已激活环境的解释器，而不是 Agent 安装所在的解释器。
+
+如果某个项目 venv 里恰好也安装了一份 `pmeow-agent`，那激活后 shell 会优先命中项目内的命令；需要强制使用系统级安装时，请显式调用 `/usr/local/bin/pmeow` 或 `/usr/local/bin/pmeow-agent`。
+
 ### 从源码安装
 
 ```bash
@@ -97,6 +114,8 @@ sudo journalctl -u pmeow-agent -f
 
 适合长期托管。systemd 负责进程生命周期，journal 负责 runtime log。
 
+按独立虚拟环境部署时，systemd 的 `ExecStart` 会直接指向系统级 `pmeow-agent`，而 `WorkingDirectory` 会落在 `PMEOW_STATE_DIR`，不会依赖你执行安装命令时所在的目录。
+
 ## 节点绑定是怎么发生的
 
 Agent 启动后会向服务端 `/agent` namespace 发送注册、指标、任务状态和心跳事件。绑定过程由服务端按 hostname 完成：
@@ -135,7 +154,7 @@ pmeow-agent resume
 `submit` 模式还有两个关键特点：
 
 - 提交时会把当前工作目录和当前进程环境整体保存到任务记录里；真正开始运行时，daemon 会按这份快照启动任务。
-- 如果命令形态是 `python ...`、`py ...` 或 `python3 ...` 且后面跟的是脚本、`-m` 或 `-c`，CLI 会把解释器固定成提交侧当前的 `sys.executable`，避免排队后切换到 daemon 自身 PATH 中的其他 Python。
+- 如果命令形态是 `python ...`、`py ...` 或 `python3 ...` 且后面跟的是脚本、`-m` 或 `-c`，CLI 会优先解析调用侧当前激活环境的解释器；解析顺序是 `PMEOW_PYTHON_EXECUTABLE`、`VIRTUAL_ENV` / `CONDA_PREFIX`、当前 `PATH` 里的 `python`，最后才回退到 CLI 自己的解释器。
 
 ## Python 直达模式
 

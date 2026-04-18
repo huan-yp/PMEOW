@@ -18,8 +18,10 @@ PMEOW 是面向实验室和小型 GPU 集群的监控与节点本地调度平台
 
 ```bash
 pnpm build:web
-pnpm start:web
+pnpm run:web
 ```
+
+其中 `pnpm build:web` 会统一编排 `apps/web` 和 `server/runtime` 所需依赖，`pnpm run:web` 由根目录脚本启动后端并托管 `apps/web/dist`。
 
 默认绑定 `0.0.0.0:17200`，本机访问可用 `http://localhost:17200`。
 
