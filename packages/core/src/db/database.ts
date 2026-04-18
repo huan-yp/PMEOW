@@ -115,7 +115,8 @@ function initSchema(db: Database.Database): void {
       exit_code INTEGER,
       assigned_gpus TEXT,
       declared_vram_per_gpu INTEGER,
-      schedule_history TEXT
+      schedule_history TEXT,
+      end_reason TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_tasks_server_status ON tasks (server_id, status);
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks (user, created_at);

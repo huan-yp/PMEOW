@@ -39,7 +39,7 @@ function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
       processes: [],
       localUsers: ['alice'],
     },
-    taskQueue: { queued: [], running: [] },
+    taskQueue: { queued: [], running: [], recentlyEnded: [] },
     ...overrides,
   };
 }
@@ -58,7 +58,10 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     priority: 10,
     createdAt: Date.now(),
     startedAt: null,
+    finishedAt: null,
     pid: null,
+    exitCode: null,
+    endReason: null,
     assignedGpus: null,
     declaredVramPerGpu: null,
     scheduleHistory: [],
@@ -70,14 +73,14 @@ describe('task diff', () => {
   it('detects new queued task', () => {
     const diffs = diffTasks('server-1', [], [makeTask()]);
     expect(diffs).toHaveLength(1);
-    expect(diffs[0].eventType).toBe('task_submitted');
+    expect(diffs[0].eventType).toBe('submitted');
   });
 
   it('detects new running task', () => {
     const diffs = diffTasks('server-1', [], [makeTask({ status: 'running' })]);
     expect(diffs).toHaveLength(2);
-    expect(diffs[0].eventType).toBe('task_submitted');
-    expect(diffs[1].eventType).toBe('task_started');
+    expect(diffs[0].eventType).toBe('submitted');
+    expect(diffs[1].eventType).toBe('started');
   });
 
   it('detects status upgrade queued → running', () => {
@@ -85,7 +88,7 @@ describe('task diff', () => {
     const curr = [makeTask({ status: 'running', pid: 1234, startedAt: Date.now() })];
     const diffs = diffTasks('server-1', prev, curr);
     expect(diffs).toHaveLength(1);
-    expect(diffs[0].eventType).toBe('task_started');
+    expect(diffs[0].eventType).toBe('started');
   });
 
   it('detects priority change', () => {
@@ -93,13 +96,13 @@ describe('task diff', () => {
     const curr = [makeTask({ priority: 5 })];
     const diffs = diffTasks('server-1', prev, curr);
     expect(diffs).toHaveLength(1);
-    expect(diffs[0].eventType).toBe('task_priority_changed');
+    expect(diffs[0].eventType).toBe('priority_changed');
   });
 
   it('detects task ended (disappeared)', () => {
     const diffs = diffTasks('server-1', [makeTask()], []);
     expect(diffs).toHaveLength(1);
-    expect(diffs[0].eventType).toBe('task_ended');
+    expect(diffs[0].eventType).toBe('ended');
   });
 });
 
@@ -120,11 +123,12 @@ describe('IngestPipeline', () => {
       taskQueue: {
         queued: [makeTask({ taskId: 'task-a' })],
         running: [],
+        recentlyEnded: [],
       },
     });
     pipeline.processReport(server.id, report1);
     expect(events).toHaveLength(1);
-    expect(events[0].eventType).toBe('task_submitted');
+    expect(events[0].eventType).toBe('submitted');
 
     // Second report: task starts running
     const report2 = makeReport({
@@ -133,21 +137,22 @@ describe('IngestPipeline', () => {
       taskQueue: {
         queued: [],
         running: [makeTask({ taskId: 'task-a', status: 'running', pid: 1234, startedAt: Date.now() })],
+        recentlyEnded: [],
       },
     });
     pipeline.processReport(server.id, report2);
     expect(events).toHaveLength(2);
-    expect(events[1].eventType).toBe('task_started');
+    expect(events[1].eventType).toBe('started');
 
     // Third report: task disappears (ended)
     const report3 = makeReport({
       seq: 3,
       timestamp: Math.floor(Date.now() / 1000) + 2,
-      taskQueue: { queued: [], running: [] },
+      taskQueue: { queued: [], running: [], recentlyEnded: [] },
     });
     pipeline.processReport(server.id, report3);
     expect(events).toHaveLength(3);
-    expect(events[2].eventType).toBe('task_ended');
+    expect(events[2].eventType).toBe('ended');
   });
 
   it('stores latest report in memory', () => {

@@ -43,7 +43,7 @@ interface WireProcessInfo {
 
 interface WireTaskInfo {
   taskId: string;
-  status: 'queued' | 'running';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abnormal';
   command: string;
   cwd: string;
   user: string;
@@ -54,7 +54,10 @@ interface WireTaskInfo {
   priority: number;
   createdAt: number;
   startedAt: number | null;
+  finishedAt: number | null;
   pid: number | null;
+  exitCode: number | null;
+  endReason: string | null;
   assignedGpus: number[] | null;
   declaredVramPerGpu: number | null;
   scheduleHistory: UnifiedReport['taskQueue']['queued'][number]['scheduleHistory'];
@@ -76,6 +79,7 @@ interface WireUnifiedReport {
   taskQueue: {
     queued: WireTaskInfo[];
     running: WireTaskInfo[];
+    recentlyEnded: WireTaskInfo[];
   };
 }
 
@@ -104,9 +108,9 @@ export function isUnifiedReport(data: unknown): boolean {
   if (!memory || typeof memory.totalMB !== 'number' || typeof memory.usedMB !== 'number' || typeof memory.usagePercent !== 'number') return false;
   if (!diskIo || typeof diskIo.readBytesPerSec !== 'number' || typeof diskIo.writeBytesPerSec !== 'number') return false;
   if (!network || typeof network.rxBytesPerSec !== 'number' || typeof network.txBytesPerSec !== 'number' || !Array.isArray(network.interfaces)) return false;
-  if (!Array.isArray(p.taskQueue.queued) || !Array.isArray(p.taskQueue.running)) return false;
+  if (!Array.isArray(p.taskQueue.queued) || !Array.isArray(p.taskQueue.running) || !Array.isArray(p.taskQueue.recentlyEnded)) return false;
 
-  return p.taskQueue.queued.every(isTaskInfo) && p.taskQueue.running.every(isTaskInfo);
+  return p.taskQueue.queued.every(isTaskInfo) && p.taskQueue.running.every(isTaskInfo) && p.taskQueue.recentlyEnded.every(isTaskInfo);
 }
 
 export function parseUnifiedReport(data: unknown): UnifiedReport | null {
@@ -144,6 +148,7 @@ export function parseUnifiedReport(data: unknown): UnifiedReport | null {
     taskQueue: {
       queued: report.taskQueue.queued.map(normalizeTaskInfo),
       running: report.taskQueue.running.map(normalizeTaskInfo),
+      recentlyEnded: report.taskQueue.recentlyEnded.map(normalizeTaskInfo),
     },
   };
 }
@@ -181,5 +186,8 @@ function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queu
     assignedGpus: task.assignedGpus,
     declaredVramPerGpu: task.declaredVramPerGpu,
     scheduleHistory: task.scheduleHistory,
+    finishedAt: task.finishedAt ?? null,
+    exitCode: task.exitCode ?? null,
+    endReason: task.endReason ?? null,
   };
 }

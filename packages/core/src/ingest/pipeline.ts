@@ -38,12 +38,14 @@ export class IngestPipeline {
     // 3. Task diffing
     const prevTasks = prevReport ? [...prevReport.taskQueue.queued, ...prevReport.taskQueue.running] : [];
     const currTasks = [...report.taskQueue.queued, ...report.taskQueue.running];
-    const diffs = diffTasks(serverId, prevTasks, currTasks);
+    const recentlyEnded = report.taskQueue.recentlyEnded ?? [];
+    const diffs = diffTasks(serverId, prevTasks, currTasks, recentlyEnded);
     
     for (const diff of diffs) {
       // DB Ops
-      if (diff.eventType === 'task_ended') {
-        taskDb.endTask(diff.task.taskId, nowSeconds);
+      if (diff.eventType === 'ended') {
+        const finishedAt = diff.task.finishedAt ?? nowSeconds;
+        taskDb.endTask(diff.task.taskId, finishedAt, diff.task.exitCode ?? null, diff.task.status, diff.task.endReason ?? null);
       } else {
         taskDb.upsertTask(serverId, diff.task);
       }

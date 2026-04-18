@@ -60,6 +60,7 @@ function makeReport(overrides: Partial<UnifiedReport> = {}): UnifiedReport {
     taskQueue: {
       queued: [],
       running: [],
+      recentlyEnded: [],
     },
     ...overrides,
   };
@@ -79,7 +80,10 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     priority: 10,
     createdAt: Date.now(),
     startedAt: null,
+    finishedAt: null,
     pid: null,
+    exitCode: null,
+    endReason: null,
     assignedGpus: null,
     declaredVramPerGpu: null,
     scheduleHistory: [],

@@ -37,11 +37,11 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
   );
 }
 
-export function endTask(taskId: string, finishedAt: number, exitCode: number | null = null): void {
+export function endTask(taskId: string, finishedAt: number, exitCode: number | null = null, status: string = 'ended', endReason: string | null = null): void {
   const db = getDatabase();
   db.prepare(
-    'UPDATE tasks SET status = ?, finished_at = ?, exit_code = ? WHERE id = ?'
-  ).run('ended', finishedAt, exitCode, taskId);
+    'UPDATE tasks SET status = ?, finished_at = ?, exit_code = ?, end_reason = ? WHERE id = ?'
+  ).run(status, finishedAt, exitCode, endReason, taskId);
 }
 
 export function getTasks(filter: { serverId?: string; status?: string; user?: string; limit?: number; offset?: number } = {}): TaskRecord[] {
@@ -131,5 +131,6 @@ function mapTaskRow(r: Record<string, unknown>): TaskRecord {
     assignedGpus: r.assigned_gpus as string | null,
     declaredVramPerGpu: r.declared_vram_per_gpu as number | null,
     scheduleHistory: r.schedule_history as string | null,
+    endReason: r.end_reason as string | null,
   };
 }
