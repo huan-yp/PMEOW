@@ -49,6 +49,14 @@ function joinBaseUrl(baseUrl: string, path: string): string {
   return `${normalizeBaseUrl(baseUrl)}${path}`;
 }
 
+function buildQueryString(params: Array<[string, string | number | boolean | undefined]>): string {
+  const entries = params
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+
+  return entries.length > 0 ? `?${entries.join('&')}` : '';
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const error = new MobileApiError(`HTTP ${response.status}`);
@@ -217,94 +225,50 @@ export class MobileApiClient {
     serverId: string,
     query: { from?: number; to?: number; tier?: 'recent' | 'archive' } = {},
   ): Promise<{ snapshots: SnapshotWithGpu[] }> {
-    const params = new URLSearchParams();
-    if (query.from !== undefined) {
-      params.set('from', String(query.from));
-    }
-    if (query.to !== undefined) {
-      params.set('to', String(query.to));
-    }
-    if (query.tier) {
-      params.set('tier', query.tier);
-    }
-
-    const queryString = params.toString();
-    const suffix = queryString ? `?${queryString}` : '';
+    const suffix = buildQueryString([
+      ['from', query.from],
+      ['to', query.to],
+      ['tier', query.tier],
+    ]);
     const snapshots = await this.request<SnapshotWithGpu[]>(`${API_PATHS.metricsHistory(serverId)}${suffix}`);
     return { snapshots };
   }
 
   async getPersonTasks(personId: string, query: { page?: number; limit?: number } = {}): Promise<{ tasks: Task[]; total: number }> {
-    const params = new URLSearchParams();
-    if (query.page !== undefined) {
-      params.set('page', String(query.page));
-    }
-    if (query.limit !== undefined) {
-      params.set('limit', String(query.limit));
-    }
-
-    const queryString = params.toString();
-    const suffix = queryString ? `?${queryString}` : '';
+    const suffix = buildQueryString([
+      ['page', query.page],
+      ['limit', query.limit],
+    ]);
     return this.request<{ tasks: Task[]; total: number }>(`${API_PATHS.personTasks(personId)}${suffix}`);
   }
 
   async getTasks(query: TaskQuery = {}): Promise<{ tasks: Task[]; total: number }> {
-    const params = new URLSearchParams();
-    if (query.page !== undefined) {
-      params.set('page', String(query.page));
-    }
-    if (query.limit !== undefined) {
-      params.set('limit', String(query.limit));
-    }
-    if (query.serverId) {
-      params.set('serverId', query.serverId);
-    }
-    if (query.status) {
-      params.set('status', query.status);
-    }
-    if (query.user) {
-      params.set('user', query.user);
-    }
-
-    const queryString = params.toString();
-    const suffix = queryString ? `?${queryString}` : '';
+    const suffix = buildQueryString([
+      ['page', query.page],
+      ['limit', query.limit],
+      ['serverId', query.serverId],
+      ['status', query.status],
+      ['user', query.user],
+    ]);
     return this.request<{ tasks: Task[]; total: number }>(`${API_PATHS.tasks}${suffix}`);
   }
 
   async getAlerts(query: AlertQuery = {}): Promise<Alert[]> {
-    const params = new URLSearchParams();
-    if (query.serverId) {
-      params.set('serverId', query.serverId);
-    }
-    if (query.status) {
-      params.set('status', query.status);
-    }
-    if (query.limit !== undefined) {
-      params.set('limit', String(query.limit));
-    }
-    if (query.offset !== undefined) {
-      params.set('offset', String(query.offset));
-    }
-
-    const queryString = params.toString();
-    const suffix = queryString ? `?${queryString}` : '';
+    const suffix = buildQueryString([
+      ['serverId', query.serverId],
+      ['status', query.status],
+      ['limit', query.limit],
+      ['offset', query.offset],
+    ]);
     return this.request<Alert[]>(`${API_PATHS.alerts}${suffix}`);
   }
 
   async getSecurityEvents(query: { serverId?: string; resolved?: boolean; limit?: number } = {}): Promise<SecurityEvent[]> {
-    const params = new URLSearchParams();
-    if (query.serverId) {
-      params.set('serverId', query.serverId);
-    }
-    if (query.resolved !== undefined) {
-      params.set('resolved', String(query.resolved));
-    }
-    if (query.limit !== undefined) {
-      params.set('limit', String(query.limit));
-    }
-
-    const queryString = params.toString();
-    const suffix = queryString ? `?${queryString}` : '';
+    const suffix = buildQueryString([
+      ['serverId', query.serverId],
+      ['resolved', query.resolved],
+      ['limit', query.limit],
+    ]);
     return this.request<SecurityEvent[]>(`${API_PATHS.securityEvents}${suffix}`);
   }
 
