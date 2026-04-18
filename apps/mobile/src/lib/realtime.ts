@@ -32,6 +32,8 @@ export class MobileRealtimeClient {
   connect(options: ConnectOptions): void {
     this.disconnect();
 
+    console.info(`[mobile][realtime] connect start baseUrl="${options.baseUrl}" transport=websocket`);
+
     const socket = io(options.baseUrl, {
       auth: { token: options.token },
       transports: ['websocket'],
@@ -40,14 +42,17 @@ export class MobileRealtimeClient {
     });
 
     socket.on('connect', () => {
+      console.info(`[mobile][realtime] connected baseUrl="${options.baseUrl}" socketId=${socket.id ?? 'unknown'}`);
       options.callbacks.onConnect?.();
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      console.info(`[mobile][realtime] disconnected baseUrl="${options.baseUrl}" reason=${reason}`);
       options.callbacks.onDisconnect?.();
     });
 
     socket.on('connect_error', (error: Error) => {
+      console.warn(`[mobile][realtime] connect_error baseUrl="${options.baseUrl}" message=${error.message || '实时连接失败。'}`);
       options.callbacks.onConnectError?.(error.message || '实时连接失败。');
     });
 

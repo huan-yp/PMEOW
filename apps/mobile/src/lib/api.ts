@@ -23,10 +23,25 @@ export interface TaskQuery {
 export class MobileApiError extends Error {
   status?: number;
   details?: unknown;
+  requestUrl?: string;
+  requestMethod?: string;
 }
 
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
+
 export function normalizeBaseUrl(input: string): string {
-  return input.trim().replace(/\/+$/, '');
+  const trimmed = input.trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    return '';
+  }
+
+  if (URL_SCHEME_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
+  const normalized = `http://${trimmed}`;
+  console.info(`[mobile][api] No URL scheme provided, assuming ${normalized}`);
+  return normalized;
 }
 
 function joinBaseUrl(baseUrl: string, path: string): string {
@@ -74,6 +89,21 @@ export function formatMobileApiError(error: unknown): string {
   return '请求失败';
 }
 
+function describeUnknownError(error: unknown): string {
+  if (error instanceof MobileApiError) {
+    const requestLabel = error.requestMethod && error.requestUrl
+      ? ` ${error.requestMethod} ${error.requestUrl}`
+      : '';
+    return `${error.message}${requestLabel}`;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
 export class MobileApiClient {
   private readonly baseUrl: string;
   private token: string | null;
@@ -100,12 +130,39 @@ export class MobileApiClient {
       headers.set('Authorization', `Bearer ${this.token}`);
     }
 
-    const response = await fetch(joinBaseUrl(this.baseUrl, path), {
-      ...options,
-      headers,
-    });
+    const requestUrl = joinBaseUrl(this.baseUrl, path);
+    const requestMethod = options?.method ?? 'GET';
+    console.info(
+      `[mobile][api] ${requestMethod} ${requestUrl} auth=${this.token ? 'bearer' : 'none'} body=${options?.body !== undefined ? 'yes' : 'no'}`
+    );
 
-    return parseResponse<T>(response);
+    let response: Response;
+
+    try {
+      response = await fetch(requestUrl, {
+        ...options,
+        headers,
+      });
+    } catch (error) {
+      const wrappedError = new MobileApiError(error instanceof Error ? error.message : '请求失败');
+      wrappedError.requestUrl = requestUrl;
+      wrappedError.requestMethod = requestMethod;
+      console.warn(`[mobile][api] request failed: ${describeUnknownError(wrappedError)}`);
+      throw wrappedError;
+    }
+
+    console.info(`[mobile][api] response ${requestMethod} ${requestUrl} -> ${response.status}`);
+
+    try {
+      return await parseResponse<T>(response);
+    } catch (error) {
+      if (error instanceof MobileApiError) {
+        error.requestUrl = requestUrl;
+        error.requestMethod = requestMethod;
+      }
+      console.warn(`[mobile][api] response parse failed: ${describeUnknownError(error)}`);
+      throw error;
+    }
   }
 
   async login(credentials: LoginCredentials): Promise<LoginResult> {

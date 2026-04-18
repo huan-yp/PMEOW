@@ -64,8 +64,15 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
         return;
       }
 
+      const normalizedBaseUrl = normalizeBaseUrl(persisted.baseUrl);
+      if (normalizedBaseUrl && normalizedBaseUrl !== persisted.baseUrl) {
+        console.info(
+          `[mobile][auth] hydrate normalized persisted baseUrl from "${persisted.baseUrl}" to "${normalizedBaseUrl}"`
+        );
+      }
+
       set({
-        baseUrl: persisted.baseUrl,
+        baseUrl: normalizedBaseUrl || persisted.baseUrl,
         mode: persisted.mode,
         authToken: persisted.authToken,
       });
@@ -75,12 +82,14 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
         return;
       }
 
-      const client = new MobileApiClient(persisted.baseUrl, persisted.authToken);
+      const resolvedBaseUrl = normalizedBaseUrl || persisted.baseUrl;
+      const client = new MobileApiClient(resolvedBaseUrl, persisted.authToken);
       const session = await client.checkAuth();
       if (!session.authenticated) {
         disconnectRealtime();
-        await persistState({ ...persisted, authToken: null });
+        await persistState({ ...persisted, baseUrl: resolvedBaseUrl, authToken: null });
         set({
+          baseUrl: resolvedBaseUrl,
           authToken: null,
           session,
           ...createEmptyOverviewSlice(),
@@ -93,8 +102,12 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
 
       const overview = await loadOverview(client, session);
       primeRealtimeState(overview.statuses, overview.latestMetrics);
-      connectRealtime(persisted.baseUrl, persisted.authToken, set, get);
+      connectRealtime(resolvedBaseUrl, persisted.authToken, set, get);
+      if (resolvedBaseUrl !== persisted.baseUrl) {
+        await persistState({ ...persisted, baseUrl: resolvedBaseUrl, authToken: persisted.authToken });
+      }
       set({
+        baseUrl: resolvedBaseUrl,
         session,
         servers: overview.servers,
         statuses: overview.statuses,
@@ -150,6 +163,9 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     }
 
     set({ busy: true, error: null });
+    console.info(
+      `[mobile][auth] sign-in start mode=${state.mode} rawBaseUrl="${state.baseUrl}" normalizedBaseUrl="${baseUrl}" secretProvided=${secret.trim() ? 'yes' : 'no'}`
+    );
 
     try {
       const client = new MobileApiClient(baseUrl);
@@ -193,8 +209,10 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
         busy: false,
       });
       connectRealtime(baseUrl, result.token, set, get);
+      console.info(`[mobile][auth] sign-in success mode=${state.mode} baseUrl="${baseUrl}"`);
     } catch (error) {
       disconnectRealtime();
+      console.warn(`[mobile][auth] sign-in failed: ${formatMobileApiError(error)}`);
       set({ busy: false, error: formatMobileApiError(error) });
     }
   },
