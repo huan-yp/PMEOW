@@ -89,9 +89,9 @@ agent/    Python Agent，独立于 pnpm workspace
 1. Agent 连接 `/agent` namespace
 2. 发送 `agent:register`
 3. 服务端解析 hostname 并决定是否绑定到某个 `serverId`
-4. Agent 后续发送 `agent:metrics`、`agent:taskUpdate`、`agent:localUsers` 和 `agent:heartbeat`
-5. Web 侧把 payload 规范化成已绑定的 `serverId`
-6. `AgentDataSource` 把 snapshot 推给 `Scheduler.handleMetrics()`，任务更新进入任务镜像链路，`localUsers` 则更新人员绑定候选所需的本地用户库存
+4. Agent 后续按周期发送 `agent:report`
+5. 统一报告里同时带上资源快照、任务队列快照和本地用户清单
+6. Web 侧把报告规范化成已绑定的 `serverId` 后进入统一处理链路
 
 ### 人员与移动端链路
 
@@ -113,7 +113,7 @@ agent/    Python Agent，独立于 pnpm workspace
 
 这个顺序很重要。调试时如果发现 UI 有数据但数据库没更新，或者 security event 缺失，应该优先沿着这条链路逐段确认。
 
-要注意 `agent:localUsers` 不走这条 `handleMetrics()` 链。它是独立侧带事件，直接更新服务端保存的节点本地用户清单，供人员绑定建议和归属解析使用。
+要注意，当前本地用户清单已经并入统一报告，不再依赖独立的侧带上报事件。
 
 ## 状态与绑定语义
 
@@ -152,9 +152,177 @@ agent/    Python Agent，独立于 pnpm workspace
 
 当前调度是严格的节点本地调度，而不是服务端统一调度：
 
-- 每个 Agent daemon 只根据自己的本地 SQLite 队列做排队和出队
+- 每个 Agent daemon 只根据自己的本地内存任务队列做排队和出队
 - 准入判断依赖本机 GPU 当前样本和历史窗口，而不是服务端跨节点仲裁
 - `priority` 和 `created_at` 仍然是本地排序基础；服务端只负责下发变更，不负责替 Agent 重新决定 admission
+
+## Agent 本地队列与调度架构
+
+当前 Python Agent 的本地事实来源不是 SQLite，而是一个随守护进程存活的内存状态层。核心状态分成三块：
+
+- `TaskQueue`：维护任务生命周期和对外可见的活跃任务快照
+- `GpuHistoryTracker`：维护 GPU 分配历史窗口，用于持续空闲判断
+- `schedule_history`：挂在每个任务上，只保留最近 5 次调度评估
+
+这三块状态都只服务于节点本地调度。Agent 重启后它们会被重建，不尝试做本地恢复。
+
+### 任务队列生命周期
+
+Agent 内部任务状态是三态模型：`queued -> reserved -> running`。
+
+- `queued`：任务已提交，但还没有拿到 GPU 资源
+- `reserved`：GPU 已经被分配，但还没有稳定 PID
+- `running`：任务已经绑定 PID 并开始运行
+
+`reserved` 是内部实现态，不会直接上报给 Web。对外序列化时，`reserved` 会按 `queued` 汇报，因此协议层只看到 `queued` 和 `running` 两种活跃态。
+
+内部状态转移规则如下：
+
+- 提交任务时进入 `queued`
+- 调度成功后先进入 `reserved`
+- `daemon_shell` 模式在子进程启动并拿到 PID 后进入 `running`
+- `attached_python` 模式在 CLI 回报 PID 后进入 `running`
+- 任务完成、被取消、attach 超时，或者运行中的 PID 消失后，任务都会从活跃队列移除
+
+队列顺序由 `(priority, created_at)` 升序决定。也就是说，优先级数字越小越先评估；同优先级下更早提交的任务先评估。
+
+### Runtime Monitor 的职责
+
+本地终态收敛由独立线程 `RuntimeMonitorLoop` 完成，而不是依赖采集循环顺带处理。
+
+- 对 `running` 任务，它检查 PID 是否仍然存在
+- PID 存活校验会同时比对 `pid_create_time`，避免 PID 重用造成误判
+- 对 `reserved` 的 `attached_python` 任务，它检查 `attach_deadline` 是否过期
+- 检测到 PID 消失或 attach 超时后，任务会被从活跃队列中移除
+- 单次 tick 异常只记录日志，不会停止后续轮询
+
+### GPU 历史窗口
+
+GPU 调度不是只看当前探针结果，而是同时依赖一个滑动历史窗口。
+
+- `GpuHistoryTracker` 默认维护最近 120 秒的每轮 `PerGpuAllocationSummary`
+- 每次 `collect_cycle()` 完成资源采集后，都会把当前 `per_gpu` 记录进窗口
+- 窗口在写入和读取时都会自动剪枝，只保留仍在窗口内的样本
+
+这个窗口主要用于回答两个问题：
+
+- 最近一段时间里，非 PMEOW 进程在每张 GPU 上的峰值显存是多少
+- 对于独占任务，目标 GPU 是否在整个窗口内持续空闲
+
+### GPU 双账本与准入判断
+
+当前调度器使用双账本模型，而不是直接拿探针看到的 `memory_used_mb` 作为可调度依据。
+
+对每张 GPU，调度器会构建一个 `GpuLedger`，核心字段包括：
+
+- `schedulable_mb = total_vram_mb * 0.98`
+- `managed_reserved_mb`：所有 PMEOW 任务的声明显存之和，再加上本轮尚未真正启动但已经选中的 pending 预留
+- `unmanaged_peak_mb`：历史窗口内非 PMEOW 进程峰值显存乘以 1.05
+- `effective_free_mb = max(0, schedulable_mb - managed_reserved_mb - unmanaged_peak_mb)`
+
+这里有两个关键约束：
+
+- PMEOW 任务按声明值记账，也就是 `declared_vram_mb`，而不是按当前实际占用记账
+- 非 PMEOW 进程按探针实际占用记账，但用窗口峰值和冗余系数放大，避免短时波动把 GPU 错判为空闲
+
+### 任务类型与调度规则
+
+调度器把任务分成两类：
+
+- 共享任务：`require_vram_mb > 0`
+- 独占任务：`require_vram_mb == 0`
+
+共享任务的准入规则：
+
+- 不能落到已经被独占任务占用的 GPU 上
+- `effective_free_mb` 必须大于等于任务声明的单卡显存需求
+- 如果候选 GPU 足够，优先选 `effective_free_mb` 最大的几张卡
+
+独占任务的准入规则：
+
+- 当前不能已经有独占 owner
+- 当前不能已经有 PMEOW managed reservation
+- 当前 GPU 使用率必须低于阈值
+- 当前 GPU 显存使用率必须低于阈值
+- 历史窗口内每个样本都必须满足“无 PMEOW 任务且非 PMEOW 显存占用低于阈值”
+
+因此，独占任务的判断是“当前空闲 + 窗口内持续空闲”，而不是“这一秒看起来空闲”。
+
+### GPU 归因与进程过滤
+
+GPU 资源汇报同样不是裸探针结果，而是先做进程归因。
+
+归因流程是：
+
+- 先采集 GPU 进程列表，得到 `pid + gpu_index + used_memory_mb`
+- 再从 `running` 和 `reserved` 任务建立 PID 到任务的映射
+- 能映射到任务的 GPU 进程归到 `GpuTaskAllocation`
+- 不能映射到任务，但能识别用户的进程归到 `GpuUserProcess`
+- 剩余无法识别的进程归到 `GpuUnknownProcess`
+
+这里的一个重要设计点是：GPU 卡上的 PMEOW 任务占用展示使用的是任务声明值，调度可用空间也是基于声明值；实际探针看到的显存仅作为展示和非 PMEOW 进程核算的输入。
+
+进程列表上报还有额外过滤规则：
+
+- GPU 显存占用大于 0 的进程一定保留
+- CPU 占用大于等于 2% 的进程保留
+- 其余低资源后台进程从汇报中滤掉
+
+### 调度评估历史
+
+每个任务都维护一个 `schedule_history` 双端队列，长度固定为 5。
+
+每次采集周期里，只要任务仍在 `queued`，调度器都会给它写入一次评估记录。每条记录至少包含：
+
+- `timestamp`：评估时间
+- `result`：调度结果代码
+- `gpu_snapshot`：本轮评估用到的 GPU 视图摘要
+- `detail`：可读的诊断文本
+
+当前对外暴露的结果代码是：
+
+- `scheduled`
+- `blocked_by_priority`
+- `insufficient_gpu`
+- `sustained_window_not_met`
+
+这些记录的用途不是做事件流，而是回答“为什么这个任务现在没有被调度”。因此只保留最近 5 次，覆盖即可，不做持久化累积。
+
+### 统一定时汇报
+
+资源汇报和任务汇报不是两套独立循环，而是同一个 `collect_cycle()` 统一驱动。
+
+每个周期的顺序是：
+
+1. 采集当前资源快照，包括 GPU、CPU、内存、磁盘、网络、进程、本地用户和网络探测
+2. 生成 GPU 归因结果和 `per_gpu` 分配摘要
+3. 把当前 `per_gpu` 写入 GPU 历史窗口
+4. 回收已经退出的 `daemon_shell` 任务
+5. 对当前 `queued` 任务做一轮调度评估并记录 `schedule_history`
+6. 对可运行任务做 `reserve`，并在需要时启动进程或等待 attached CLI 确认 PID
+7. 把当前 `ResourceSnapshot` 和 `TaskQueueSnapshot` 组装成 `UnifiedReport`
+8. 通过 transport 向 Web 推送统一报告
+
+这意味着 Web 看到的硬件状态和任务状态来自同一个 tick，时间基准是一致的，不需要在服务端额外拼接两条独立采样线。
+
+### 协议可见性
+
+`UnifiedReport` 里只保留当前活跃事实：
+
+- `resource_snapshot`：硬件和进程视图，其中 GPU 包含 managed reservation、unmanaged peak、effective free 以及归因明细
+- `task_queue`：只包含 `queued` 和 `running` 任务
+
+Agent 不直接上报“已结束任务”。任务一旦从活跃队列移除，就不再出现在后续报告里；Web 通过相邻快照 diff 把它归档为结束。
+
+### 当前明确的边界
+
+当前实现有几条重要边界，需要在设计上写清楚：
+
+- 多进程任务的 GPU 归因目前只稳定覆盖根 PID，子进程树发现机制还没有实现
+- GPU 历史窗口只服务于本地调度，不向 Web 单独上报原始窗口样本
+- 调度是节点本地行为，服务端不做跨节点 admission 或抢占
+- Agent 只维护当前活跃任务，不在本地保存完整 ended 历史
+- 资源判断只做总量级别的显存预留，不做碎片感知调度
 
 ## Agent 与服务端的关系
 
@@ -167,7 +335,7 @@ Agent 负责本地事实，服务端负责集群视图和最小控制面。
 - 本地任务队列
 - 资源满足时启动子进程
 - 任务状态和心跳上报
-- 本地用户清单上报 `agent:localUsers`
+- 本地用户清单采集，并随统一报告一起上报
 - 在 `PMEOW_SERVER_URL` 为空时以 local-only 模式继续运行本地调度与 CLI
 
 ### 服务端负责
@@ -193,7 +361,7 @@ Agent 负责本地事实，服务端负责集群视图和最小控制面。
 
 人员归属 `Person attribution` 是一个可选层。如果没有任何人员记录，原有监控、任务和安全逻辑仍然保持可用，只是不会补充人员归属字段。
 
-Agent 节点也有自己的本地 SQLite 和日志目录，默认在 `~/.pmeow/`。
+Agent 节点也有自己的本地状态目录和日志目录，默认在 `~/.pmeow/`。当前目录下主要保存 socket、pid 文件和任务日志，而不是本地 SQLite 任务库。
 
 ## 几条必须记住的系统约束
 
@@ -207,8 +375,3 @@ Agent 节点也有自己的本地 SQLite 和日志目录，默认在 `~/.pmeow/`
 ## 文档与设计档案的关系
 
 如果你需要理解“为什么是现在这个结构”，应再去看 `docs/superpowers/` 下的设计档案。那部分解释的是设计背景；本页解释的是当前真实实现。
-## Runtime Monitor Loop
-
-Daemon 通过 `task_runtime` 和 `task_processes` 两张表持有任务进程的活跃状态。`collect_cycle()` 仍负责指标采集和调度决策，但本地任务的终态收敛由 `RuntimeMonitorLoop` 驱动——它以独立间隔刷新当前进程树，检测孤儿进程，并将 `runner_exit`、`cli_finish`、`cancel` 和 orphan detection 统一通过 `guarded_finalize_task()` 完成终结。
-
-所有终结写入共享同一个 guard：只有第一次成功转换会生效，后续重复请求会被记录为 `runtime_finalize_ignored_late_source` 事件但不改变任务状态，从而避免竞态导致的状态覆盖。
