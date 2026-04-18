@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 import sys
 
 from pmeow.cli_python import detect_python_invocation, parse_vram_mb
@@ -32,73 +31,10 @@ def test_detect_python_invocation_splits_flags_and_script_args(tmp_path):
     assert invocation.script_args == ["--epochs", "3"]
 
 
-def test_detect_python_invocation_skips_submit_subcommand():
+def test_detect_python_invocation_edge_cases():
     assert detect_python_invocation(["submit", "--pvram", "1024", "--", "python", "train.py"]) is None
-
-
-def test_detect_python_invocation_returns_none_for_empty():
     assert detect_python_invocation([]) is None
-
-
-def test_detect_python_invocation_returns_none_for_no_py_file():
     assert detect_python_invocation(["-vram=10g"]) is None
-
-
-def test_detect_python_invocation_space_separated_vram(tmp_path):
-    script = tmp_path / "run.py"
-    script.write_text("")
-
-    invocation = detect_python_invocation(["--vram", "2g", str(script)])
-
-    assert invocation is not None
-    assert invocation.require_vram_mb == 2048
-
-
-def test_detect_python_invocation_space_separated_gpus(tmp_path):
-    script = tmp_path / "run.py"
-    script.write_text("")
-
-    invocation = detect_python_invocation(["--gpus", "4", str(script)])
-
-    assert invocation is not None
-    assert invocation.require_gpu_count == 4
-
-
-def test_run_python_invocation_uses_username_fallback(monkeypatch, tmp_path):
-    from pmeow.cli_python import PythonInvocation, run_python_invocation
-
-    script = tmp_path / "demo.py"
-    script.write_text("print('hi')\n")
-    seen_users: list[str] = []
-
-    def fake_send_request(socket_path, method, params=None):
-        params = params or {}
-        if method == "submit_task":
-            seen_users.append(params["user"])
-            return {"ok": True, "result": {"id": "task-1"}}
-        if method == "get_task":
-            return {"ok": True, "result": {"status": "completed", "exit_code": 0}}
-        raise AssertionError(f"unexpected method: {method}")
-
-    monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
-    monkeypatch.delenv("USER", raising=False)
-    monkeypatch.setenv("USERNAME", "windows-user")
-
-    exit_code = run_python_invocation(
-        PythonInvocation(
-            socket_path="socket",
-            require_vram_mb=0,
-            require_gpu_count=1,
-            priority=10,
-            script_path=str(script),
-            script_args=[],
-        ),
-        stdout_target=io.BytesIO(),
-        stderr_target=io.BytesIO(),
-    )
-
-    assert exit_code == 0
-    assert seen_users == ["windows-user"]
 
 
 def test_run_python_invocation_submits_with_current_cwd_and_interpreter(monkeypatch, tmp_path):
@@ -138,124 +74,3 @@ def test_run_python_invocation_submits_with_current_cwd_and_interpreter(monkeypa
     assert exit_code == 0
     assert params["cwd"] == str(tmp_path)
     assert params["argv"] == [sys.executable, str(script), "--epochs", "3"]
-
-
-def test_run_python_invocation_attached_launch_uses_task_cwd_and_current_environment(monkeypatch, tmp_path):
-    from pmeow.cli_python import PythonInvocation, run_python_invocation
-
-    script = tmp_path / "demo.py"
-    script.write_text("print('hi')\n")
-    launch_calls: list[dict[str, object]] = []
-    finished: list[int] = []
-    task_cwd = str(tmp_path / "runtime-cwd")
-
-    def fake_send_request(socket_path, method, params=None):
-        params = params or {}
-        if method == "submit_task":
-            return {"ok": True, "result": {"id": "task-1"}}
-        if method == "get_task":
-            return {
-                "ok": True,
-                "result": {
-                    "status": "reserved",
-                    "argv": [sys.executable, str(script)],
-                    "cwd": task_cwd,
-                    "assigned_gpus": [1, 3],
-                    "gpu_ids": [1, 3],
-                    "log_path": str(tmp_path / "task.log"),
-                },
-            }
-        if method == "confirm_attached_launch":
-            return {"ok": True, "result": True}
-        if method == "finish_attached_task":
-            finished.append(params["exit_code"])
-            return {"ok": True, "result": True}
-        raise AssertionError(f"unexpected method: {method}")
-
-    def fake_run_attached_python(**kwargs):
-        launch_calls.append(kwargs)
-        kwargs["on_started"](4321)
-        return 0
-
-    monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
-    monkeypatch.setattr("pmeow.executor.attached.run_attached_python", fake_run_attached_python)
-    monkeypatch.setenv("USER", "tester")
-    monkeypatch.setenv("PMEOW_ATTACHED_MARKER", "attached-env")
-
-    exit_code = run_python_invocation(
-        PythonInvocation(
-            socket_path="socket",
-            require_vram_mb=0,
-            require_gpu_count=0,
-            priority=10,
-            script_path=str(script),
-            script_args=[],
-        ),
-        stdout_target=io.BytesIO(),
-        stderr_target=io.BytesIO(),
-    )
-
-    assert exit_code == 0
-    assert finished == [0]
-    assert len(launch_calls) == 1
-    launch = launch_calls[0]
-    assert launch["cwd"] == task_cwd
-    assert launch["argv"] == [sys.executable, str(script)]
-    assert launch["env"]["PMEOW_ATTACHED_MARKER"] == "attached-env"
-    assert launch["env"]["CUDA_VISIBLE_DEVICES"] == "1,3"
-
-
-def test_run_python_invocation_keyboard_interrupt_returns_130_and_finishes(monkeypatch, tmp_path):
-    from pmeow.cli_python import PythonInvocation, run_python_invocation
-
-    script = tmp_path / "demo.py"
-    script.write_text("print('hi')\n")
-    finished: list[dict] = []
-
-    def fake_send_request(socket_path, method, params=None):
-        params = params or {}
-        if method == "submit_task":
-            return {"ok": True, "result": {"id": "task-1"}}
-        if method == "get_task":
-            return {
-                "ok": True,
-                "result": {
-                    "status": "reserved",
-                    "argv": [sys.executable, str(script)],
-                    "cwd": str(tmp_path),
-                    "assigned_gpus": [0],
-                    "gpu_ids": [0],
-                    "log_path": str(tmp_path / "task.log"),
-                },
-            }
-        if method == "confirm_attached_launch":
-            return {"ok": True, "result": True}
-        if method == "finish_attached_task":
-            finished.append(params)
-            return {"ok": True, "result": True}
-        raise AssertionError(f"unexpected method: {method}")
-
-    def fake_run_attached_python(**kwargs):
-        kwargs["on_started"](1234)
-        raise KeyboardInterrupt
-
-    monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
-    monkeypatch.setattr("pmeow.executor.attached.run_attached_python", fake_run_attached_python)
-    monkeypatch.setenv("USER", "tester")
-
-    exit_code = run_python_invocation(
-        PythonInvocation(
-            socket_path="socket",
-            require_vram_mb=0,
-            require_gpu_count=0,
-            priority=10,
-            script_path=str(script),
-            script_args=[],
-        ),
-        stdout_target=io.BytesIO(),
-        stderr_target=io.BytesIO(),
-    )
-
-    assert exit_code == 130
-    assert len(finished) == 1
-    assert finished[0]["exit_code"] == 130

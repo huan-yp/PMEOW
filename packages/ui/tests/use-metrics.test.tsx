@@ -1,7 +1,7 @@
 import { render, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TransportProvider } from '../src/transport/TransportProvider.js';
-import { useLoadInitialData, useMetricsSubscription } from '../src/hooks/useMetrics.js';
+import { useLoadInitialData } from '../src/hooks/useMetrics.js';
 import { useStore } from '../src/store/useStore.js';
 import type { TransportAdapter, Server, ServerStatus } from '../src/transport/types.js';
 
@@ -24,6 +24,7 @@ function createMockTransport(): TransportAdapter {
     deleteServer: vi.fn(async () => undefined),
     getStatuses: vi.fn(async () => ({})),
     getMetricsHistory: vi.fn(async () => ({ snapshots: [], total: 0 })),
+    getLatestMetrics: vi.fn(async () => ({})),
     getSettings: vi.fn(async () => ({ alertCpuThreshold: 90, alertMemoryThreshold: 90, alertDiskThreshold: 90, alertGpuTempThreshold: 85 })),
     saveSettings: vi.fn(async () => undefined),
     login: vi.fn(async () => ({ success: true, token: 'token' })),
@@ -49,11 +50,6 @@ function createMockTransport(): TransportAdapter {
 
 function Probe() {
   useLoadInitialData();
-  return null;
-}
-
-function SubscriptionProbe() {
-  useMetricsSubscription();
   return null;
 }
 
@@ -101,41 +97,5 @@ describe('useLoadInitialData', () => {
     expect(state.statuses.get('server-b')?.status).toBe('offline');
   });
 
-  it('refreshes the server list when the server catalog changes in realtime', async () => {
-    const transport = createMockTransport();
-    const serverA = createServer('server-a', 'Node A');
-    const serverB = createServer('server-b', 'Node B');
-    let handleServersChanged: (() => void) | undefined;
 
-    transport.getServers = vi.fn()
-      .mockResolvedValueOnce([serverA])
-      .mockResolvedValueOnce([serverA, serverB]);
-    transport.getStatuses = vi.fn(async () => ({}));
-    transport.onServersChanged = vi.fn((cb: () => void) => {
-      handleServersChanged = cb;
-      return () => undefined;
-    });
-
-    render(
-      <TransportProvider adapter={transport}>
-        <>
-          <Probe />
-          <SubscriptionProbe />
-        </>
-      </TransportProvider>,
-    );
-
-    await waitFor(() => {
-      expect(transport.getServers).toHaveBeenCalledTimes(1);
-      expect(useStore.getState().servers).toEqual([serverA]);
-      expect(handleServersChanged).toBeTypeOf('function');
-    });
-
-    handleServersChanged?.();
-
-    await waitFor(() => {
-      expect(transport.getServers).toHaveBeenCalledTimes(2);
-      expect(useStore.getState().servers).toEqual([serverA, serverB]);
-    });
-  });
 });

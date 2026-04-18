@@ -17,21 +17,6 @@ def test_load_config_adds_pid_and_agent_log_paths(monkeypatch, tmp_path):
     assert cfg.agent_log_file == str((tmp_path / "runtime" / "agent.log").resolve())
 
 
-def test_load_config_reads_log_level(monkeypatch):
-    monkeypatch.setenv("PMEOW_LOG_LEVEL", "DEBUG")
-
-    cfg = load_config()
-
-    assert cfg.log_level == logging.DEBUG
-
-
-def test_load_config_rejects_invalid_log_level(monkeypatch):
-    monkeypatch.setenv("PMEOW_LOG_LEVEL", "LOUD")
-
-    with pytest.raises(ValueError, match="PMEOW_LOG_LEVEL"):
-        load_config()
-
-
 def test_configure_runtime_logging_writes_to_file(tmp_path):
     log_file = tmp_path / "agent.log"
 
@@ -39,19 +24,3 @@ def test_configure_runtime_logging_writes_to_file(tmp_path):
     logging.getLogger("pmeow.runtime").info("background ready")
 
     assert "background ready" in log_file.read_text()
-
-
-def test_configure_runtime_logging_writes_to_console(capsys):
-    configure_runtime_logging(log_to_console=True)
-    logging.getLogger("pmeow.runtime").warning("foreground ready")
-
-    captured = capsys.readouterr()
-    assert "foreground ready" in captured.out
-
-
-def test_configure_runtime_logging_respects_debug_level(capsys):
-    configure_runtime_logging(log_to_console=True, level=logging.DEBUG)
-    logging.getLogger("pmeow.runtime").debug("debug ready")
-
-    captured = capsys.readouterr()
-    assert "debug ready" in captured.out

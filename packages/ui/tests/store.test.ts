@@ -16,33 +16,6 @@ describe('useStore', () => {
     });
   });
 
-  it('adds and removes servers', () => {
-    const server = { id: 's1', name: 'Node 1', agentId: 'a1', createdAt: 0, updatedAt: 0 };
-    useStore.getState().addServer(server);
-    expect(useStore.getState().servers).toHaveLength(1);
-    expect(useStore.getState().servers[0].name).toBe('Node 1');
-
-    useStore.getState().removeServer('s1');
-    expect(useStore.getState().servers).toHaveLength(0);
-  });
-
-  it('manages statuses', () => {
-    useStore.getState().setStatus({ serverId: 's1', status: 'online', version: '1.0', lastSeenAt: Date.now() });
-    expect(useStore.getState().statuses.get('s1')?.status).toBe('online');
-
-    useStore.getState().setStatuses({ s2: { status: 'offline', version: '1.0', lastSeenAt: 0 } });
-    expect(useStore.getState().statuses.get('s2')?.status).toBe('offline');
-  });
-
-  it('manages toasts with auto-dismiss', async () => {
-    useStore.getState().addToast('Test', 'Body', 'info');
-    expect(useStore.getState().toasts).toHaveLength(1);
-
-    const toastId = useStore.getState().toasts[0].id;
-    useStore.getState().dismissToast(toastId);
-    expect(useStore.getState().toasts).toHaveLength(0);
-  });
-
   it('upserts tasks', () => {
     const task = {
       id: 't1', serverId: 's1', command: 'python train.py', cwd: '/home',

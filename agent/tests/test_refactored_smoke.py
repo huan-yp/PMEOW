@@ -82,4 +82,6 @@ class TestDaemonServiceInstantiation:
         task = svc.submit_task(spec)
         assert task.status == TaskStatus.queued
         assert svc.cancel_task(task.id) is True
-        assert svc.get_task(task.id) is None
+        cancelled = svc.get_task(task.id)
+        assert cancelled is not None
+        assert cancelled.status == TaskStatus.cancelled

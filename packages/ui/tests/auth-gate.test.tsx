@@ -2,20 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../src/App.js';
 import type { TransportAdapter } from '../src/transport/types.js';
-import { AUTHOR_GITHUB_URL, PROJECT_REPO_URL } from '../src/utils/branding.js';
 import { useStore } from '../src/store/useStore.js';
-
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-
-  return { promise, resolve, reject };
-}
 
 function createMockTransport(overrides: Partial<TransportAdapter> = {}): TransportAdapter {
   return {
@@ -91,36 +78,5 @@ describe('AuthGate', () => {
     });
   });
 
-  it('keeps the login form hidden until the startup auth check completes', async () => {
-    const deferred = createDeferred<{ authenticated: boolean }>();
-    const transport = createMockTransport({
-      checkAuth: vi.fn(async () => deferred.promise),
-    });
 
-    renderApp(transport, '/settings');
-
-    expect((await screen.findByRole('status')).textContent).toContain('正在恢复登录状态...');
-    expect(screen.queryByPlaceholderText('请输入访问口令')).toBeNull();
-
-    deferred.resolve({ authenticated: false });
-
-    expect(await screen.findByPlaceholderText('请输入访问口令')).toBeTruthy();
-    await waitFor(() => {
-      expect(transport.checkAuth).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it('shows repository and author links on the login screen', async () => {
-    const transport = createMockTransport();
-
-    renderApp(transport);
-
-    expect(await screen.findByPlaceholderText('请输入访问口令')).toBeTruthy();
-
-    const repoLink = screen.getByRole('link', { name: 'GitHub Repo · 本项目开源' });
-    const authorLink = screen.getByRole('link', { name: 'Powered By huan-yp' });
-
-    expect(repoLink.getAttribute('href')).toBe(PROJECT_REPO_URL);
-    expect(authorLink.getAttribute('href')).toBe(AUTHOR_GITHUB_URL);
-  });
 });

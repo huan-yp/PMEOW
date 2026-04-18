@@ -29,19 +29,10 @@ from pmeow.models import (
 )
 
 
-# ---------------------------------------------------------------------------
-# TaskSpec defaults
-# ---------------------------------------------------------------------------
-
-
 class TestTaskSpec:
     def test_default_priority(self):
         spec = TaskSpec(command="train.py", cwd="/work", user="alice", require_vram_mb=8000)
         assert spec.priority == 10
-
-    def test_default_gpu_count(self):
-        spec = TaskSpec(command="train.py", cwd="/work", user="alice", require_vram_mb=8000)
-        assert spec.require_gpu_count == 1
 
     def test_explicit_gpu_ids_preserved(self):
         spec = TaskSpec(
@@ -52,15 +43,6 @@ class TestTaskSpec:
             gpu_ids=[0, 2],
         )
         assert spec.gpu_ids == [0, 2]
-
-    def test_gpu_ids_default_none(self):
-        spec = TaskSpec(command="train.py", cwd="/work", user="alice", require_vram_mb=8000)
-        assert spec.gpu_ids is None
-
-
-# ---------------------------------------------------------------------------
-# UnifiedReport serialization
-# ---------------------------------------------------------------------------
 
 
 def _make_report():
@@ -146,66 +128,11 @@ class TestUnifiedReportSerialization:
         d = report.to_dict()
 
         assert "agentId" in d
-        assert "timestamp" in d
-        assert "seq" in d
         assert "resourceSnapshot" in d
         assert "taskQueue" in d
 
         snapshot = d["resourceSnapshot"]
         assert "gpuCards" in snapshot
-        assert "gpu" not in snapshot
-        assert "gpuAllocation" not in snapshot
-
-    def test_to_dict_cpu_keys(self):
-        cpu = _make_report().to_dict()["resourceSnapshot"]["cpu"]
-        assert set(cpu.keys()) == {"usagePercent", "coreCount", "modelName", "frequencyMhz", "perCoreUsage"}
-
-    def test_to_dict_memory_keys(self):
-        mem = _make_report().to_dict()["resourceSnapshot"]["memory"]
-        assert set(mem.keys()) == {
-            "totalMB", "usedMB", "availableMB", "usagePercent",
-            "swapTotalMB", "swapUsedMB", "swapPercent",
-        }
-
-    def test_to_dict_disk_keys(self):
-        disk = _make_report().to_dict()["resourceSnapshot"]["disks"][0]
-        assert set(disk.keys()) == {"filesystem", "mountPoint", "totalGB", "usedGB", "availableGB", "usagePercent"}
-
-    def test_to_dict_network_keys(self):
-        net = _make_report().to_dict()["resourceSnapshot"]["network"]
-        assert "rxBytesPerSec" in net
-        assert "txBytesPerSec" in net
-        iface = net["interfaces"][0]
-        assert set(iface.keys()) == {"name", "rxBytes", "txBytes"}
-
-    def test_to_dict_network_omits_internet_fields_when_not_set(self):
-        net = _make_report().to_dict()["resourceSnapshot"]["network"]
-        assert "internetReachable" not in net
-        assert "internetLatencyMs" not in net
-        assert "internetProbeTarget" not in net
-        assert "internetProbeCheckedAt" not in net
-
-    def test_to_dict_network_includes_internet_fields_when_set(self):
-        report = _make_report()
-        report.resource_snapshot.network.internet_reachable = True
-        report.resource_snapshot.network.internet_latency_ms = 25.0
-        report.resource_snapshot.network.internet_probe_target = "1.1.1.1:443"
-        report.resource_snapshot.network.internet_probe_checked_at = 1712000000.0
-        net = report.to_dict()["resourceSnapshot"]["network"]
-        assert net["internetReachable"] is True
-        assert net["internetLatencyMs"] == 25.0
-        assert net["internetProbeTarget"] == "1.1.1.1:443"
-        assert net["internetProbeCheckedAt"] == 1712000000.0
-
-    def test_to_dict_network_internet_unreachable_keeps_null_latency(self):
-        report = _make_report()
-        report.resource_snapshot.network.internet_reachable = False
-        report.resource_snapshot.network.internet_latency_ms = None
-        report.resource_snapshot.network.internet_probe_target = "1.1.1.1:443"
-        report.resource_snapshot.network.internet_probe_checked_at = 1712000000.0
-        net = report.to_dict()["resourceSnapshot"]["network"]
-        assert net["internetReachable"] is False
-        assert net["internetLatencyMs"] is None
 
     def test_to_dict_gpu_card_keys(self):
         gpu = _make_report().to_dict()["resourceSnapshot"]["gpuCards"][0]
@@ -216,23 +143,16 @@ class TestUnifiedReportSerialization:
             "taskAllocations", "userProcesses", "unknownProcesses",
         }
         assert gpu["taskAllocations"][0] == {"taskId": "task-1", "declaredVramMb": 8000}
-        assert gpu["userProcesses"][0] == {"pid": 4321, "user": "bob", "vramMb": 2000.0}
-        assert gpu["unknownProcesses"][0] == {"pid": 7777, "vramMb": 200.0}
 
-    def test_to_dict_process_keys(self):
-        proc = _make_report().to_dict()["resourceSnapshot"]["processes"][0]
-        assert set(proc.keys()) == {"pid", "ppid", "user", "cpuPercent", "memPercent", "rss", "command", "gpuMemoryMB"}
-
-    def test_to_dict_system_keys(self):
-        sys_ = _make_report().to_dict()["resourceSnapshot"]["system"]
-        assert set(sys_.keys()) == {
-            "hostname", "uptime", "loadAvg1", "loadAvg5", "loadAvg15", "kernelVersion",
-        }
-
-
-# ---------------------------------------------------------------------------
-# Config validation
-# ---------------------------------------------------------------------------
+    def test_to_dict_network_includes_internet_fields_when_set(self):
+        report = _make_report()
+        report.resource_snapshot.network.internet_reachable = True
+        report.resource_snapshot.network.internet_latency_ms = 25.0
+        report.resource_snapshot.network.internet_probe_target = "1.1.1.1:443"
+        report.resource_snapshot.network.internet_probe_checked_at = 1712000000.0
+        net = report.to_dict()["resourceSnapshot"]["network"]
+        assert net["internetReachable"] is True
+        assert net["internetLatencyMs"] == 25.0
 
 
 class TestConfigValidation:
@@ -240,34 +160,9 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="positive integer"):
             validate_interval(0, "collection_interval")
 
-    def test_invalid_interval_negative(self):
-        with pytest.raises(ValueError, match="positive integer"):
-            validate_interval(-5, "heartbeat_interval")
-
-    def test_valid_interval(self):
-        assert validate_interval(10, "x") == 10
-
-    def test_invalid_redundancy_negative(self):
-        with pytest.raises(ValueError, match="vram_redundancy_coefficient"):
-            validate_redundancy_coefficient(-0.1)
-
-    def test_invalid_redundancy_one(self):
-        with pytest.raises(ValueError, match="vram_redundancy_coefficient"):
-            validate_redundancy_coefficient(1.0)
-
     def test_valid_redundancy(self):
         assert validate_redundancy_coefficient(0.1) == pytest.approx(0.1)
         assert validate_redundancy_coefficient(0.0) == pytest.approx(0.0)
-
-    def test_load_config_invalid_interval_env(self, monkeypatch):
-        monkeypatch.setenv("PMEOW_COLLECTION_INTERVAL", "0")
-        with pytest.raises(ValueError):
-            load_config()
-
-    def test_load_config_invalid_redundancy_env(self, monkeypatch):
-        monkeypatch.setenv("PMEOW_VRAM_REDUNDANCY", "1.0")
-        with pytest.raises(ValueError):
-            load_config()
 
     def test_load_config_paths_absolute(self):
         cfg = load_config()

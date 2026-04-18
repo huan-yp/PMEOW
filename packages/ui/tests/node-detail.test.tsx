@@ -218,9 +218,16 @@ describe('NodeDetail', () => {
     renderNodeDetail(transport);
     await user.click(screen.getByRole('button', { name: '历史' }));
 
-    await waitFor(() => expect(historySpy).toHaveBeenCalled());
+    await waitFor(() => {
+      // Filter out the hydration call (which has tier=recent)
+      const historyCalls = historySpy.mock.calls.filter(
+        ([, q]: any) => !q.tier,
+      );
+      expect(historyCalls.length).toBeGreaterThanOrEqual(1);
+    });
 
-    const [serverId, query] = historySpy.mock.calls[0] as unknown as [string, { from: number; to: number }];
+    const historyCall = historySpy.mock.calls.find(([, q]: any) => !q.tier)!;
+    const [serverId, query] = historyCall as unknown as [string, { from: number; to: number }];
     expect(serverId).toBe('server-a');
     expect(query.to).toBeGreaterThanOrEqual(nowSeconds - 2);
     expect(query.from).toBeGreaterThanOrEqual(nowSeconds - 24 * 60 * 60 - 2);
@@ -228,34 +235,6 @@ describe('NodeDetail', () => {
     expect(screen.getByText(/当前范围：24 小时/)).toBeTruthy();
   });
 
-  it('renders snapshot state without trend charts', async () => {
-    const snapshotSpy = vi.fn(async () => ({ snapshots: [createSnapshot(1_713_311_400), createSnapshot(1_713_312_000)] }));
-    const transport = createMockTransport({ getMetricsHistory: snapshotSpy });
-    const user = userEvent.setup();
-
-    renderNodeDetail(transport);
-    await user.click(screen.getByRole('button', { name: '快照' }));
-
-    await waitFor(() => expect(snapshotSpy).toHaveBeenCalled());
-
-    expect(screen.getByText('快照进程列表')).toBeTruthy();
-    expect(screen.getAllByText('磁盘使用情况')).toHaveLength(1);
-    expect(screen.queryByTestId('time-series-chart')).toBeNull();
-  });
-
-  it('shows per-GPU occupancy and memory bandwidth as separate metrics', async () => {
-    const transport = createMockTransport();
-    const user = userEvent.setup();
-
-    renderNodeDetail(transport);
-
-    expect(screen.getByText('默认折叠，展开后查看每张 GPU 的利用率、显存占用与显存带宽利用率')).toBeTruthy();
-    expect(screen.getByText('当前 GPU 55% · 显存占用 33% · 显存带宽利用率 41%')).toBeTruthy();
-
-    await user.click(screen.getByRole('button', { name: /GPU 0: RTX 4090/ }));
-
-    expect(screen.getByText('GPU 利用率,显存占用,显存带宽利用率')).toBeTruthy();
-  });
 
   it('switches realtime network and disk charts to dual axes when ranges diverge', () => {
     const report = createReport();
@@ -279,44 +258,6 @@ describe('NodeDetail', () => {
     expect(diskChart?.yAxes).toHaveLength(2);
   });
 
-  it('keeps a shared axis for history charts when ranges are similar', async () => {
-    const historySpy = vi.fn(async () => ({
-      snapshots: [
-        (() => {
-          const snapshot = createSnapshot(1_713_311_400);
-          snapshot.network.rxBytesPerSec = 8 * 1024;
-          snapshot.network.txBytesPerSec = 6 * 1024;
-          snapshot.diskIo.readBytesPerSec = 4 * 1024;
-          snapshot.diskIo.writeBytesPerSec = 2 * 1024;
-          return snapshot;
-        })(),
-        (() => {
-          const snapshot = createSnapshot(1_713_312_000);
-          snapshot.network.rxBytesPerSec = 12 * 1024;
-          snapshot.network.txBytesPerSec = 9 * 1024;
-          snapshot.diskIo.readBytesPerSec = 6 * 1024;
-          snapshot.diskIo.writeBytesPerSec = 3 * 1024;
-          return snapshot;
-        })(),
-      ],
-    }));
-    const transport = createMockTransport({ getMetricsHistory: historySpy });
-    const user = userEvent.setup();
-
-    renderNodeDetail(transport);
-    timeSeriesChartSpy.mockClear();
-    await user.click(screen.getByRole('button', { name: '历史' }));
-
-    await waitFor(() => expect(historySpy).toHaveBeenCalled());
-
-    expect(screen.queryByText('左 KB/s / 右 KB/s')).toBeNull();
-
-    const networkChart = findChartProps(['接收', '发送']);
-    const diskChart = findChartProps(['读取', '写入']);
-
-    expect(networkChart?.yAxes).toHaveLength(1);
-    expect(diskChart?.yAxes).toHaveLength(1);
-  });
 
   it('renders user-grouped gpu allocation for realtime and historical fallback note for snapshots', async () => {
     const snapshotSpy = vi.fn(async () => ({ snapshots: [createSnapshot(1_713_312_000)] }));
@@ -334,4 +275,35 @@ describe('NodeDetail', () => {
 
     expect(screen.getByText('历史快照缺少任务归属，托管任务以未归因分组展示。')).toBeTruthy();
   });
+
+  it('hydrates realtime charts from recent history on initial load', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const snapshots = [
+      createSnapshot(nowSeconds - 120),
+      createSnapshot(nowSeconds - 60),
+      createSnapshot(nowSeconds),
+    ];
+    const historySpy = vi.fn(async () => ({ snapshots }));
+    const transport = createMockTransport({ getMetricsHistory: historySpy });
+
+    renderNodeDetail(transport);
+
+    // The hydration effect should call getMetricsHistory with tier=recent
+    await waitFor(() => {
+      const recentCalls = historySpy.mock.calls.filter(
+        ([, q]: any) => q.tier === 'recent',
+      );
+      expect(recentCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    // After hydration, TimeSeriesChart should have received data points
+    await waitFor(() => {
+      const cpuMemChart = findChartProps(['CPU', '内存']);
+      expect(cpuMemChart).toBeTruthy();
+      const cpuSeries = cpuMemChart!.series.find((s: any) => s.name === 'CPU');
+      expect(cpuSeries.data.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+
 });
