@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Optional
 
 import psutil
 
-from pmeow.models import ProcessInfo
+from pmeow.models import ProcessInfo, UserResourceSummary
 
 _ATTRS = ["pid", "ppid", "username", "cpu_percent", "memory_percent", "memory_info", "cmdline", "name"]
+_BYTES_PER_MB = 1024 * 1024
 
 
 def should_include_process(proc: ProcessInfo) -> bool:
@@ -65,3 +67,34 @@ def collect_processes(
             continue
 
     return result
+
+
+def aggregate_processes_by_user(processes: list[ProcessInfo]) -> list[UserResourceSummary]:
+    buckets: dict[str, dict[str, float | int]] = defaultdict(lambda: {
+        "total_cpu_percent": 0.0,
+        "total_rss_mb": 0.0,
+        "total_vram_mb": 0.0,
+        "process_count": 0,
+    })
+
+    for process in processes:
+        user = process.user.strip()
+        if not user:
+            continue
+
+        bucket = buckets[user]
+        bucket["total_cpu_percent"] += process.cpu_percent
+        bucket["total_rss_mb"] += process.rss / _BYTES_PER_MB
+        bucket["total_vram_mb"] += process.gpu_memory_mb
+        bucket["process_count"] += 1
+
+    return [
+        UserResourceSummary(
+            user=user,
+            total_cpu_percent=round(float(bucket["total_cpu_percent"]), 1),
+            total_rss_mb=round(float(bucket["total_rss_mb"]), 1),
+            total_vram_mb=round(float(bucket["total_vram_mb"]), 1),
+            process_count=int(bucket["process_count"]),
+        )
+        for user, bucket in sorted(buckets.items())
+    ]

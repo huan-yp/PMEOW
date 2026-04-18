@@ -10,7 +10,7 @@ import enum
 import re
 from collections import deque
 from dataclasses import dataclass, field, is_dataclass
-from typing import Optional, cast
+from typing import Dict, Optional, cast
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ def _serialize(obj: object) -> object:
     if isinstance(obj, deque):
         return [_serialize(v) for v in obj]
     if is_dataclass(obj):
-        dataclass_fields = cast(dict[str, object], getattr(obj, "__dataclass_fields__", {}))
+        dataclass_fields = cast(Dict[str, object], getattr(obj, "__dataclass_fields__", {}))
         return {
             cast(str, getattr(dataclass_fields[k], "metadata", {}).get("alias") or _to_camel(k)): _serialize(v)
             for k, v in obj.__dict__.items()
@@ -389,6 +389,15 @@ class ProcessInfo:
 
 
 @dataclass
+class UserResourceSummary:
+    user: str
+    total_cpu_percent: float = field(metadata={"alias": "totalCpuPercent"})
+    total_rss_mb: float = field(metadata={"alias": "totalRssMb"})
+    total_vram_mb: float = field(metadata={"alias": "totalVramMb"})
+    process_count: int = field(metadata={"alias": "processCount"})
+
+
+@dataclass
 class SystemSnapshot:
     hostname: str
     uptime: str
@@ -455,6 +464,7 @@ class ResourceSnapshot:
     disk_io: Optional[DiskIoSnapshot] = None
     network: Optional[NetworkSnapshot] = None
     processes: list[ProcessInfo] = field(default_factory=list)
+    processes_by_user: list[UserResourceSummary] = field(default_factory=list)
     local_users: list[str] = field(default_factory=list)
     system: Optional[SystemSnapshot] = None
 

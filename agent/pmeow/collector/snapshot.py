@@ -29,7 +29,7 @@ from pmeow.collector.internet import InternetProbe
 from pmeow.collector.local_users import collect_local_users
 from pmeow.collector.memory import collect_memory
 from pmeow.collector.network import collect_network
-from pmeow.collector.processes import collect_processes
+from pmeow.collector.processes import aggregate_processes_by_user, collect_processes
 from pmeow.collector.system import collect_system
 
 if TYPE_CHECKING:
@@ -126,6 +126,10 @@ def collect_snapshot(
             apply_filter=True,
         ),
     )
+    processes_by_user = measure_stage(
+        "processes_by_user",
+        lambda: aggregate_processes_by_user(processes),
+    )
 
     disk = measure_stage("disk", collect_disk)
     local_user_records = measure_stage("local_users", collect_local_users)
@@ -150,6 +154,7 @@ def collect_snapshot(
         ),
         network=network,
         processes=processes,
+        processes_by_user=processes_by_user,
         local_users=local_users,
         system=system,
     )
