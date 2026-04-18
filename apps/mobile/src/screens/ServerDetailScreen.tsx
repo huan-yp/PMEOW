@@ -1,17 +1,18 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { Server, ServerStatus, UnifiedReport } from '@monitor/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
-import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type PerGpuRealtimeHistory } from '../app/metrics';
+import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type HostRealtimeHistory, type PerGpuRealtimeHistory } from '../app/metrics';
 import { styles } from '../app/styles';
 import { QueueTaskRow, SectionCard, StatBlock } from '../components/common';
-import { DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
+import { CpuMemoryTrendCard, DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
 
 export function ServerDetailScreen(props: {
   server: Server;
   status?: ServerStatus;
   report?: UnifiedReport;
+  hostRealtimeHistory: HostRealtimeHistory;
   gpuRealtimeHistory: Record<number, PerGpuRealtimeHistory>;
-  gpuHistoryLoading: boolean;
+  realtimeHistoryLoading: boolean;
   isAdmin: boolean;
   subscribed: boolean;
   onBack: () => void;
@@ -58,23 +59,30 @@ export function ServerDetailScreen(props: {
       </SectionCard>
 
       <SectionCard
-        title="GPU 实时走势"
-        description={props.gpuHistoryLoading ? '正在补齐最近 10 分钟的实时窗口。' : '最近 10 分钟窗口，三条曲线分别表示 GPU、VRAM 和显存带宽利用率。'}
+        title="资源实时走势"
+        description={props.realtimeHistoryLoading ? '正在补齐最近 10 分钟的实时窗口。' : '先看 CPU / 内存总览；GPU 详情默认折叠，展开后查看每张卡的 GPU、VRAM 和显存带宽走势。'}
       >
-        {gpuCards.length > 0 ? (
+        {props.report ? (
           <>
             <View style={styles.summaryGrid}>
               <StatBlock label="GPU 数量" value={gpuCards.length} />
               <StatBlock label="调度可用显存" value={formatMemoryGb(totalEffectiveFreeMb)} />
             </View>
-            <GpuRealtimeSection
-              gpuCards={gpuCards}
-              gpuRealtimeHistory={props.gpuRealtimeHistory}
-              loading={props.gpuHistoryLoading}
-            />
+            <View style={styles.panelStack}>
+              <CpuMemoryTrendCard
+                report={props.report}
+                history={props.hostRealtimeHistory}
+                loading={props.realtimeHistoryLoading}
+              />
+              <GpuRealtimeSection
+                gpuCards={gpuCards}
+                gpuRealtimeHistory={props.gpuRealtimeHistory}
+                loading={props.realtimeHistoryLoading}
+              />
+            </View>
           </>
         ) : (
-          <Text style={styles.emptyText}>当前节点没有可展示的 GPU 指标。</Text>
+          <Text style={styles.emptyText}>当前节点没有可展示的实时资源指标。</Text>
         )}
       </SectionCard>
 

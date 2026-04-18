@@ -3,9 +3,11 @@ import type { UnifiedReport } from '@monitor/app-common';
 import { MobileApiClient } from '../lib/api';
 import {
   appendChartPoint,
+  buildHostHistoryFromSnapshots,
   buildGpuHistoryFromSnapshots,
   ChartPoint,
   computeGpuMemoryUsagePercent,
+  HostRealtimeHistory,
   mergeChartPoints,
   PerGpuRealtimeHistory,
   REALTIME_WINDOW_SECONDS,
@@ -18,13 +20,18 @@ export function useServerGpuHistory(
   authToken: string | null,
 ) {
   const [gpuRealtimeHistory, setGpuRealtimeHistory] = useState<Record<number, PerGpuRealtimeHistory>>({});
-  const [gpuHistoryLoading, setGpuHistoryLoading] = useState(false);
+  const [hostRealtimeHistory, setHostRealtimeHistory] = useState<HostRealtimeHistory>({
+    cpuUsage: [],
+    memoryUsage: [],
+  });
+  const [realtimeHistoryLoading, setRealtimeHistoryLoading] = useState(false);
 
   useEffect(() => {
     setGpuRealtimeHistory({});
+    setHostRealtimeHistory({ cpuUsage: [], memoryUsage: [] });
 
     if (!serverId || !baseUrl || !authToken) {
-      setGpuHistoryLoading(false);
+      setRealtimeHistoryLoading(false);
       return;
     }
 
@@ -33,16 +40,24 @@ export function useServerGpuHistory(
     const fromSeconds = nowSeconds - REALTIME_WINDOW_SECONDS;
     const cutoff = fromSeconds * 1000;
 
-    setGpuHistoryLoading(true);
+    setRealtimeHistoryLoading(true);
     client.getMetricsHistory(serverId, { from: fromSeconds, to: nowSeconds, tier: 'recent' })
       .then((result) => {
+        setHostRealtimeHistory((prev) => {
+          const seed = buildHostHistoryFromSnapshots(result.snapshots, cutoff);
+          return {
+            cpuUsage: mergeChartPoints(prev.cpuUsage, seed.cpuUsage, cutoff),
+            memoryUsage: mergeChartPoints(prev.memoryUsage, seed.memoryUsage, cutoff),
+          };
+        });
         setGpuRealtimeHistory(buildGpuHistoryFromSnapshots(result.snapshots, cutoff));
       })
       .catch(() => {
+        setHostRealtimeHistory({ cpuUsage: [], memoryUsage: [] });
         setGpuRealtimeHistory({});
       })
       .finally(() => {
-        setGpuHistoryLoading(false);
+        setRealtimeHistoryLoading(false);
       });
   }, [authToken, baseUrl, serverId]);
 
@@ -53,6 +68,11 @@ export function useServerGpuHistory(
 
     const time = report.timestamp * 1000;
     const cutoff = time - REALTIME_WINDOW_SECONDS * 1000;
+
+    setHostRealtimeHistory((prev) => ({
+      cpuUsage: appendChartPoint(prev.cpuUsage, time, report.resourceSnapshot.cpu.usagePercent, cutoff),
+      memoryUsage: appendChartPoint(prev.memoryUsage, time, report.resourceSnapshot.memory.usagePercent, cutoff),
+    }));
 
     setGpuRealtimeHistory((prev) => {
       const next: Record<number, PerGpuRealtimeHistory> = {};
@@ -81,5 +101,5 @@ export function useServerGpuHistory(
     });
   }, [report]);
 
-  return { gpuRealtimeHistory, gpuHistoryLoading };
+  return { gpuRealtimeHistory, hostRealtimeHistory, realtimeHistoryLoading };
 }

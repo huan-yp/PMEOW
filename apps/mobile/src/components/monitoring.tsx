@@ -1,4 +1,5 @@
-import { Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text, View } from 'react-native';
 import Svg, { Circle, G, Line, Polyline } from 'react-native-svg';
 import type { GpuCardReport, TaskInfo, UnifiedReport } from '@monitor/app-common';
 import { formatPercent } from '../app/formatters';
@@ -10,6 +11,7 @@ import {
 } from '../app/gpuAllocation';
 import {
   type ChartPoint,
+  type HostRealtimeHistory,
   type PerGpuRealtimeHistory,
   REALTIME_WINDOW_SECONDS,
   computeGpuMemoryUsagePercent,
@@ -27,11 +29,29 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+const CHART_AXIS_LEFT = 2;
+const CHART_AXIS_TOP = 2;
+const CHART_AXIS_RIGHT = 100;
+const CHART_AXIS_BOTTOM = 96;
+const CHART_PLOT_LEFT = 6;
+const CHART_PLOT_RIGHT = 98;
+const CHART_PLOT_TOP = 4;
+const CHART_PLOT_BOTTOM = 92;
+
 function formatChartTime(time: number | null): string {
   if (!time) {
     return '--:--';
   }
   return new Date(time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function buildChartY(value: number): number {
+  const percent = clamp(value, 0, 100);
+  return CHART_PLOT_BOTTOM - ((percent / 100) * (CHART_PLOT_BOTTOM - CHART_PLOT_TOP));
+}
+
+function buildChartX(ratio: number): number {
+  return CHART_PLOT_LEFT + (ratio * (CHART_PLOT_RIGHT - CHART_PLOT_LEFT));
 }
 
 function MetricBarRow(props: {
@@ -71,8 +91,8 @@ function buildPolyline(points: ChartPoint[]): string {
   }
 
   if (points.length === 1) {
-    const y = 100 - clamp(points[0].value, 0, 100);
-    return `0,${y} 100,${y}`;
+    const y = buildChartY(points[0].value);
+    return `${CHART_PLOT_LEFT},${y} ${CHART_PLOT_RIGHT},${y}`;
   }
 
   const minTime = points[0].time;
@@ -80,8 +100,8 @@ function buildPolyline(points: ChartPoint[]): string {
   const timeRange = Math.max(maxTime - minTime, 1);
 
   return points.map((point) => {
-    const x = ((point.time - minTime) / timeRange) * 100;
-    const y = 100 - clamp(point.value, 0, 100);
+    const x = buildChartX((point.time - minTime) / timeRange);
+    const y = buildChartY(point.value);
     return `${x},${y}`;
   }).join(' ');
 }
@@ -92,10 +112,10 @@ function buildLastPoint(points: ChartPoint[]): { x: number; y: number } | null {
   }
 
   if (points.length === 1) {
-    return { x: 100, y: 100 - clamp(points[0].value, 0, 100) };
+    return { x: CHART_PLOT_RIGHT, y: buildChartY(points[0].value) };
   }
 
-  return { x: 100, y: 100 - clamp(points[points.length - 1].value, 0, 100) };
+  return { x: CHART_PLOT_RIGHT, y: buildChartY(points[points.length - 1].value) };
 }
 
 function MetricTrendChart(props: {
@@ -108,35 +128,43 @@ function MetricTrendChart(props: {
 
   return (
     <View style={styles.chartShell}>
-      <Svg width="100%" height={140} viewBox="0 0 100 100" preserveAspectRatio="none">
-        <Line x1="0" y1="0" x2="100" y2="0" stroke="#244157" strokeWidth="0.8" />
-        <Line x1="0" y1="50" x2="100" y2="50" stroke="#244157" strokeWidth="0.8" />
-        <Line x1="0" y1="100" x2="100" y2="100" stroke="#244157" strokeWidth="0.8" />
-        {populated.map((item) => {
-          const lastPoint = buildLastPoint(item.points);
-          return (
-            <G key={item.key}>
-              <Polyline
-                points={buildPolyline(item.points)}
-                fill="none"
-                stroke={item.color}
-                strokeWidth="2"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-              {lastPoint ? <Circle cx={lastPoint.x} cy={lastPoint.y} r="2.4" fill={item.color} /> : null}
-            </G>
-          );
-        })}
-      </Svg>
-      <View style={styles.chartScaleRow}>
-        <Text style={styles.chartScaleLabel}>100%</Text>
-        <Text style={styles.chartScaleLabel}>50%</Text>
-        <Text style={styles.chartScaleLabel}>0%</Text>
+      <View style={styles.chartFrame}>
+        <View style={styles.chartScaleColumn}>
+          <Text style={styles.chartScaleLabel}>100%</Text>
+          <Text style={styles.chartScaleLabel}>50%</Text>
+          <Text style={styles.chartScaleLabel}>0%</Text>
+        </View>
+        <View style={styles.chartCanvasWrap}>
+          <Svg width="100%" height={140} viewBox="0 0 100 100" preserveAspectRatio="none">
+            <Line x1={String(CHART_AXIS_LEFT)} y1={String(CHART_AXIS_TOP)} x2={String(CHART_AXIS_LEFT)} y2={String(CHART_AXIS_BOTTOM)} stroke="#244157" strokeWidth="0.8" />
+            <Line x1={String(CHART_AXIS_LEFT)} y1={String(buildChartY(100))} x2={String(CHART_AXIS_RIGHT)} y2={String(buildChartY(100))} stroke="#244157" strokeWidth="0.8" />
+            <Line x1={String(CHART_AXIS_LEFT)} y1={String(buildChartY(50))} x2={String(CHART_AXIS_RIGHT)} y2={String(buildChartY(50))} stroke="#244157" strokeWidth="0.8" />
+            <Line x1={String(CHART_AXIS_LEFT)} y1={String(CHART_AXIS_BOTTOM)} x2={String(CHART_AXIS_RIGHT)} y2={String(CHART_AXIS_BOTTOM)} stroke="#244157" strokeWidth="0.8" />
+            {populated.map((item) => {
+              const lastPoint = buildLastPoint(item.points);
+              return (
+                <G key={item.key}>
+                  <Polyline
+                    points={buildPolyline(item.points)}
+                    fill="none"
+                    stroke={item.color}
+                    strokeWidth="1.35"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                  {lastPoint ? <Circle cx={lastPoint.x} cy={lastPoint.y} r="1.8" fill={item.color} /> : null}
+                </G>
+              );
+            })}
+          </Svg>
+        </View>
       </View>
-      <View style={styles.chartTimeRow}>
-        <Text style={styles.chartTimeLabel}>{formatChartTime(startTime)}</Text>
-        <Text style={styles.chartTimeLabel}>{formatChartTime(endTime)}</Text>
+      <View style={styles.chartFooterRow}>
+        <View style={styles.chartFooterSpacer} />
+        <View style={styles.chartTimeRow}>
+          <Text style={styles.chartTimeLabel}>{formatChartTime(startTime)}</Text>
+          <Text style={styles.chartTimeLabel}>{formatChartTime(endTime)}</Text>
+        </View>
       </View>
       <View style={styles.chartLegend}>
         {props.series.map((item) => (
@@ -150,11 +178,52 @@ function MetricTrendChart(props: {
   );
 }
 
+export function CpuMemoryTrendCard(props: {
+  report: UnifiedReport;
+  history: HostRealtimeHistory;
+  loading: boolean;
+}) {
+  const fallbackTime = Date.now();
+  const cpuUsage = props.report.resourceSnapshot.cpu.usagePercent;
+  const memoryUsage = props.report.resourceSnapshot.memory.usagePercent;
+  const series = [
+    {
+      key: 'cpu',
+      label: 'CPU',
+      color: '#57c5ff',
+      points: props.history.cpuUsage.length
+        ? props.history.cpuUsage
+        : [{ time: fallbackTime, value: cpuUsage }],
+    },
+    {
+      key: 'memory',
+      label: 'RAM',
+      color: '#ff8db1',
+      points: props.history.memoryUsage.length
+        ? props.history.memoryUsage
+        : [{ time: fallbackTime, value: memoryUsage }],
+    },
+  ];
+
+  return (
+    <View style={styles.detailPanel}>
+      <View style={styles.rowHeader}>
+        <Text style={styles.detailPanelTitle}>CPU / 内存</Text>
+        <Text style={styles.detailPanelValue}>{formatPercent(cpuUsage)} / {formatPercent(memoryUsage)}</Text>
+      </View>
+      <Text style={styles.detailPanelMeta}>统一按百分比刻度展示 CPU 与 RAM 最近 10 分钟走势。</Text>
+      {props.loading ? <Text style={styles.chartLoadingText}>正在补齐最近 {Math.round(REALTIME_WINDOW_SECONDS / 60)} 分钟窗口…</Text> : null}
+      <MetricTrendChart series={series} />
+    </View>
+  );
+}
+
 function GpuTrendCard(props: {
   gpu: GpuCardReport;
   history?: PerGpuRealtimeHistory;
   loading: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const fallbackTime = Date.now();
   const series = [
     {
@@ -192,8 +261,18 @@ function GpuTrendCard(props: {
       <Text style={styles.detailPanelMeta}>
         显存 {formatMemoryPairGb(props.gpu.memoryUsedMb, props.gpu.memoryTotalMb)} · 带宽 {formatPercent(props.gpu.utilizationMemory)}
       </Text>
-      {props.loading ? <Text style={styles.chartLoadingText}>正在补齐最近 {Math.round(REALTIME_WINDOW_SECONDS / 60)} 分钟窗口…</Text> : null}
-      <MetricTrendChart series={series} />
+      <Pressable
+        style={[styles.detailPanelToggleButton, expanded ? styles.detailPanelToggleButtonExpanded : null]}
+        onPress={() => setExpanded((current) => !current)}
+      >
+        <Text style={styles.detailPanelToggleText}>{expanded ? '收起走势' : '展开走势'}</Text>
+      </Pressable>
+      {expanded ? (
+        <>
+          {props.loading ? <Text style={styles.chartLoadingText}>正在补齐最近 {Math.round(REALTIME_WINDOW_SECONDS / 60)} 分钟窗口…</Text> : null}
+          <MetricTrendChart series={series} />
+        </>
+      ) : null}
     </View>
   );
 }

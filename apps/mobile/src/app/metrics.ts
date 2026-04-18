@@ -8,6 +8,11 @@ export interface PerGpuRealtimeHistory {
   memoryBandwidth: ChartPoint[];
 }
 
+export interface HostRealtimeHistory {
+  cpuUsage: ChartPoint[];
+  memoryUsage: ChartPoint[];
+}
+
 export interface GpuTotals {
   averageUtilization: number;
   totalVramPercent: number;
@@ -101,6 +106,25 @@ export function buildGpuHistoryFromSnapshots(snapshots: SnapshotWithGpu[], cutof
   }
 
   return perGpu;
+}
+
+export function buildHostHistoryFromSnapshots(snapshots: SnapshotWithGpu[], cutoff: number): HostRealtimeHistory {
+  const history: HostRealtimeHistory = {
+    cpuUsage: [],
+    memoryUsage: [],
+  };
+
+  for (const snapshot of snapshots) {
+    const time = snapshot.timestamp * 1000;
+    if (time <= cutoff) {
+      continue;
+    }
+
+    history.cpuUsage.push({ time, value: snapshot.cpu.usagePercent });
+    history.memoryUsage.push({ time, value: snapshot.memory.usagePercent });
+  }
+
+  return history;
 }
 
 export function formatMemoryGb(megabytes: number): string {

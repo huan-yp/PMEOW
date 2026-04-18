@@ -68,7 +68,7 @@ export default function App() {
     [selectedServerId, servers],
   );
   const selectedReport = selectedServerId ? latestMetrics[selectedServerId] : undefined;
-  const { gpuRealtimeHistory, gpuHistoryLoading } = useServerGpuHistory(
+  const { gpuRealtimeHistory, hostRealtimeHistory, realtimeHistoryLoading } = useServerGpuHistory(
     selectedServerId,
     selectedReport,
     baseUrl,
@@ -135,8 +135,9 @@ export default function App() {
             server={selectedServer}
             status={statuses[selectedServer.id]}
             report={selectedReport}
+            hostRealtimeHistory={hostRealtimeHistory}
             gpuRealtimeHistory={gpuRealtimeHistory}
-            gpuHistoryLoading={gpuHistoryLoading}
+            realtimeHistoryLoading={realtimeHistoryLoading}
             isAdmin={isAdmin}
             subscribed={notificationSettings.person.idleServerIds.includes(selectedServer.id)}
             onBack={() => setSelectedServerId(null)}

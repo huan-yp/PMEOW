@@ -394,20 +394,36 @@ export const styles = StyleSheet.create({
   chartShell: {
     marginTop: 4,
   },
-  chartScaleRow: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 24,
+  chartFrame: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  chartScaleColumn: {
+    width: 34,
+    height: 140,
     justifyContent: 'space-between',
   },
   chartScaleLabel: {
     color: '#6f889d',
     fontSize: 10,
   },
-  chartTimeRow: {
+  chartCanvasWrap: {
+    flex: 1,
+    height: 140,
+  },
+  chartFooterRow: {
     marginTop: 6,
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chartFooterSpacer: {
+    width: 34,
+  },
+  chartTimeRow: {
+    flexDirection: 'row',
+    flex: 1,
     justifyContent: 'space-between',
   },
   chartTimeLabel: {
@@ -439,6 +455,24 @@ export const styles = StyleSheet.create({
     color: '#8ea5b8',
     fontSize: 12,
     lineHeight: 18,
+  },
+  detailPanelToggleButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#27445c',
+    backgroundColor: '#0d1d2c',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  detailPanelToggleButtonExpanded: {
+    backgroundColor: '#14314b',
+    borderColor: '#4fbef7',
+  },
+  detailPanelToggleText: {
+    color: '#d5e3ee',
+    fontSize: 11,
+    fontWeight: '700',
   },
   allocationTrack: {
     flexDirection: 'row',
