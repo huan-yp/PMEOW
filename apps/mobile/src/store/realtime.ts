@@ -1,4 +1,5 @@
 import type { ServerStatus, UnifiedReport } from '@monitor/app-common';
+import { normalizeTimestamp } from '../app/formatters';
 import { MobileRealtimeClient } from '../lib/realtime';
 import {
   maybeNotifyAlert,
@@ -52,10 +53,21 @@ export function connectRealtime(baseUrl: string, token: string, set: StateSetter
         }
       },
       onMetricsUpdate: (serverId, report) => {
+        const normalizedLastSeenAt = normalizeTimestamp(report.timestamp);
+
         set((state) => ({
           latestMetrics: {
             ...state.latestMetrics,
             [serverId]: report,
+          },
+          statuses: {
+            ...state.statuses,
+            [serverId]: {
+              serverId,
+              status: 'online',
+              lastSeenAt: normalizedLastSeenAt,
+              version: state.statuses[serverId]?.version ?? '',
+            },
           },
         }));
 

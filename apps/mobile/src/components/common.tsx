@@ -9,7 +9,9 @@ import {
   formatTaskStatus,
   formatTimestamp,
 } from '../app/formatters';
+import { getUsagePalette } from '../app/metrics';
 import { styles } from '../app/styles';
+import { ServerCardVisuals } from './monitoring';
 
 export function SectionCard(props: {
   title: string;
@@ -25,10 +27,17 @@ export function SectionCard(props: {
   );
 }
 
-export function StatBlock(props: { label: string; value: string | number }) {
+export function StatBlock(props: { label: string; value: string | number; usagePercent?: number }) {
+  const palette = props.usagePercent == null ? null : getUsagePalette(props.usagePercent);
+
   return (
-    <View style={styles.summaryBlock}>
-      <Text style={styles.summaryValue}>{props.value}</Text>
+    <View
+      style={[
+        styles.summaryBlock,
+        palette ? { borderColor: palette.borderColor, backgroundColor: palette.backgroundColor } : null,
+      ]}
+    >
+      <Text style={[styles.summaryValue, palette ? { color: palette.textColor } : null]}>{props.value}</Text>
       <Text style={styles.summaryLabel}>{props.label}</Text>
     </View>
   );
@@ -43,6 +52,8 @@ export function ServerCard(props: {
   const connStatus = props.status?.status ?? 'offline';
   const runningCount = props.report?.taskQueue.running.length ?? 0;
   const queuedCount = props.report?.taskQueue.queued.length ?? 0;
+  const cpuPalette = getUsagePalette(props.report?.resourceSnapshot.cpu.usagePercent);
+  const memoryPalette = getUsagePalette(props.report?.resourceSnapshot.memory.usagePercent);
 
   return (
     <Pressable style={styles.serverCard} onPress={props.onPress}>
@@ -54,11 +65,12 @@ export function ServerCard(props: {
       </View>
       <Text style={styles.serverMeta}>Agent {props.server.agentId.slice(0, 8)} · 最近上报 {formatTimestamp(props.status?.lastSeenAt ?? null)}</Text>
       <View style={styles.metricRow}>
-        <Text style={styles.metricItem}>CPU {formatPercent(props.report?.resourceSnapshot.cpu.usagePercent)}</Text>
-        <Text style={styles.metricItem}>内存 {formatPercent(props.report?.resourceSnapshot.memory.usagePercent)}</Text>
+        <Text style={[styles.metricItem, { color: cpuPalette.textColor, borderColor: cpuPalette.borderColor, backgroundColor: cpuPalette.backgroundColor }]}>CPU {formatPercent(props.report?.resourceSnapshot.cpu.usagePercent)}</Text>
+        <Text style={[styles.metricItem, { color: memoryPalette.textColor, borderColor: memoryPalette.borderColor, backgroundColor: memoryPalette.backgroundColor }]}>内存 {formatPercent(props.report?.resourceSnapshot.memory.usagePercent)}</Text>
         <Text style={styles.metricItem}>运行 {runningCount}</Text>
         <Text style={styles.metricItem}>排队 {queuedCount}</Text>
       </View>
+      <ServerCardVisuals report={props.report} />
     </Pressable>
   );
 }

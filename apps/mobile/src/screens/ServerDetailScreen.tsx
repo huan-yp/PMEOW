@@ -1,18 +1,34 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { Server, ServerStatus, UnifiedReport } from '@monitor/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
+import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type PerGpuRealtimeHistory } from '../app/metrics';
 import { styles } from '../app/styles';
 import { QueueTaskRow, SectionCard, StatBlock } from '../components/common';
+import { DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
 
 export function ServerDetailScreen(props: {
   server: Server;
   status?: ServerStatus;
   report?: UnifiedReport;
+  gpuRealtimeHistory: Record<number, PerGpuRealtimeHistory>;
+  gpuHistoryLoading: boolean;
   isAdmin: boolean;
   subscribed: boolean;
   onBack: () => void;
   onToggleSubscription: () => void;
 }) {
+  const gpuCards = props.report?.resourceSnapshot.gpuCards ?? [];
+  const gpuTotals = computeGpuTotals(gpuCards);
+  const totalEffectiveFreeMb = gpuCards.reduce((sum, gpu) => sum + gpu.effectiveFreeMb, 0);
+  const allocationTasks = [
+    ...(props.report?.taskQueue.running ?? []),
+    ...(props.report?.taskQueue.queued ?? []),
+  ];
+  const cpuUsage = props.report?.resourceSnapshot.cpu.usagePercent;
+  const memoryUsage = props.report?.resourceSnapshot.memory.usagePercent;
+  const gpuPalette = getUsagePalette(gpuTotals.averageUtilization);
+  const vramPalette = getUsagePalette(gpuTotals.totalVramPercent);
+
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
       <SectionCard title={props.server.name} description={`Agent ${props.server.agentId.slice(0, 8)} · 最近上报 ${formatTimestamp(props.status?.lastSeenAt ?? null)}`}>
@@ -21,9 +37,16 @@ export function ServerDetailScreen(props: {
           <StatBlock label="运行任务" value={props.report?.taskQueue.running.length ?? 0} />
         </View>
         <View style={styles.summaryGridCompact}>
-          <StatBlock label="CPU" value={formatPercent(props.report?.resourceSnapshot.cpu.usagePercent)} />
-          <StatBlock label="内存" value={formatPercent(props.report?.resourceSnapshot.memory.usagePercent)} />
+          <StatBlock label="GPU 总利用率" value={gpuCards.length > 0 ? formatPercent(gpuTotals.averageUtilization) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.averageUtilization : undefined} />
+          <StatBlock label="VRAM 占用" value={gpuCards.length > 0 ? formatPercent(gpuTotals.totalVramPercent) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.totalVramPercent : undefined} />
         </View>
+        <View style={styles.summaryGridCompact}>
+          <StatBlock label="CPU" value={formatPercent(cpuUsage)} usagePercent={cpuUsage} />
+          <StatBlock label="内存" value={formatPercent(memoryUsage)} usagePercent={memoryUsage} />
+        </View>
+        {gpuCards.length > 0 ? (
+          <Text style={styles.connectionMeta}>总显存 <Text style={{ color: vramPalette.textColor }}>{formatMemoryPairGb(gpuTotals.totalVramUsedMb, gpuTotals.totalVramMb)}</Text> · 总利用率 <Text style={{ color: gpuPalette.textColor }}>{formatPercent(gpuTotals.averageUtilization)}</Text></Text>
+        ) : null}
         {!props.isAdmin ? (
           <Pressable style={styles.secondaryButtonWide} onPress={props.onToggleSubscription}>
             <Text style={styles.secondaryButtonText}>{props.subscribed ? '取消空闲订阅' : '订阅空闲提醒'}</Text>
@@ -32,6 +55,35 @@ export function ServerDetailScreen(props: {
         <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
           <Text style={styles.ghostButtonText}>返回</Text>
         </Pressable>
+      </SectionCard>
+
+      <SectionCard
+        title="GPU 实时走势"
+        description={props.gpuHistoryLoading ? '正在补齐最近 10 分钟的实时窗口。' : '最近 10 分钟窗口，三条曲线分别表示 GPU、VRAM 和显存带宽利用率。'}
+      >
+        {gpuCards.length > 0 ? (
+          <>
+            <View style={styles.summaryGrid}>
+              <StatBlock label="GPU 数量" value={gpuCards.length} />
+              <StatBlock label="调度可用显存" value={formatMemoryGb(totalEffectiveFreeMb)} />
+            </View>
+            <GpuRealtimeSection
+              gpuCards={gpuCards}
+              gpuRealtimeHistory={props.gpuRealtimeHistory}
+              loading={props.gpuHistoryLoading}
+            />
+          </>
+        ) : (
+          <Text style={styles.emptyText}>当前节点没有可展示的 GPU 指标。</Text>
+        )}
+      </SectionCard>
+
+      <SectionCard title="磁盘占用" description="低于 60% 绿色，超过 60% 黄色，超过 90% 红色。">
+        <DiskUsageSection report={props.report} />
+      </SectionCard>
+
+      <SectionCard title="VRAM 分布" description="按托管任务、用户进程、未归属进程和可用显存拆分。">
+        <VramDistributionSection gpuCards={gpuCards} tasks={allocationTasks} />
       </SectionCard>
 
       <SectionCard title="运行中任务">

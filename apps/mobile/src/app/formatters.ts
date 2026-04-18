@@ -1,11 +1,20 @@
 import type { Alert, SecurityEvent, Task, TaskEvent, TaskInfo } from '@monitor/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 
-export function formatTimestamp(timestamp: number | null): string {
+export function normalizeTimestamp(timestamp: number | null): number | null {
   if (!timestamp) {
+    return null;
+  }
+
+  return timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp;
+}
+
+export function formatTimestamp(timestamp: number | null): string {
+  const normalized = normalizeTimestamp(timestamp);
+  if (!normalized) {
     return '尚未上报';
   }
-  return new Date(timestamp).toLocaleString('zh-CN');
+  return new Date(normalized).toLocaleString('zh-CN');
 }
 
 export function formatPercent(value: number | undefined): string {

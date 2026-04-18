@@ -303,9 +303,171 @@ export const styles = StyleSheet.create({
     color: '#d5e3ee',
     fontSize: 13,
     backgroundColor: '#102638',
+    borderWidth: 1,
+    borderColor: '#20384d',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 7,
+  },
+  serverVisualPanel: {
+    marginTop: 16,
+    gap: 12,
+  },
+  serverVisualEmpty: {
+    marginTop: 16,
+    color: '#8ea5b8',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  serverVisualMeta: {
+    marginTop: 8,
+    color: '#8ea5b8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  metricBarRow: {
+    gap: 8,
+  },
+  metricBarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  metricBarLabel: {
+    color: '#dce9f4',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  metricBarValue: {
+    color: '#f3f8fc',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  metricBarTrack: {
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: '#102638',
+  },
+  metricBarFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  thresholdTrack: {
+    height: 10,
+    borderRadius: 999,
+    overflow: 'hidden',
+    backgroundColor: '#102638',
+  },
+  thresholdFillMask: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  panelStack: {
+    gap: 12,
+  },
+  detailPanel: {
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#20384d',
+    gap: 8,
+  },
+  detailPanelTitle: {
+    flex: 1,
+    color: '#edf5fb',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  detailPanelValue: {
+    color: '#f3f8fc',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  detailPanelMeta: {
+    color: '#8ea5b8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  chartShell: {
+    marginTop: 4,
+  },
+  chartScaleRow: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 24,
+    justifyContent: 'space-between',
+  },
+  chartScaleLabel: {
+    color: '#6f889d',
+    fontSize: 10,
+  },
+  chartTimeRow: {
+    marginTop: 6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  chartTimeLabel: {
+    color: '#8ea5b8',
+    fontSize: 11,
+  },
+  chartLegend: {
+    marginTop: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  chartLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chartLegendSwatch: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  chartLegendText: {
+    color: '#b8c8d4',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  chartLoadingText: {
+    color: '#8ea5b8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  allocationTrack: {
+    flexDirection: 'row',
+    height: 14,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: '#102638',
+  },
+  allocationSegment: {
+    height: '100%',
+  },
+  allocationLegendWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  allocationLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  allocationLegendSwatch: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  allocationLegendText: {
+    color: '#d5e3ee',
+    fontSize: 12,
   },
   eventRow: {
     borderTopWidth: 1,

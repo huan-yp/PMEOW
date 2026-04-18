@@ -8,6 +8,7 @@ import {
   type SecurityEvent,
   type Server,
   type ServerStatus,
+  type SnapshotWithGpu,
   type Task,
   type UnifiedReport,
 } from '@monitor/app-common';
@@ -210,6 +211,27 @@ export class MobileApiClient {
 
   async getLatestMetrics(): Promise<Record<string, UnifiedReport>> {
     return this.request<Record<string, UnifiedReport>>(API_PATHS.latestMetrics);
+  }
+
+  async getMetricsHistory(
+    serverId: string,
+    query: { from?: number; to?: number; tier?: 'recent' | 'archive' } = {},
+  ): Promise<{ snapshots: SnapshotWithGpu[] }> {
+    const params = new URLSearchParams();
+    if (query.from !== undefined) {
+      params.set('from', String(query.from));
+    }
+    if (query.to !== undefined) {
+      params.set('to', String(query.to));
+    }
+    if (query.tier) {
+      params.set('tier', query.tier);
+    }
+
+    const queryString = params.toString();
+    const suffix = queryString ? `?${queryString}` : '';
+    const snapshots = await this.request<SnapshotWithGpu[]>(`${API_PATHS.metricsHistory(serverId)}${suffix}`);
+    return { snapshots };
   }
 
   async getPersonTasks(personId: string, query: { page?: number; limit?: number } = {}): Promise<{ tasks: Task[]; total: number }> {

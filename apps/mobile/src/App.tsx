@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, SafeAreaView, StatusBar, Text, View } from 'react-native';
 import { ADMIN_TABS, PERSON_TABS, type AdminTab, type PersonTab } from './app/constants';
+import { useServerGpuHistory } from './app/useServerGpuHistory';
 import { styles } from './app/styles';
 import { AuthenticatedShell, BottomTabs } from './components/common';
 import { AdminAlertsScreen, AdminDashboardScreen } from './screens/AdminScreens';
@@ -18,6 +19,7 @@ export default function App() {
   const pendingTaskId = useAppStore((state) => state.pendingTaskId);
   const notificationPermissionGranted = useAppStore((state) => state.notificationPermissionGranted);
   const baseUrl = useAppStore((state) => state.baseUrl);
+  const authToken = useAppStore((state) => state.authToken);
   const mode = useAppStore((state) => state.mode);
   const session = useAppStore((state) => state.session);
   const servers = useAppStore((state) => state.servers);
@@ -64,6 +66,13 @@ export default function App() {
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === selectedServerId) ?? null,
     [selectedServerId, servers],
+  );
+  const selectedReport = selectedServerId ? latestMetrics[selectedServerId] : undefined;
+  const { gpuRealtimeHistory, gpuHistoryLoading } = useServerGpuHistory(
+    selectedServerId,
+    selectedReport,
+    baseUrl,
+    authToken,
   );
 
   const onlineCount = useMemo(
@@ -125,7 +134,9 @@ export default function App() {
           <ServerDetailScreen
             server={selectedServer}
             status={statuses[selectedServer.id]}
-            report={latestMetrics[selectedServer.id]}
+            report={selectedReport}
+            gpuRealtimeHistory={gpuRealtimeHistory}
+            gpuHistoryLoading={gpuHistoryLoading}
             isAdmin={isAdmin}
             subscribed={notificationSettings.person.idleServerIds.includes(selectedServer.id)}
             onBack={() => setSelectedServerId(null)}
