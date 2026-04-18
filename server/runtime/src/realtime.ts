@@ -66,7 +66,7 @@ export function createUIBroadcast(namespace: Namespace): UIBroadcast {
     metricsUpdate(serverId, report) {
       forEachSocket((socket, principal) => {
         if (canAccessServer(principal, serverId)) {
-          socket.emit("metricsUpdate", { serverId, snapshot: report });
+          socket.emit("metricsUpdate", { serverId, report });
         }
       });
     },

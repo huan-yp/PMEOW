@@ -67,7 +67,7 @@ export function useMetricsSubscription() {
 
     const unsubs = [
       transport.onMetricsUpdate((data) => {
-        setLatestSnapshot(data.serverId, data.snapshot);
+        setLatestSnapshot(data.serverId, data.report);
       }),
 
       transport.onServerStatus((status) => {

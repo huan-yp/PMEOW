@@ -60,7 +60,7 @@ export class WebSocketAdapter implements TransportAdapter {
   }
 
   // Subscriptions
-  onMetricsUpdate(cb: (data: { serverId: string; snapshot: UnifiedReport }) => void): () => void {
+  onMetricsUpdate(cb: (data: { serverId: string; report: UnifiedReport }) => void): () => void {
     this.socket?.on('metricsUpdate', cb);
     return () => { this.socket?.off('metricsUpdate', cb); };
   }

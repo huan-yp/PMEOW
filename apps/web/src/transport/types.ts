@@ -45,7 +45,7 @@ export interface TransportAdapter {
   disconnect(): void;
 
   // Realtime subscriptions (return unsubscribe fn)
-  onMetricsUpdate(cb: (data: { serverId: string; snapshot: UnifiedReport }) => void): () => void;
+  onMetricsUpdate(cb: (data: { serverId: string; report: UnifiedReport }) => void): () => void;
   onServerStatus(cb: (status: ServerStatus) => void): () => void;
   onTaskEvent(cb: (event: TaskEvent) => void): () => void;
   onAlertStateChange(cb: (event: AlertStateChangeEvent) => void): () => void;
