@@ -31,6 +31,7 @@ export interface UnifiedReport {
     diskIo: DiskIoSnapshot;
     network: NetworkSnapshot;
     processes: ProcessInfo[];
+    processesByUser: UserResourceSummary[];
     localUsers: string[];
     system?: SystemSnapshot;
   };
@@ -145,6 +146,14 @@ export interface ProcessInfo {
   gpuMemoryMb: number;
 }
 
+export interface UserResourceSummary {
+  user: string;
+  totalCpuPercent: number;
+  totalRssMb: number;
+  totalVramMb: number;
+  processCount: number;
+}
+
 export interface SystemSnapshot {
   hostname: string;
   uptime: string;
@@ -170,6 +179,7 @@ export interface SnapshotRecord {
   diskIo: DiskIoSnapshot;
   network: NetworkSnapshot;
   processes: ProcessInfo[];
+  processesByUser: UserResourceSummary[];
   localUsers: string[];
   gpuCards: GpuCardReport[];
 }
@@ -304,6 +314,15 @@ export interface PersonRecord {
   updatedAt: number;
 }
 
+export interface PersonDirectoryItem extends PersonRecord {
+  currentCpuPercent: number;
+  currentMemoryMb: number;
+  currentVramMb: number;
+  runningTaskCount: number;
+  queuedTaskCount: number;
+  activeServerCount: number;
+}
+
 export interface PersonBindingRecord {
   id: number;
   personId: string;
@@ -383,6 +402,51 @@ export interface PersonBindingCandidate {
 }
 
 export type PersonWizardMode = 'seed-user' | 'manual';
+
+// Auto-add unassigned users report
+export interface AutoAddReportEntry {
+  serverId: string;
+  serverName: string;
+  systemUser: string;
+  action: 'created' | 'reused' | 'skipped_root' | 'skipped_ambiguous' | 'skipped_bound';
+  personId: string | null;
+  personDisplayName: string | null;
+  detail: string;
+}
+
+export interface AutoAddReport {
+  entries: AutoAddReportEntry[];
+  createdCount: number;
+  reusedCount: number;
+  skippedCount: number;
+}
+
+// Person token
+export type PersonTokenStatus = 'active' | 'revoked';
+
+export interface PersonTokenRecord {
+  id: number;
+  personId: string;
+  tokenHash: string;
+  status: PersonTokenStatus;
+  note: string | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+// Auth principal
+export type PrincipalKind = 'admin' | 'person';
+
+export interface AdminPrincipal {
+  kind: 'admin';
+}
+
+export interface PersonPrincipal {
+  kind: 'person';
+  personId: string;
+}
+
+export type Principal = AdminPrincipal | PersonPrincipal;
 
 export interface CreatePersonWizardBindingInput {
   serverId: string;

@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type {
+  AutoAddReport,
+  AutoAddReportEntry,
   CreatePersonWizardResult,
   PersonBindingCandidate,
   PersonBindingConflict,
   PersonWizardMode,
 } from '../transport/types.js';
 
-type WizardStep = 'entry' | 'seed' | 'profile' | 'bindings' | 'review';
+type WizardStep = 'entry' | 'seed' | 'profile' | 'bindings' | 'review' | 'auto-add-result';
 
 type WizardError = Error & { status?: number; details?: unknown };
 
@@ -34,6 +36,10 @@ export default function PersonCreateWizard() {
   const [confirmTransfer, setConfirmTransfer] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [autoAddReport, setAutoAddReport] = useState<AutoAddReport | null>(null);
+  const [autoAddLoading, setAutoAddLoading] = useState(false);
+  const [autoAddError, setAutoAddError] = useState<string | null>(null);
+  const [autoAddPage, setAutoAddPage] = useState(1);
 
   useEffect(() => {
     setLoadingCandidates(true);
@@ -118,6 +124,22 @@ export default function PersonCreateWizard() {
 
   function handleSelectMode(nextMode: PersonWizardMode) {
     resetWizard(nextMode, nextMode === 'seed-user' ? 'seed' : 'profile');
+  }
+
+  async function handleAutoAdd() {
+    setAutoAddLoading(true);
+    setAutoAddError(null);
+    setAutoAddReport(null);
+    setAutoAddPage(1);
+    try {
+      const report = await transport.autoAddUnassigned();
+      setAutoAddReport(report);
+      setStep('auto-add-result');
+    } catch (error) {
+      setAutoAddError(error instanceof Error ? error.message : '批量添加失败');
+    } finally {
+      setAutoAddLoading(false);
+    }
   }
 
   function handleSeedConfirm() {
@@ -215,7 +237,7 @@ export default function PersonCreateWizard() {
       </div>
 
       {step === 'entry' && (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-3">
           <ModeCard
             title="从服务器用户开始"
             body="先选择一个系统用户作为种子，再补全档案和附加绑定。适合已经观察到节点账号的场景。"
@@ -226,6 +248,15 @@ export default function PersonCreateWizard() {
             body="直接创建人员档案，可选择暂时不绑定任何账号。适合先建档再补绑定的场景。"
             onClick={() => handleSelectMode('manual')}
           />
+          <ModeCard
+            title="一键添加未归属用户"
+            body="按「同名即同人」的规则批量为未绑定账号创建人员档案。跳过 root，遇同名冲突自动跳过。"
+            onClick={() => { void handleAutoAdd(); }}
+            disabled={autoAddLoading}
+          />
+          {autoAddError && (
+            <div className="lg:col-span-3 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{autoAddError}</div>
+          )}
         </div>
       )}
 
@@ -449,6 +480,16 @@ export default function PersonCreateWizard() {
           />
         </div>
       )}
+
+      {step === 'auto-add-result' && autoAddReport && (
+        <AutoAddResultView
+          report={autoAddReport}
+          page={autoAddPage}
+          onPageChange={setAutoAddPage}
+          onBack={() => setStep('entry')}
+          onNavigate={(personId) => navigate(`/people/${personId}`)}
+        />
+      )}
     </div>
   );
 }
@@ -460,14 +501,15 @@ function StepBadge({ step }: { step: WizardStep }) {
     profile: '人员档案',
     bindings: '绑定账号',
     review: '确认提交',
+    'auto-add-result': '批量结果',
   };
 
   return <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">{labelMap[step]}</span>;
 }
 
-function ModeCard({ title, body, onClick }: { title: string; body: string; onClick: () => void }) {
+function ModeCard({ title, body, onClick, disabled }: { title: string; body: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} className="rounded-3xl border border-dark-border bg-dark-card p-6 text-left transition-colors hover:border-accent-blue/40 hover:bg-accent-blue/5">
+    <button onClick={onClick} disabled={disabled} className="rounded-3xl border border-dark-border bg-dark-card p-6 text-left transition-colors hover:border-accent-blue/40 hover:bg-accent-blue/5 disabled:opacity-50">
       <p className="text-base font-semibold text-slate-100">{title}</p>
       <p className="mt-2 text-sm leading-6 text-slate-400">{body}</p>
     </button>
@@ -538,6 +580,84 @@ function ConflictRow({ conflict }: { conflict: PersonBindingConflict }) {
 
 function toKey(candidate: Pick<PersonBindingCandidate, 'serverId' | 'systemUser'>): string {
   return `${candidate.serverId}::${candidate.systemUser}`;
+}
+
+const AUTO_ADD_PAGE_SIZE = 20;
+
+const ACTION_LABELS: Record<AutoAddReportEntry['action'], { label: string; color: string }> = {
+  created: { label: '已创建', color: 'text-emerald-300' },
+  reused: { label: '已复用', color: 'text-accent-blue' },
+  skipped_root: { label: '跳过 root', color: 'text-slate-500' },
+  skipped_ambiguous: { label: '同名冲突', color: 'text-amber-300' },
+  skipped_bound: { label: '已绑定', color: 'text-slate-500' },
+};
+
+function AutoAddResultView({
+  report,
+  page,
+  onPageChange,
+  onBack,
+  onNavigate,
+}: {
+  report: AutoAddReport;
+  page: number;
+  onPageChange: (page: number) => void;
+  onBack: () => void;
+  onNavigate: (personId: string) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(report.entries.length / AUTO_ADD_PAGE_SIZE));
+  const pagedEntries = report.entries.slice((page - 1) * AUTO_ADD_PAGE_SIZE, page * AUTO_ADD_PAGE_SIZE);
+
+  return (
+    <div className="rounded-2xl border border-dark-border bg-dark-card p-5 space-y-5">
+      <div>
+        <h3 className="text-sm font-medium text-slate-200">批量添加结果</h3>
+        <p className="mt-1 text-xs text-slate-500">以下是一键添加未归属用户的处理结果。</p>
+      </div>
+
+      <SummaryGrid
+        items={[
+          { label: '已创建', value: String(report.createdCount) },
+          { label: '已复用', value: String(report.reusedCount) },
+          { label: '已跳过', value: String(report.skippedCount) },
+          { label: '总计', value: String(report.entries.length) },
+        ]}
+      />
+
+      {report.entries.length === 0 ? (
+        <div className="py-8 text-center text-sm text-slate-500">没有需要处理的未归属用户。</div>
+      ) : (
+        <div className="space-y-2">
+          {pagedEntries.map((entry, idx) => {
+            const { label, color } = ACTION_LABELS[entry.action];
+            return (
+              <div key={`${entry.serverId}::${entry.systemUser}::${idx}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/5 bg-dark-bg px-4 py-3 text-sm">
+                <div className="min-w-0 flex-1">
+                  <span className="font-mono text-slate-200">{entry.systemUser}</span>
+                  <span className="ml-2 text-xs text-slate-500">{entry.serverName}</span>
+                  <p className="mt-1 text-xs text-slate-400">{entry.detail}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full bg-white/5 px-2 py-0.5 text-[11px] ${color}`}>{label}</span>
+                  {entry.personId && (
+                    <button onClick={() => onNavigate(entry.personId!)} className="text-xs text-accent-blue hover:underline">查看</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <Pagination current={page} total={totalPages} onChange={onPageChange} />
+      )}
+
+      <div className="flex items-center justify-between pt-2">
+        <button onClick={onBack} className="rounded-xl border border-dark-border px-4 py-2 text-sm text-slate-300 hover:bg-white/5">返回入口</button>
+      </div>
+    </div>
+  );
 }
 
 function emptyToNull(value: string): string | null {

@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "@monitor/core";
+import { adminOnly } from "../auth.js";
 
 export function securityRoutes(): Router {
   const router = Router();
+  router.use(adminOnly);
   
   router.get("/security/events", (req, res) => {
     const query = {

@@ -41,6 +41,14 @@ interface WireProcessInfo {
   gpuMemoryMB: number;
 }
 
+interface WireUserResourceSummary {
+  user: string;
+  totalCpuPercent: number;
+  totalRssMb: number;
+  totalVramMb: number;
+  processCount: number;
+}
+
 interface WireTaskInfo {
   taskId: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abnormal';
@@ -72,9 +80,10 @@ interface WireUnifiedReport {
   agentId: string;
   timestamp: number;
   seq: number;
-  resourceSnapshot: Omit<UnifiedReport['resourceSnapshot'], 'memory' | 'processes'> & {
+  resourceSnapshot: Omit<UnifiedReport['resourceSnapshot'], 'memory' | 'processes' | 'processesByUser'> & {
     memory: WireMemorySnapshot;
     processes: WireProcessInfo[];
+    processesByUser: WireUserResourceSummary[];
   };
   taskQueue: {
     queued: WireTaskInfo[];
@@ -103,14 +112,17 @@ export function isUnifiedReport(data: unknown): boolean {
   const network = snapshot.network as Record<string, unknown> | undefined;
 
   if ('internet' in snapshot) return false;
-  if (!Array.isArray(snapshot.gpuCards) || !Array.isArray(snapshot.disks) || !Array.isArray(snapshot.processes) || !Array.isArray(snapshot.localUsers)) return false;
+  if (!Array.isArray(snapshot.gpuCards) || !Array.isArray(snapshot.disks) || !Array.isArray(snapshot.processes) || !Array.isArray(snapshot.processesByUser) || !Array.isArray(snapshot.localUsers)) return false;
   if (!cpu || typeof cpu.usagePercent !== 'number' || typeof cpu.coreCount !== 'number' || typeof cpu.frequencyMhz !== 'number') return false;
   if (!memory || typeof memory.totalMB !== 'number' || typeof memory.usedMB !== 'number' || typeof memory.usagePercent !== 'number') return false;
   if (!diskIo || typeof diskIo.readBytesPerSec !== 'number' || typeof diskIo.writeBytesPerSec !== 'number') return false;
   if (!network || typeof network.rxBytesPerSec !== 'number' || typeof network.txBytesPerSec !== 'number' || !Array.isArray(network.interfaces)) return false;
   if (!Array.isArray(p.taskQueue.queued) || !Array.isArray(p.taskQueue.running) || !Array.isArray(p.taskQueue.recentlyEnded)) return false;
 
-  return p.taskQueue.queued.every(isTaskInfo) && p.taskQueue.running.every(isTaskInfo) && p.taskQueue.recentlyEnded.every(isTaskInfo);
+  return snapshot.processesByUser.every(isUserResourceSummary)
+    && p.taskQueue.queued.every(isTaskInfo)
+    && p.taskQueue.running.every(isTaskInfo)
+    && p.taskQueue.recentlyEnded.every(isTaskInfo);
 }
 
 export function parseUnifiedReport(data: unknown): UnifiedReport | null {
@@ -144,6 +156,13 @@ export function parseUnifiedReport(data: unknown): UnifiedReport | null {
         command: process.command,
         gpuMemoryMb: process.gpuMemoryMB,
       })),
+      processesByUser: report.resourceSnapshot.processesByUser.map((summary) => ({
+        user: summary.user,
+        totalCpuPercent: summary.totalCpuPercent,
+        totalRssMb: summary.totalRssMb,
+        totalVramMb: summary.totalVramMb,
+        processCount: summary.processCount,
+      })),
     },
     taskQueue: {
       queued: report.taskQueue.queued.map(normalizeTaskInfo),
@@ -151,6 +170,16 @@ export function parseUnifiedReport(data: unknown): UnifiedReport | null {
       recentlyEnded: report.taskQueue.recentlyEnded.map(normalizeTaskInfo),
     },
   };
+}
+
+function isUserResourceSummary(summary: unknown): summary is WireUserResourceSummary {
+  if (typeof summary !== 'object' || summary === null) return false;
+  const record = summary as Record<string, unknown>;
+  return typeof record.user === 'string'
+    && typeof record.totalCpuPercent === 'number'
+    && typeof record.totalRssMb === 'number'
+    && typeof record.totalVramMb === 'number'
+    && typeof record.processCount === 'number';
 }
 
 function isTaskInfo(task: unknown): task is WireTaskInfo {

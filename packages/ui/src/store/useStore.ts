@@ -1,10 +1,14 @@
 import { create } from 'zustand';
-import type { Server, ServerStatus, UnifiedReport, Task, Alert, SecurityEvent, Toast } from '../transport/types.js';
+import type { AuthSession, Person, Server, ServerStatus, SessionPrincipal, UnifiedReport, Task, Alert, SecurityEvent, Toast } from '../transport/types.js';
 
 interface AppState {
   // Auth
   authenticated: boolean;
-  setAuthenticated: (v: boolean) => void;
+  principal: SessionPrincipal | null;
+  person: Person | null;
+  accessibleServerIds: string[] | null;
+  setSession: (session: AuthSession) => void;
+  clearSession: () => void;
 
   // Servers
   servers: Server[];
@@ -47,7 +51,16 @@ let toastCounter = 0;
 export const useStore = create<AppState>((set) => ({
   // Auth
   authenticated: false,
-  setAuthenticated: (v) => set({ authenticated: v }),
+  principal: null,
+  person: null,
+  accessibleServerIds: null,
+  setSession: (session) => set({
+    authenticated: session.authenticated,
+    principal: session.principal,
+    person: session.person,
+    accessibleServerIds: session.accessibleServerIds,
+  }),
+  clearSession: () => set({ authenticated: false, principal: null, person: null, accessibleServerIds: null }),
 
   // Servers
   servers: [],

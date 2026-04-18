@@ -1,29 +1,37 @@
 import { useState } from 'react';
 import { useTransport } from '../transport/TransportProvider.js';
 import { useStore } from '../store/useStore.js';
+import type { LoginResult } from '../transport/types.js';
 import { AUTHOR_NAME, AUTHOR_GITHUB_URL, COPYRIGHT_YEAR, PROJECT_REPO_URL } from '../utils/branding.js';
 
 interface Props {
-  onLogin: () => void;
+  onLogin: (session: LoginResult) => void;
 }
 
 export default function Login({ onLogin }: Props) {
   const transport = useTransport();
   const addToast = useStore((s) => s.addToast);
+  const [mode, setMode] = useState<'password' | 'token'>('password');
   const [password, setPassword] = useState('');
+  const [personToken, setPersonToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password.trim()) return;
+    if (mode === 'password' && !password.trim()) return;
+    if (mode === 'token' && !personToken.trim()) return;
     setError('');
     setLoading(true);
     try {
-      await transport.login(password);
-      onLogin();
+      const session = await transport.login(
+        mode === 'password'
+          ? { password: password.trim() }
+          : { token: personToken.trim() },
+      );
+      onLogin(session);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : '请检查密码';
+      const msg = err instanceof Error ? err.message : '请检查登录信息';
       setError(msg);
       addToast('登录失败', msg, 'error');
     }
@@ -86,16 +94,44 @@ export default function Login({ onLogin }: Props) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-dark-bg/50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setMode('password')}
+                  className={`rounded-lg px-3 py-2 text-sm transition-colors ${mode === 'password' ? 'bg-accent-blue text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                  管理员密码
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('token')}
+                  className={`rounded-lg px-3 py-2 text-sm transition-colors ${mode === 'token' ? 'bg-accent-blue text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                >
+                  用户令牌
+                </button>
+              </div>
+
               <div>
-                <label className="mb-1 block text-sm text-slate-400">访问口令</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="请输入访问口令"
-                  autoFocus
-                  className="w-full rounded-xl border border-dark-border bg-dark-bg/80 px-3 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
-                />
+                <label className="mb-1 block text-sm text-slate-400">{mode === 'password' ? '访问口令' : '访问令牌'}</label>
+                {mode === 'password' ? (
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="请输入访问口令"
+                    autoFocus
+                    className="w-full rounded-xl border border-dark-border bg-dark-bg/80 px-3 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
+                  />
+                ) : (
+                  <textarea
+                    value={personToken}
+                    onChange={e => setPersonToken(e.target.value)}
+                    placeholder="请输入以 pt_ 开头的访问令牌"
+                    autoFocus
+                    rows={4}
+                    className="w-full rounded-xl border border-dark-border bg-dark-bg/80 px-3 py-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-accent-blue"
+                  />
+                )}
               </div>
 
               {error && (
@@ -104,14 +140,16 @@ export default function Login({ onLogin }: Props) {
 
               <button
                 type="submit"
-                disabled={loading || !password}
+                disabled={loading || (mode === 'password' ? !password.trim() : !personToken.trim())}
                 className="w-full rounded-xl bg-accent-blue px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-accent-blue/80 disabled:opacity-50"
               >
-                {loading ? '登录中...' : '进入控制台'}
+                {loading ? '登录中...' : mode === 'password' ? '进入控制台' : '进入个人工作台'}
               </button>
 
               <p className="text-xs leading-5 text-slate-500">
-                登录后可直接进入 PMEOW 总览页，查看节点在线情况、任务队列镜像和 GPU 归属审计结果。
+                {mode === 'password'
+                  ? '登录后可直接进入 PMEOW 总览页，查看节点在线情况、任务队列镜像和 GPU 归属审计结果。'
+                  : '使用个人访问令牌后，只会进入自己的机器、任务与资料视图。'}
               </p>
             </form>
 

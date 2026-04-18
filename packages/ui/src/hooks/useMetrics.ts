@@ -83,7 +83,6 @@ export function useMetricsSubscription() {
           submitted: '任务提交',
           started: '任务启动',
           ended: '任务结束',
-          priority_changed: '优先级变更',
         };
         const title = labels[event.eventType];
         if (!title) {

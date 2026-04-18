@@ -12,6 +12,7 @@ export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSec
 export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";
 export { createPerson, getPersonById, listPersons, updatePerson } from "./db/persons.js";
 export { createBinding, updateBinding, getBindingsByPersonId, getActiveBinding, deactivateBinding, listBindingCandidates } from "./db/person-bindings.js";
+export { createPersonToken, getPersonTokenById, getPersonTokensByPersonId, verifyPersonToken, revokePersonToken, rotatePersonToken } from "./db/person-tokens.js";
 export { getSettings, saveSetting, saveSettings } from "./db/settings.js";
 
 // Agent
@@ -48,5 +49,6 @@ export type { SecurityFinding } from "./security/analyzer.js";
 export { processSecurityCheck } from "./security/pipeline.js";
 
 // Person
-export { createPersonFromWizard, getPersonTimeline, getPersonTasks, PersonWizardConflictError } from "./person/service.js";
+export { createPersonFromWizard, getPersonTimeline, getPersonTasks, getPersonDirectory, PersonWizardConflictError, autoAddUnassignedUsers } from "./person/service.js";
 export { resolveRawUserPerson } from "./person/resolve.js";
+export { canAccessServer, canAccessTask, getAccessibleServerIds } from "./person/scope.js";

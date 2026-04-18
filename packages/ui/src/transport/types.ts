@@ -27,6 +27,7 @@ export interface UnifiedReport {
     diskIo: DiskIoSnapshot;
     network: NetworkSnapshot;
     processes: ProcessInfo[];
+    processesByUser: UserResourceSummary[];
     localUsers: string[];
     system?: SystemSnapshot;
   };
@@ -94,6 +95,14 @@ export interface ProcessInfo {
   rss: number;
   command: string;
   gpuMemoryMb: number;
+}
+
+export interface UserResourceSummary {
+  user: string;
+  totalCpuPercent: number;
+  totalRssMb: number;
+  totalVramMb: number;
+  processCount: number;
 }
 
 export interface SystemSnapshot {
@@ -223,6 +232,15 @@ export interface Person {
   updatedAt: number;
 }
 
+export interface PersonDirectoryItem extends Person {
+  currentCpuPercent: number;
+  currentMemoryMb: number;
+  currentVramMb: number;
+  runningTaskCount: number;
+  queuedTaskCount: number;
+  activeServerCount: number;
+}
+
 export interface PersonBinding {
   id: number;
   personId: string;
@@ -275,6 +293,24 @@ export interface CreatePersonWizardResult {
   transferredBindings: PersonBindingConflict[];
 }
 
+// Auto-add unassigned users
+export interface AutoAddReportEntry {
+  serverId: string;
+  serverName: string;
+  systemUser: string;
+  action: 'created' | 'reused' | 'skipped_root' | 'skipped_ambiguous' | 'skipped_bound';
+  personId: string | null;
+  personDisplayName: string | null;
+  detail: string;
+}
+
+export interface AutoAddReport {
+  entries: AutoAddReportEntry[];
+  createdCount: number;
+  reusedCount: number;
+  skippedCount: number;
+}
+
 export interface PersonTimelinePoint {
   timestamp: number;
   vramMb: number;
@@ -282,10 +318,57 @@ export interface PersonTimelinePoint {
   gpuIndex: number;
 }
 
+// Person token
+export type PersonTokenStatus = 'active' | 'revoked';
+
+export interface PersonToken {
+  id: number;
+  personId: string;
+  status: PersonTokenStatus;
+  note: string | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
+export interface PersonTokenCreateResult extends PersonToken {
+  plainToken: string;
+}
+
+export type SessionPrincipal =
+  | { kind: 'admin' }
+  | { kind: 'person'; personId: string };
+
+export type AuthSession =
+  | {
+      authenticated: true;
+      principal: SessionPrincipal;
+      person: Person | null;
+      accessibleServerIds: string[] | null;
+    }
+  | {
+      authenticated: false;
+      principal: null;
+      person: null;
+      accessibleServerIds: null;
+    };
+
+export interface LoginResult {
+  token: string;
+  authenticated: true;
+  principal: SessionPrincipal;
+  person: Person | null;
+  accessibleServerIds: string[] | null;
+}
+
+export interface LoginCredentials {
+  password?: string;
+  token?: string;
+}
+
 // Task Event (pushed via WebSocket)
 export interface TaskEvent {
   serverId: string;
-  eventType: 'submitted' | 'started' | 'ended' | 'priority_changed' | 'schedule_updated';
+  eventType: 'submitted' | 'started' | 'ended';
   task: TaskInfo;
 }
 
@@ -308,6 +391,7 @@ export interface SnapshotWithGpu {
   diskIo: DiskIoSnapshot;
   network: NetworkSnapshot;
   processes: ProcessInfo[];
+  processesByUser: UserResourceSummary[];
   localUsers: string[];
   gpuCards: GpuCardReport[];
 }
@@ -373,6 +457,7 @@ export interface TransportAdapter {
 
   // Persons (spec §8.6)
   getPersons(): Promise<Person[]>;
+  getPersonDirectory(): Promise<PersonDirectoryItem[]>;
   createPerson(input: { displayName: string; email?: string; qq?: string; note?: string }): Promise<Person>;
   getPerson(id: string): Promise<Person>;
   updatePerson(id: string, input: Partial<{ displayName: string; email: string; qq: string; note: string; status: string }>): Promise<Person>;
@@ -380,9 +465,16 @@ export interface TransportAdapter {
   createPersonBinding(input: { personId: string; serverId: string; systemUser: string; source?: string }): Promise<PersonBinding>;
   updatePersonBinding(id: number, input: Partial<{ enabled: boolean; effectiveFrom: number; effectiveTo: number }>): Promise<PersonBinding>;
   createPersonWizard(input: CreatePersonWizardInput): Promise<CreatePersonWizardResult>;
+  autoAddUnassigned(): Promise<AutoAddReport>;
   getPersonTimeline(personId: string, query?: { from?: number; to?: number }): Promise<{ points: PersonTimelinePoint[] }>;
   getPersonTasks(personId: string, query?: { page?: number; limit?: number }): Promise<{ tasks: Task[]; total: number }>;
   getPersonBindingCandidates(): Promise<{ candidates: PersonBindingCandidate[] }>;
+
+  // Person tokens (admin only)
+  getPersonTokens(personId: string): Promise<PersonToken[]>;
+  createPersonToken(personId: string, note?: string | null): Promise<PersonTokenCreateResult>;
+  revokePersonToken(tokenId: number): Promise<PersonToken>;
+  rotatePersonToken(tokenId: number, note?: string | null): Promise<PersonTokenCreateResult>;
 
   // Alerts (spec §8.7)
   getAlerts(query?: AlertQuery): Promise<Alert[]>;
@@ -401,6 +493,6 @@ export interface TransportAdapter {
   saveSettings(settings: Partial<Settings>): Promise<void>;
 
   // Auth (spec §8.1)
-  login(password: string): Promise<{ token: string }>;
-  checkAuth(): Promise<{ authenticated: boolean }>;
+  login(credentials: LoginCredentials): Promise<LoginResult>;
+  checkAuth(): Promise<AuthSession>;
 }

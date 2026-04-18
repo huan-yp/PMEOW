@@ -14,6 +14,7 @@ const SNAPSHOT_COLUMNS = [
   'disk_io',
   'network',
   'processes',
+  'processes_by_user',
   'local_users',
 ];
 
@@ -72,6 +73,7 @@ function initSchema(db: Database.Database): void {
       disk_io TEXT NOT NULL,
       network TEXT NOT NULL,
       processes TEXT NOT NULL,
+      processes_by_user TEXT NOT NULL,
       local_users TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_snapshots_query ON snapshots (server_id, tier, timestamp);
@@ -183,6 +185,17 @@ function initSchema(db: Database.Database): void {
       updated_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique ON person_bindings (server_id, system_user) WHERE enabled = 1;
+
+    CREATE TABLE IF NOT EXISTS person_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      person_id TEXT NOT NULL REFERENCES persons(id),
+      token_hash TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'active',
+      note TEXT,
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_person_tokens_person ON person_tokens (person_id, status);
 
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,

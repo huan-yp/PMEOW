@@ -1,8 +1,9 @@
 import { io, Socket } from 'socket.io-client';
 import type {
   TransportAdapter, Server, ServerStatus, UnifiedReport, Task, Alert, AlertQuery,
-  SecurityEvent, Person, PersonBinding, PersonBindingCandidate, PersonTimelinePoint, SnapshotWithGpu,
+  SecurityEvent, Person, PersonBinding, PersonBindingCandidate, PersonDirectoryItem, PersonTimelinePoint, SnapshotWithGpu,
   GpuOverviewResponse, Settings, TaskEvent, AlertStateChangeEvent, CreatePersonWizardInput, CreatePersonWizardResult,
+  AutoAddReport, PersonToken, PersonTokenCreateResult, AuthSession, LoginCredentials, LoginResult,
 } from './types.js';
 
 export class WebSocketAdapter implements TransportAdapter {
@@ -179,6 +180,7 @@ export class WebSocketAdapter implements TransportAdapter {
 
   // Persons
   async getPersons(): Promise<Person[]> { return this.fetch('/api/persons'); }
+  async getPersonDirectory(): Promise<PersonDirectoryItem[]> { return this.fetch('/api/persons/directory'); }
   async createPerson(input: { displayName: string; email?: string; qq?: string; note?: string }): Promise<Person> {
     return this.fetch('/api/persons', { method: 'POST', body: JSON.stringify(input) });
   }
@@ -196,6 +198,9 @@ export class WebSocketAdapter implements TransportAdapter {
   async createPersonWizard(input: CreatePersonWizardInput): Promise<CreatePersonWizardResult> {
     return this.fetch('/api/persons/wizard', { method: 'POST', body: JSON.stringify(input) });
   }
+  async autoAddUnassigned(): Promise<AutoAddReport> {
+    return this.fetch('/api/persons/auto-add', { method: 'POST' });
+  }
   async getPersonTimeline(personId: string, query: { from?: number; to?: number } = {}): Promise<{ points: PersonTimelinePoint[] }> {
     const params = new URLSearchParams();
     if (query.from !== undefined) params.set('from', String(query.from));
@@ -209,6 +214,20 @@ export class WebSocketAdapter implements TransportAdapter {
     return this.fetch(`/api/persons/${encodeURIComponent(personId)}/tasks?${params}`);
   }
   async getPersonBindingCandidates(): Promise<{ candidates: PersonBindingCandidate[] }> { return this.fetch('/api/person-binding-candidates'); }
+
+  // Person tokens
+  async getPersonTokens(personId: string): Promise<PersonToken[]> {
+    return this.fetch(`/api/persons/${encodeURIComponent(personId)}/tokens`);
+  }
+  async createPersonToken(personId: string, note?: string | null): Promise<PersonTokenCreateResult> {
+    return this.fetch(`/api/persons/${encodeURIComponent(personId)}/tokens`, { method: 'POST', body: JSON.stringify({ note: note ?? null }) });
+  }
+  async revokePersonToken(tokenId: number): Promise<PersonToken> {
+    return this.fetch(`/api/person-tokens/${tokenId}/revoke`, { method: 'POST' });
+  }
+  async rotatePersonToken(tokenId: number, note?: string | null): Promise<PersonTokenCreateResult> {
+    return this.fetch(`/api/person-tokens/${tokenId}/rotate`, { method: 'POST', body: JSON.stringify({ note: note ?? null }) });
+  }
 
   // Alerts
   async getAlerts(query: AlertQuery = {}): Promise<Alert[]> {
@@ -253,11 +272,11 @@ export class WebSocketAdapter implements TransportAdapter {
   }
 
   // Auth
-  async login(password: string): Promise<{ token: string }> {
+  async login(credentials: LoginCredentials): Promise<LoginResult> {
     const res = await window.fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify(credentials),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -271,13 +290,15 @@ export class WebSocketAdapter implements TransportAdapter {
     return data;
   }
 
-  async checkAuth(): Promise<{ authenticated: boolean }> {
-    if (!this.token) return { authenticated: false };
+  async checkAuth(): Promise<AuthSession> {
+    if (!this.token) {
+      return { authenticated: false, principal: null, person: null, accessibleServerIds: null };
+    }
+
     try {
-      await this.fetch('/api/settings');
-      return { authenticated: true };
+      return await this.fetch('/api/session/me');
     } catch {
-      return { authenticated: false };
+      return { authenticated: false, principal: null, person: null, accessibleServerIds: null };
     }
   }
 }

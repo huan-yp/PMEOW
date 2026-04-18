@@ -1,9 +1,11 @@
 import { Router } from "express";
 import { getAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts } from "@monitor/core";
 import type { AlertStatus } from "@monitor/core";
+import { adminOnly } from "../auth.js";
 
 export function alertRoutes(): Router {
   const router = Router();
+  router.use(adminOnly);
   
   router.get("/alerts", (req, res) => {
     const serverId = req.query.serverId as string | undefined;

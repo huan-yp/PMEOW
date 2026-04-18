@@ -74,5 +74,7 @@ Web 服务端
 ## 通信约定
 
 - WebSocket 用于实时推送，前端只接收不主动发
-- REST API 用于列表查询、控制操作（取消任务、静默告警等）
+- WebSocket 推送内容受服务端 `Principal` 权限过滤（详见 Web 模块架构）
+- REST API 用于列表查询、控制操作（取消任务、静默告警、人员令牌管理等）
+- 人员令牌 CRUD（签发、吊销、轮换）通过 REST API 调用，管理入口在人员详情页
 - 认证 token 存 localStorage，WebSocket 和 REST 共用

@@ -23,8 +23,33 @@ Web 和 Core 两个包共同构成服务端。Core 是纯逻辑库（不依赖 H
 - 路由层：把 HTTP 请求映射到 Core 函数
 - Agent 接入层：处理 Agent WebSocket 注册和汇报
 - UI 推送层：将 Core 产生的事件实时推送给前端
-- 认证：JWT + 密码
+- 认证：双模式（管理员 JWT / 个人令牌 `pt_` 前缀），统一抽象为 `Principal`
+  - `AdminPrincipal`：管理员，拥有全部访问权限
+  - `PersonPrincipal`：普通用户，仅可访问其绑定节点和归属任务
+  - `adminOnly` 中间件用于限制仅管理员可调用的路由
 - 静态文件托管（UI 产物）
+
+## 权限与 WebSocket 过滤
+
+UI WebSocket 命名空间使用与 HTTP 相同的双模式认证。连接建立后，服务端根据 `socket.data.principal` 对每条推送事件做权限过滤：
+
+| 事件 | 管理员 | 普通用户 |
+|------|--------|----------|
+| `metricsUpdate` | 全部 | 仅绑定节点 |
+| `taskEvent` | 全部 | 仅归属任务 |
+| `alertStateChange` | 全部 | 不推送 |
+| `securityEvent` | 全部 | 不推送 |
+| `serverStatus` | 全部 | 仅绑定节点 |
+| `serversChanged` | 全部 | 全部 |
+
+过滤逻辑集中在 `ui-broadcast.ts`，通过 `packages/core` 导出的 `canAccessServer` / `canAccessTask` 做权限判定。
+
+## 人员令牌
+
+- 令牌存储在 `person_tokens` 表，存 SHA-256 哈希，不存明文
+- 令牌格式：`pt_` + 32 字节随机 base64url
+- CRUD 操作在 `packages/core/src/db/person-tokens.ts`
+- HTTP 路由在 `person-routes.ts`，均限 `adminOnly`
 
 
 ## 启动组装流程（`app.ts` → `createWebRuntime`）

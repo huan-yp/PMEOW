@@ -1,5 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useParams } from 'react-router-dom';
 import { TransportProvider, useTransport } from './transport/TransportProvider.js';
 import type { TransportAdapter } from './transport/types.js';
 import { useStore } from './store/useStore.js';
@@ -20,16 +20,23 @@ const Security = lazy(() => import('./pages/Security.js'));
 const Settings = lazy(() => import('./pages/Settings.js'));
 const Login = lazy(() => import('./pages/Login.js'));
 
-function SidebarNav({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
-  const links = [
-    { to: '/', icon: DashboardIcon, label: '控制台' },
-    { to: '/nodes', icon: ServerIcon, label: '节点' },
-    { to: '/people', icon: PeopleIcon, label: '人员' },
-    { to: '/alerts', icon: AlertIcon, label: '告警' },
-    { to: '/tasks', icon: TaskIcon, label: '任务调度' },
-    { to: '/security', icon: ShieldIcon, label: '安全审计' },
-    { to: '/settings', icon: SettingsIcon, label: '设置' },
-  ];
+function SidebarNav({ collapsed, onToggle, isPerson }: { collapsed: boolean; onToggle: () => void; isPerson: boolean }) {
+  const links = isPerson
+    ? [
+        { to: '/', icon: DashboardIcon, label: '我的机器' },
+        { to: '/nodes', icon: ServerIcon, label: '机器列表' },
+        { to: '/tasks', icon: TaskIcon, label: '我的任务' },
+        { to: '/me', icon: PeopleIcon, label: '我的资料' },
+      ]
+    : [
+        { to: '/', icon: DashboardIcon, label: '控制台' },
+        { to: '/nodes', icon: ServerIcon, label: '节点' },
+        { to: '/people', icon: PeopleIcon, label: '人员' },
+        { to: '/alerts', icon: AlertIcon, label: '告警' },
+        { to: '/tasks', icon: TaskIcon, label: '任务调度' },
+        { to: '/security', icon: ShieldIcon, label: '安全审计' },
+        { to: '/settings', icon: SettingsIcon, label: '设置' },
+      ];
 
   return (
     <aside className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-dark-border bg-dark-card/85 backdrop-blur-xl transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`}>
@@ -93,10 +100,13 @@ function AppContent() {
   useMetricsSubscription();
   useLoadInitialData();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const principal = useStore((s) => s.principal);
+  const currentPersonId = useStore((s) => s.principal?.kind === 'person' ? s.principal.personId : null);
+  const isPerson = principal?.kind === 'person';
 
   return (
     <div className="brand-shell min-h-screen bg-dark-bg text-slate-200">
-      <SidebarNav collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} />
+      <SidebarNav collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} isPerson={Boolean(isPerson)} />
       <main className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
         <div className="p-6">
           <Suspense fallback={<div className="flex h-64 items-center justify-center text-sm text-slate-500">加载中...</div>}>
@@ -104,14 +114,28 @@ function AppContent() {
               <Route path="/" element={<Overview />} />
               <Route path="/nodes" element={<Nodes />} />
               <Route path="/nodes/:id" element={<NodeDetail />} />
-              <Route path="/alerts" element={<Alerts />} />
               <Route path="/tasks" element={<Tasks />} />
               <Route path="/tasks/:taskId" element={<TaskDetail />} />
-              <Route path="/security" element={<Security />} />
-              <Route path="/people" element={<People />} />
-              <Route path="/people/new" element={<PersonCreateWizard />} />
-              <Route path="/people/:id" element={<PersonDetail />} />
-              <Route path="/settings" element={<Settings />} />
+              {isPerson ? (
+                <>
+                  <Route path="/me" element={currentPersonId ? <Navigate to={`/people/${currentPersonId}`} replace /> : <Navigate to="/" replace />} />
+                  <Route path="/people/:id" element={<SelfPersonDetailGuard />} />
+                  <Route path="/people" element={<Navigate to="/me" replace />} />
+                  <Route path="/people/new" element={<Navigate to="/" replace />} />
+                  <Route path="/alerts" element={<Navigate to="/" replace />} />
+                  <Route path="/security" element={<Navigate to="/" replace />} />
+                  <Route path="/settings" element={<Navigate to="/" replace />} />
+                </>
+              ) : (
+                <>
+                  <Route path="/alerts" element={<Alerts />} />
+                  <Route path="/security" element={<Security />} />
+                  <Route path="/people" element={<People />} />
+                  <Route path="/people/new" element={<PersonCreateWizard />} />
+                  <Route path="/people/:id" element={<PersonDetail />} />
+                  <Route path="/settings" element={<Settings />} />
+                </>
+              )}
               {/* Legacy redirects */}
               <Route path="/servers" element={<Navigate to="/nodes" replace />} />
               <Route path="/server/:id" element={<Navigate to="/nodes/:id" replace />} />
@@ -123,6 +147,21 @@ function AppContent() {
       <ToastContainer />
     </div>
   );
+}
+
+function SelfPersonDetailGuard() {
+  const { id } = useParams<{ id: string }>();
+  const currentPersonId = useStore((s) => s.principal?.kind === 'person' ? s.principal.personId : null);
+
+  if (!currentPersonId) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (id !== currentPersonId) {
+    return <Navigate to="/me" replace />;
+  }
+
+  return <PersonDetail />;
 }
 
 function AuthBootstrap() {
@@ -138,33 +177,35 @@ function AuthBootstrap() {
 
 function AuthGate() {
   const transport = useTransport();
-  const { authenticated, setAuthenticated } = useStore();
+  const authenticated = useStore((s) => s.authenticated);
+  const setSession = useStore((s) => s.setSession);
+  const clearSession = useStore((s) => s.clearSession);
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     void transport.checkAuth()
-      .then(({ authenticated: nextAuthenticated }) => {
+      .then((session) => {
         if (cancelled) return;
-        setAuthenticated(nextAuthenticated);
+        setSession(session);
         setAuthReady(true);
       })
       .catch(() => {
         if (cancelled) return;
-        setAuthenticated(false);
+        clearSession();
         setAuthReady(true);
       });
 
     return () => { cancelled = true; };
-  }, [transport, setAuthenticated]);
+  }, [transport, setSession, clearSession]);
 
   if (!authReady) return <AuthBootstrap />;
 
   if (!authenticated) {
     return (
       <Suspense fallback={<AuthBootstrap />}>
-        <Login onLogin={() => setAuthenticated(true)} />
+        <Login onLogin={(session) => setSession(session)} />
       </Suspense>
     );
   }

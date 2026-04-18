@@ -29,6 +29,7 @@ import { serverRoutes } from "./routes/server-routes.js";
 import { metricsRoutes } from "./routes/metrics-routes.js";
 import { taskRoutes } from "./routes/task-routes.js";
 import { personRoutes } from "./routes/person-routes.js";
+import { sessionRoutes } from "./routes/session-routes.js";
 import { alertRoutes } from "./routes/alert-routes.js";
 import { securityRoutes } from "./routes/security-routes.js";
 import { settingsRoutes } from "./routes/settings-routes.js";
@@ -102,6 +103,7 @@ export function createWebRuntime(): WebRuntime {
   app.post("/api/login", loginHandler);
   app.use("/api", authMiddleware);
   
+  app.use("/api", sessionRoutes());
   app.use("/api", serverRoutes(registry));
   app.use("/api", metricsRoutes(pipeline));
   app.use("/api", taskRoutes(registry));
@@ -117,9 +119,10 @@ export function createWebRuntime(): WebRuntime {
     console.warn(`[ws] namespace connect_error: ${error.message}`);
   });
   uiNamespace.on("connection", (socket) => {
-    const authUser = socket.data.user as Record<string, unknown> | undefined;
+    const principal = socket.data.principal as { kind: string; personId?: string } | undefined;
+    const principalLabel = principal?.kind === 'person' ? `person:${principal.personId}` : String(principal?.kind ?? 'unknown');
     console.info(
-      `[ws] client connected: ${socket.id} address=${socket.handshake.address} transport=${socket.conn.transport.name} role=${String(authUser?.role ?? 'unknown')}`,
+      `[ws] client connected: ${socket.id} address=${socket.handshake.address} transport=${socket.conn.transport.name} principal=${principalLabel}`,
     );
     socket.conn.on("upgrade", () => {
       console.info(`[ws] transport upgraded: ${socket.id} -> ${socket.conn.transport.name}`);

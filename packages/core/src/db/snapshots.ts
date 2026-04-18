@@ -10,6 +10,7 @@ import type {
   NetworkSnapshot,
   ProcessInfo,
   GpuCardReport,
+  UserResourceSummary,
 } from '../types.js';
 
 export type SnapshotWithGpus = SnapshotRecord & { gpuSnapshots: GpuSnapshotRecord[] };
@@ -20,8 +21,8 @@ export function saveSnapshot(serverId: string, report: UnifiedReport, tier: 'rec
 
   const tx = db.transaction(() => {
     const res = db.prepare(
-      `INSERT INTO snapshots (server_id, timestamp, tier, seq, cpu, memory, disks, disk_io, network, processes, local_users)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO snapshots (server_id, timestamp, tier, seq, cpu, memory, disks, disk_io, network, processes, processes_by_user, local_users)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       serverId,
       report.timestamp,
@@ -33,6 +34,7 @@ export function saveSnapshot(serverId: string, report: UnifiedReport, tier: 'rec
       JSON.stringify(snap.diskIo),
       JSON.stringify(snap.network),
       JSON.stringify(snap.processes),
+      JSON.stringify(snap.processesByUser),
       JSON.stringify(snap.localUsers),
     );
 
@@ -125,6 +127,7 @@ function mapSnapshotRow(s: Record<string, unknown>, gpuRows: Record<string, unkn
     diskIo: JSON.parse(s.disk_io as string) as DiskIoSnapshot,
     network: JSON.parse(s.network as string) as NetworkSnapshot,
     processes: JSON.parse(s.processes as string) as ProcessInfo[],
+    processesByUser: JSON.parse((s.processes_by_user as string) || '[]') as UserResourceSummary[],
     localUsers: JSON.parse(s.local_users as string) as string[],
     gpuCards: gpuSnapshots.map(mapGpuSnapshotToCard),
     gpuSnapshots,

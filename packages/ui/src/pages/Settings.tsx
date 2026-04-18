@@ -61,7 +61,7 @@ export default function Settings() {
   const handlePasswordChange = async () => {
     if (!newPassword.trim()) return;
     try {
-      await transport.login(newPassword);
+      await transport.login({ password: newPassword });
       setNewPassword('');
       setPasswordSaved(true);
       setTimeout(() => setPasswordSaved(false), 3000);
