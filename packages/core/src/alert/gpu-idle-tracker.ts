@@ -4,6 +4,7 @@ import * as alertDb from '../db/alerts.js';
 interface TrackedProcess {
   firstSeenAt: number;   // ms timestamp when this process first met idle criteria
   lastSeenAt: number;    // ms timestamp of last update
+  alertIssuedAt: number | null;
   gpuIndex: number;
   pid: number;
   user: string;
@@ -71,8 +72,9 @@ export class GpuIdleMemoryTracker {
 
           // Check duration
           const durationMs = now - existing.firstSeenAt;
-          if (durationMs >= settings.alertGpuIdleDurationSeconds * 1000) {
+          if (durationMs >= settings.alertGpuIdleDurationSeconds * 1000 && existing.alertIssuedAt === null) {
             const alert = this.emitAlert(serverId, existing, settings, durationMs);
+            existing.alertIssuedAt = now;
             alerts.push(alert);
           }
         } else {
@@ -80,6 +82,7 @@ export class GpuIdleMemoryTracker {
           this.tracked.set(key, {
             firstSeenAt: now,
             lastSeenAt: now,
+            alertIssuedAt: null,
             gpuIndex: gpu.index,
             pid: candidate.pid,
             user: candidate.user,

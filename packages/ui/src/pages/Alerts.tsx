@@ -18,6 +18,10 @@ const TYPE_LABELS: Record<string, string> = {
   cpu: 'CPU 过高', memory: '内存过高', disk: '磁盘过高', gpu_temp: 'GPU 温度', offline: '节点离线', gpu_idle_memory: 'GPU 显存空占',
 };
 
+function toDisplayDate(ts: number): Date {
+  return new Date(ts < 1_000_000_000_000 ? ts * 1000 : ts);
+}
+
 function sortAlerts(alerts: Alert[], col: SortCol, dir: 'asc' | 'desc'): Alert[] {
   return [...alerts].sort((a, b) => {
     let cmp = 0;
@@ -139,7 +143,7 @@ export default function Alerts() {
     setBatchUnsuppressing(false);
   };
 
-  const formatTime = (ts: number) => new Date(ts * 1000).toLocaleString('zh-CN');
+  const formatTime = (ts: number) => toDisplayDate(ts).toLocaleString('zh-CN');
   const now = Date.now() / 1000;
 
   // Client-side search filter

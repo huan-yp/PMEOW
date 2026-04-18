@@ -76,7 +76,7 @@ def _get_process_username(pid: int) -> Optional[str]:
 def _uid_to_username(uid: int) -> str:
     if pwd is not None:
         try:
-            return pwd.getpwuid(uid).pw_name
+            return pwd.getpwuid(uid).pw_name  # type: ignore[attr-defined]
         except KeyError:
             pass
     return str(uid)
@@ -105,6 +105,13 @@ def calculate_effective_free(
 
     free = total_memory_mb - pmeow_total - non_pmeow_adjusted
     return max(0.0, free)
+
+
+def _declared_vram_for_task(task: TaskRecord) -> int:
+    """Return the per-GPU reservation that should be exposed to the scheduler."""
+    if task.declared_vram_per_gpu is not None:
+        return task.declared_vram_per_gpu
+    return task.require_vram_mb
 
 
 def attribute_gpu_processes(
@@ -137,6 +144,7 @@ def attribute_gpu_processes(
     task_allocs: dict[int, list[GpuTaskAllocation]] = defaultdict(list)
     user_procs: dict[int, list[GpuUserProcess]] = defaultdict(list)
     unknown_procs: dict[int, list[GpuUnknownProcess]] = defaultdict(list)
+    observed_task_gpu_pairs: set[tuple[str, int]] = set()
 
     # Track user usage for by_user summary
     user_usage: dict[str, dict[str, object]] = {}  # user → {total, gpu_set}
@@ -151,12 +159,13 @@ def attribute_gpu_processes(
             task_allocs[gpu_idx].append(GpuTaskAllocation(
                 task_id=task.id,
                 gpu_index=gpu_idx,
-                declared_vram_mb=task.require_vram_mb,
+                declared_vram_mb=_declared_vram_for_task(task),
                 actual_vram_mb=proc.used_memory_mb,
                 pid=proc.pid,
                 user=username_for_task,
                 command=cmdline_for_task,
             ))
+            observed_task_gpu_pairs.add((task.id, gpu_idx))
             continue
 
         # Try to identify user via /proc or psutil
@@ -188,6 +197,28 @@ def attribute_gpu_processes(
             gpu_index=gpu_idx,
             used_memory_mb=proc.used_memory_mb,
         ))
+
+    # Keep declared reservations visible even when a task has not yet
+    # produced an attributable GPU process on every assigned device.
+    for task in running_tasks:
+        assigned_gpu_ids = task.assigned_gpus or []
+        if not assigned_gpu_ids:
+            continue
+
+        declared_vram_mb = _declared_vram_for_task(task)
+        for gpu_idx in assigned_gpu_ids:
+            if (task.id, gpu_idx) in observed_task_gpu_pairs:
+                continue
+            task_allocs[gpu_idx].append(GpuTaskAllocation(
+                task_id=task.id,
+                gpu_index=gpu_idx,
+                declared_vram_mb=declared_vram_mb,
+                actual_vram_mb=0.0,
+                pid=task.pid,
+                user=task.user,
+                command=task.command,
+            ))
+            observed_task_gpu_pairs.add((task.id, gpu_idx))
 
     # Build per-GPU summaries
     all_gpu_indices = set(per_gpu_memory.keys())

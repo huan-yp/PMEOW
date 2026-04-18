@@ -36,7 +36,7 @@ export { listTasks, getTask, cancelTask, setPriority } from "./task/service.js";
 export type { TaskEvent, TaskEventType } from "./task/events.js";
 
 // Alert
-export { checkAlerts, checkOffline } from "./alert/service.js";
+export { ThresholdAlertTracker, checkOffline } from "./alert/service.js";
 
 // Security
 export { analyzeReport } from "./security/analyzer.js";
