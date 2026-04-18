@@ -19,6 +19,9 @@ export default function Settings() {
   const [memThreshold, setMemThreshold] = useState(90);
   const [diskThreshold, setDiskThreshold] = useState(90);
   const [gpuTempThreshold, setGpuTempThreshold] = useState(85);
+  const [gpuIdleMemPercent, setGpuIdleMemPercent] = useState(20);
+  const [gpuIdleUtilPercent, setGpuIdleUtilPercent] = useState(5);
+  const [gpuIdleDuration, setGpuIdleDuration] = useState(60);
 
   const [newPassword, setNewPassword] = useState('');
   const [passwordSaved, setPasswordSaved] = useState(false);
@@ -31,6 +34,9 @@ export default function Settings() {
         setMemThreshold(s.alertMemoryThreshold ?? 90);
         setDiskThreshold(s.alertDiskThreshold ?? 90);
         setGpuTempThreshold(s.alertGpuTempThreshold ?? 85);
+        setGpuIdleMemPercent(s.alertGpuIdleMemoryPercent ?? 20);
+        setGpuIdleUtilPercent(s.alertGpuIdleUtilizationPercent ?? 5);
+        setGpuIdleDuration(s.alertGpuIdleDurationSeconds ?? 60);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -44,6 +50,9 @@ export default function Settings() {
         alertMemoryThreshold: memThreshold,
         alertDiskThreshold: diskThreshold,
         alertGpuTempThreshold: gpuTempThreshold,
+        alertGpuIdleMemoryPercent: gpuIdleMemPercent,
+        alertGpuIdleUtilizationPercent: gpuIdleUtilPercent,
+        alertGpuIdleDurationSeconds: gpuIdleDuration,
       });
     } catch { /* ignore */ }
     setSaving(false);
@@ -74,6 +83,13 @@ export default function Settings() {
         <ThresholdInput label="内存使用率 (%)" value={memThreshold} onChange={setMemThreshold} />
         <ThresholdInput label="磁盘使用率 (%)" value={diskThreshold} onChange={setDiskThreshold} />
         <ThresholdInput label="GPU 温度 (°C)" value={gpuTempThreshold} onChange={setGpuTempThreshold} />
+
+        <div className="pt-2 border-t border-dark-border">
+          <p className="text-xs text-slate-500 mb-3">GPU 显存空占告警：当显卡显存占用达到阈值，但 GPU 利用率持续低于阈值超过指定时长时触发。</p>
+          <ThresholdInput label="显存占用阈值 (%)" value={gpuIdleMemPercent} onChange={setGpuIdleMemPercent} />
+          <ThresholdInput label="利用率空闲阈值 (%)" value={gpuIdleUtilPercent} onChange={setGpuIdleUtilPercent} />
+          <ThresholdInput label="持续时长 (秒)" value={gpuIdleDuration} onChange={setGpuIdleDuration} />
+        </div>
         <button onClick={handleSave} disabled={saving} className="rounded-lg bg-accent-blue px-4 py-2 text-sm text-white hover:bg-accent-blue/80 disabled:opacity-50">
           {saving ? '保存中...' : '保存阈值'}
         </button>

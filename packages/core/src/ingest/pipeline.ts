@@ -6,6 +6,7 @@ import * as snapshotDb from '../db/snapshots.js';
 import * as taskDb from '../db/tasks.js';
 import * as settingsDb from '../db/settings.js';
 import { checkAlerts } from '../alert/service.js';
+import { GpuIdleMemoryTracker } from '../alert/gpu-idle-tracker.js';
 import { processSecurityCheck } from '../security/pipeline.js';
 
 export interface IngestCallbacks {
@@ -18,6 +19,7 @@ export interface IngestCallbacks {
 export class IngestPipeline {
   private latestReports = new Map<string, UnifiedReport>();
   private scheduler = new SnapshotScheduler();
+  private gpuIdleTracker = new GpuIdleMemoryTracker();
   
   constructor(private callbacks: IngestCallbacks = {}) {}
   
@@ -63,6 +65,14 @@ export class IngestPipeline {
     // 4. Alert check
     const alerts = checkAlerts(serverId, report, settings);
     for (const alert of alerts) {
+      if (this.callbacks.onAlert) {
+        this.callbacks.onAlert(alert);
+      }
+    }
+
+    // 4b. GPU idle-memory alert check
+    const gpuIdleAlerts = this.gpuIdleTracker.check(serverId, report, settings);
+    for (const alert of gpuIdleAlerts) {
       if (this.callbacks.onAlert) {
         this.callbacks.onAlert(alert);
       }

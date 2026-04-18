@@ -142,7 +142,7 @@ class TestUnifiedReportSerialization:
             "managedReservedMb", "unmanagedPeakMb", "effectiveFreeMb",
             "taskAllocations", "userProcesses", "unknownProcesses",
         }
-        assert gpu["taskAllocations"][0] == {"taskId": "task-1", "declaredVramMb": 8000}
+        assert gpu["taskAllocations"][0] == {"taskId": "task-1", "declaredVramMb": 8000, "pid": None, "user": None, "command": None, "actualVramMb": None}
 
     def test_to_dict_network_includes_internet_fields_when_set(self):
         report = _make_report()

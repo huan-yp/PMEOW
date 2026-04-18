@@ -15,7 +15,7 @@ const EMPTY_LABELS: Record<Tab, string> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  cpu: 'CPU 过高', memory: '内存过高', disk: '磁盘过高', gpu_temp: 'GPU 温度', offline: '节点离线',
+  cpu: 'CPU 过高', memory: '内存过高', disk: '磁盘过高', gpu_temp: 'GPU 温度', offline: '节点离线', gpu_idle_memory: 'GPU 显存空占',
 };
 
 function sortAlerts(alerts: Alert[], col: SortCol, dir: 'asc' | 'desc'): Alert[] {
@@ -317,7 +317,11 @@ export default function Alerts() {
                     </td>
                     <td className="p-3 pr-4 text-slate-200 font-mono">{a.serverId.slice(0, 8)}</td>
                     <td className="p-3 pr-4 text-slate-300">{TYPE_LABELS[a.alertType] ?? a.alertType}</td>
-                    <td className="p-3 pr-4 font-mono text-accent-red">{a.value != null ? `${a.value.toFixed(1)}%` : '—'}</td>
+                    <td className="p-3 pr-4 font-mono text-accent-red">
+                      {a.alertType === 'gpu_idle_memory' && a.details
+                        ? <GpuIdleDetails details={a.details} />
+                        : a.value != null ? `${a.value.toFixed(1)}%` : '—'}
+                    </td>
                     <td className="p-3 pr-4 font-mono text-slate-500">{a.threshold != null ? `${a.threshold}%` : '—'}</td>
                     <td className="p-3 pr-4">
                       {isSuppressed ? (
@@ -381,5 +385,33 @@ export default function Alerts() {
         </div>
       )}
     </div>
+  );
+}
+
+function GpuIdleDetails({ details }: { details: Record<string, unknown> }) {
+  const gpu = details.gpuIndex as number | undefined;
+  const pid = details.pid as number | undefined;
+  const user = details.user as string | undefined;
+  const command = details.command as string | undefined;
+  const vram = details.vramMb as number | undefined;
+  const duration = details.durationSeconds as number | undefined;
+
+  const durationText = duration != null
+    ? duration >= 60 ? `${Math.floor(duration / 60)}分${duration % 60}秒` : `${duration}秒`
+    : undefined;
+
+  const cmdShort = command && command.length > 40 ? command.slice(0, 40) + '…' : command;
+
+  return (
+    <span className="text-xs leading-relaxed">
+      <span className="text-accent-red">GPU{gpu}</span>
+      {' · '}
+      <span className="text-slate-300">{user ?? '?'}</span>
+      {' · PID '}
+      <span className="text-slate-200">{pid ?? '?'}</span>
+      {vram != null && <>{' · '}<span className="text-slate-300">{Math.round(vram)}MB</span></>}
+      {durationText && <>{' · '}<span className="text-slate-400">{durationText}</span></>}
+      {cmdShort && <div className="text-slate-500 truncate max-w-xs" title={command}>{cmdShort}</div>}
+    </span>
   );
 }
