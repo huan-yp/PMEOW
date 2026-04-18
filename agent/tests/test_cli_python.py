@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 
 from pmeow.cli_python import detect_python_invocation, parse_vram_mb
 
@@ -43,6 +42,7 @@ def test_run_python_invocation_submits_with_current_cwd_and_interpreter(monkeypa
     script = tmp_path / "demo.py"
     script.write_text("print('hi')\n")
     captured: dict[str, object] = {}
+    resolved_python = str(tmp_path / "venv-python")
 
     def fake_send_request(socket_path, method, params=None):
         params = params or {}
@@ -54,6 +54,7 @@ def test_run_python_invocation_submits_with_current_cwd_and_interpreter(monkeypa
         raise AssertionError(f"unexpected method: {method}")
 
     monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
+    monkeypatch.setattr("pmeow.cli_python.resolve_submission_python", lambda: resolved_python)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("USER", "tester")
 
@@ -73,4 +74,4 @@ def test_run_python_invocation_submits_with_current_cwd_and_interpreter(monkeypa
     params = captured["params"]
     assert exit_code == 0
     assert params["cwd"] == str(tmp_path)
-    assert params["argv"] == [sys.executable, str(script), "--epochs", "3"]
+    assert params["argv"] == [resolved_python, str(script), "--epochs", "3"]

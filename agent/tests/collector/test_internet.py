@@ -58,9 +58,13 @@ def test_internet_probe_caches_result_within_interval() -> None:
     with patch.object(
         internet_mod, "probe_internet", return_value=fake_result,
     ) as mock_probe:
+        started = probe.refresh_async(now_monotonic=100.0)
+        probe.stop(timeout=1.0)
+
         first = probe.get(now_monotonic=100.0)
         second = probe.get(now_monotonic=110.0)
 
+    assert started is True
     assert first is second
     assert mock_probe.call_count == 1
 

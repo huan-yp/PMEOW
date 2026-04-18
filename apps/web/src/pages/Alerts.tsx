@@ -105,7 +105,7 @@ export default function Alerts() {
   const [batchSilencing, setBatchSilencing] = useState(false);
   const [batchUnsilencing, setBatchUnsilencing] = useState(false);
 
-  const loadRef = useRef<() => Promise<void>>();
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
