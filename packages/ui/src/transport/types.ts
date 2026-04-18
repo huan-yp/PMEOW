@@ -284,7 +284,7 @@ export interface PersonTimelinePoint {
 // Task Event (pushed via WebSocket)
 export interface TaskEvent {
   serverId: string;
-  eventType: 'submitted' | 'started' | 'ended' | 'priority_changed';
+  eventType: 'submitted' | 'started' | 'ended' | 'priority_changed' | 'schedule_updated';
   task: TaskInfo;
 }
 

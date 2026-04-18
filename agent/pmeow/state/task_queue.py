@@ -69,6 +69,11 @@ def _sort_key(task: TaskRecord) -> tuple[int, float]:
 
 def _task_to_info(task: TaskRecord) -> TaskInfo:
     """Convert internal TaskRecord to protocol-visible TaskInfo."""
+    schedule_history = sorted(
+        task.schedule_history,
+        key=lambda entry: entry.timestamp,
+        reverse=True,
+    )
     return TaskInfo(
         task_id=task.id,
         status=task.public_status.value,
@@ -95,7 +100,7 @@ def _task_to_info(task: TaskRecord) -> TaskInfo:
                 "gpuSnapshot": e.gpu_snapshot,
                 "detail": e.detail,
             }
-            for e in task.schedule_history
+            for e in schedule_history
         ],
     )
 

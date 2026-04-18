@@ -9,7 +9,7 @@ from pmeow.models import PerGpuAllocationSummary
 class GpuHistoryTracker:
     """Stores recent GPU allocation snapshots within a sliding time window."""
 
-    def __init__(self, window_seconds: float = 120.0) -> None:
+    def __init__(self, window_seconds: float = 5.0) -> None:
         self.window_seconds = window_seconds
         self._samples: list[tuple[float, list[PerGpuAllocationSummary]]] = []
 

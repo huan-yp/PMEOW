@@ -19,10 +19,26 @@ export interface TaskDiffResult {
  *   1. New active task (not in prev)          → task_submitted (+ task_started if running)
  *   2. Status queued→running                  → task_started
  *   3. Priority changed                       → task_priority_changed
- *   4. Present in recentlyEnded               → task_ended (with full terminal info)
- *   5. In prev but missing from both curr     → task_ended (disappeared / abnormal)
+ *   4. scheduleHistory changed                → task_schedule_updated
+ *   5. Present in recentlyEnded               → task_ended (with full terminal info)
+ *   6. In prev but missing from both curr     → task_ended (disappeared / abnormal)
  *      AND recentlyEnded
  */
+
+function hasScheduleHistoryChanged(prev: TaskInfo, curr: TaskInfo): boolean {
+  if (prev.scheduleHistory.length !== curr.scheduleHistory.length) {
+    return true;
+  }
+
+  for (let index = 0; index < curr.scheduleHistory.length; index += 1) {
+    if (JSON.stringify(prev.scheduleHistory[index]) !== JSON.stringify(curr.scheduleHistory[index])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function diffTasks(
   serverId: string,
   previousTasks: TaskInfo[],
@@ -48,6 +64,9 @@ export function diffTasks(
       }
       if (prev.priority !== curr.priority) {
         results.push({ eventType: 'priority_changed', task: curr, serverId });
+      }
+      if (hasScheduleHistoryChanged(prev, curr)) {
+        results.push({ eventType: 'schedule_updated', task: curr, serverId });
       }
     }
   }

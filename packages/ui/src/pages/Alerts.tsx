@@ -18,6 +18,52 @@ const TYPE_LABELS: Record<string, string> = {
   cpu: 'CPU 过高', memory: '内存过高', disk: '磁盘过高', gpu_temp: 'GPU 温度', offline: '节点离线', gpu_idle_memory: 'GPU 显存空占',
 };
 
+function formatAlertNumber(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+function formatAlertValue(alert: Alert): string {
+  if (alert.value == null) {
+    return '—';
+  }
+
+  switch (alert.alertType) {
+    case 'gpu_temp':
+      return `${formatAlertNumber(alert.value)}°C`;
+    case 'offline':
+      return `${formatAlertNumber(alert.value)}秒`;
+    case 'cpu':
+    case 'memory':
+    case 'disk':
+    case 'gpu_idle_memory':
+    default:
+      return `${formatAlertNumber(alert.value)}%`;
+  }
+}
+
+function formatAlertThreshold(alert: Alert): string {
+  if (alert.threshold == null) {
+    return '—';
+  }
+
+  switch (alert.alertType) {
+    case 'gpu_temp':
+      return `${formatAlertNumber(alert.threshold)}°C`;
+    case 'offline':
+      return `${formatAlertNumber(alert.threshold)}秒`;
+    case 'cpu':
+    case 'memory':
+    case 'disk':
+    case 'gpu_idle_memory':
+    default:
+      return `${formatAlertNumber(alert.threshold)}%`;
+  }
+}
+
+function getAlertStatusLabel(alert: Alert): string {
+  return alert.alertType === 'offline' ? '离线中' : '告警中';
+}
+
 function toDisplayDate(ts: number): Date {
   return new Date(ts < 1_000_000_000_000 ? ts * 1000 : ts);
 }
@@ -195,7 +241,7 @@ export default function Alerts() {
       <div>
         <p className="brand-kicker">告警管理</p>
         <h2 className="text-xl font-bold text-slate-100">告警历史</h2>
-        <p className="mt-1 text-sm text-slate-500">查看节点资源阈值告警及忽略状态。</p>
+        <p className="mt-1 text-sm text-slate-500">查看节点阈值告警、离线告警及忽略状态。</p>
       </div>
 
       {/* Tab bar */}
@@ -324,16 +370,16 @@ export default function Alerts() {
                     <td className="p-3 pr-4 font-mono text-accent-red">
                       {a.alertType === 'gpu_idle_memory' && a.details
                         ? <GpuIdleDetails details={a.details} />
-                        : a.value != null ? `${a.value.toFixed(1)}%` : '—'}
+                        : formatAlertValue(a)}
                     </td>
-                    <td className="p-3 pr-4 font-mono text-slate-500">{a.threshold != null ? `${a.threshold}%` : '—'}</td>
+                    <td className="p-3 pr-4 font-mono text-slate-500">{formatAlertThreshold(a)}</td>
                     <td className="p-3 pr-4">
                       {isSuppressed ? (
                         <span className="text-xs text-slate-500">
                           已忽略至 {formatTime(a.suppressedUntil!)}
                         </span>
                       ) : (
-                        <span className="text-xs text-accent-yellow">活跃</span>
+                        <span className="text-xs text-accent-yellow">{getAlertStatusLabel(a)}</span>
                       )}
                     </td>
                     <td className="p-3">

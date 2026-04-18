@@ -151,7 +151,7 @@ Agent 通过环境变量配置；未设置时会使用默认值。
 | `PMEOW_AGENT_ID` | hostname | 当前 Agent 的唯一标识 |
 | `PMEOW_COLLECTION_INTERVAL` | `5` | 指标采集间隔，单位秒 |
 | `PMEOW_HEARTBEAT_INTERVAL` | `30` | 心跳上报间隔，单位秒 |
-| `PMEOW_HISTORY_WINDOW` | `120` | 调度时参考的历史窗口，单位秒 |
+| `PMEOW_HISTORY_WINDOW` | `5` | 调度时参考的历史窗口，单位秒 |
 | `PMEOW_VRAM_REDUNDANCY` | `0.1` | 显存冗余系数，用于给非 PMEOW 进程预留安全余量 |
 | `PMEOW_STATE_DIR` | `~/.pmeow/` | 本地状态目录 |
 | `PMEOW_SOCKET_PATH` | `~/.pmeow/pmeow.sock` | CLI 与 daemon 通信的 Unix socket |

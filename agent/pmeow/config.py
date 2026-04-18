@@ -20,7 +20,7 @@ class AgentConfig:
     agent_id: str | None = None
     log_level: int = logging.INFO
     collection_interval: int = 1
-    history_window_seconds: int = 120
+    history_window_seconds: int = 5
     attach_timeout: int = 30
     vram_redundancy_coefficient: float = 0.1
     state_dir: str = field(default_factory=_default_state_dir)
@@ -102,7 +102,7 @@ def load_config() -> AgentConfig:
         _int("PMEOW_ATTACH_TIMEOUT", 30), "attach_timeout"
     )
     history_window_seconds = validate_interval(
-        _int("PMEOW_HISTORY_WINDOW", 120), "history_window_seconds"
+        _int("PMEOW_HISTORY_WINDOW", 5), "history_window_seconds"
     )
     vram_redundancy_coefficient = validate_redundancy_coefficient(
         _float("PMEOW_VRAM_REDUNDANCY", 0.1)

@@ -200,7 +200,7 @@ Agent 内部任务状态是三态模型：`queued -> reserved -> running`。
 
 GPU 调度不是只看当前探针结果，而是同时依赖一个滑动历史窗口。
 
-- `GpuHistoryTracker` 默认维护最近 120 秒的每轮 `PerGpuAllocationSummary`
+- `GpuHistoryTracker` 默认维护最近 5 秒的每轮 `PerGpuAllocationSummary`
 - 每次 `collect_cycle()` 完成资源采集后，都会把当前 `per_gpu` 记录进窗口
 - 窗口在写入和读取时都会自动剪枝，只保留仍在窗口内的样本
 

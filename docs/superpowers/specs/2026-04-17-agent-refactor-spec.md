@@ -249,7 +249,7 @@ def should_include_process(proc) -> bool:
 ### 资源历史窗口
 
 - 仅用于调度决策（GPU 持续空闲判定）。
-- 保持现有 120s 滑动窗口（`GpuHistoryTracker`）。
+- 保持现有 5s 滑动窗口（`GpuHistoryTracker`）。
 - 不上报给 Web。
 
 ## 6. Web 侧事件派发约定
@@ -432,8 +432,8 @@ class TaskRecord:
 
 ```python
 class GpuHistoryTracker:
-    """保持现有设计：120s 滑动窗口，记录每张 GPU 的 allocation 历史"""
-    window_seconds: int = 120
+    """保持现有设计：5s 滑动窗口，记录每张 GPU 的 allocation 历史"""
+    window_seconds: int = 5
     # 用于调度器判定 GPU 是否持续空闲
 ```
 
@@ -446,7 +446,7 @@ class GpuHistoryTracker:
 | `PMEOW_SERVER_URL` | 无 | Web 服务器地址 |
 | `PMEOW_AGENT_ID` | hostname | 节点标识 |
 | `PMEOW_COLLECTION_INTERVAL` | `1` | 采集/报告周期（秒） |
-| `PMEOW_HISTORY_WINDOW` | `120` | GPU 历史窗口（秒） |
+| `PMEOW_HISTORY_WINDOW` | `5` | GPU 历史窗口（秒） |
 | `PMEOW_VRAM_REDUNDANCY` | `0.1` | 未管理显存冗余系数 |
 | `PMEOW_STATE_DIR` | `~/.pmeow/` | 本地状态目录（日志等） |
 | `PMEOW_ATTACH_TIMEOUT` | `30` | attached_python 等待 PID 超时（秒） |

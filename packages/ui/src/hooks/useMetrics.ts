@@ -3,6 +3,48 @@ import { useTransport } from '../transport/TransportProvider.js';
 import { useStore } from '../store/useStore.js';
 import type { Task, TaskInfo } from '../transport/types.js';
 
+const ALERT_TYPE_LABELS: Record<string, string> = {
+  cpu: 'CPU 过高',
+  memory: '内存过高',
+  disk: '磁盘过高',
+  gpu_temp: 'GPU 温度',
+  offline: '节点离线',
+  gpu_idle_memory: 'GPU 显存空占',
+};
+
+function formatAlertNumber(value: number | null): string {
+  if (value == null) {
+    return '—';
+  }
+
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+function formatAlertWithUnit(alertType: string, value: number | null): string {
+  if (value == null) {
+    return '—';
+  }
+
+  switch (alertType) {
+    case 'gpu_temp':
+      return `${formatAlertNumber(value)}°C`;
+    case 'offline':
+      return `${formatAlertNumber(value)}秒`;
+    default:
+      return `${formatAlertNumber(value)}%`;
+  }
+}
+
+function formatAlertToast(alertType: string, value: number | null, threshold: number | null): string {
+  const label = ALERT_TYPE_LABELS[alertType] ?? alertType;
+
+  if (alertType === 'offline') {
+    return `${label} ${formatAlertWithUnit(alertType, value)}，超出离线阈值 ${formatAlertWithUnit(alertType, threshold)}`;
+  }
+
+  return `${label} ${formatAlertWithUnit(alertType, value)}，超过阈值 ${formatAlertWithUnit(alertType, threshold)}`;
+}
+
 export function useMetricsSubscription() {
   const transport = useTransport();
   const setServers = useStore((s) => s.setServers);
@@ -43,15 +85,19 @@ export function useMetricsSubscription() {
           ended: '任务结束',
           priority_changed: '优先级变更',
         };
-        addToast(labels[event.eventType] ?? '任务事件', `${event.task.command}`, 'info');
+        const title = labels[event.eventType];
+        if (!title) {
+          return;
+        }
+        addToast(title, `${event.task.command}`, 'info');
       }),
 
       transport.onAlert((alert) => {
         const srv = useStore.getState().servers.find((s) => s.id === alert.serverId);
         const nodeName = srv?.name ?? alert.serverId;
         addToast(
-          `告警: ${alert.alertType}`,
-          `节点 ${nodeName} — ${alert.alertType} ${alert.value} 超过阈值 ${alert.threshold}`,
+          `告警: ${ALERT_TYPE_LABELS[alert.alertType] ?? alert.alertType}`,
+          `节点 ${nodeName} - ${formatAlertToast(alert.alertType, alert.value, alert.threshold)}`,
           'warning',
         );
       }),
