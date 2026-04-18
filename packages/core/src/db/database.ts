@@ -47,6 +47,7 @@ export function getDatabase(dataDir?: string): Database.Database {
   db.pragma('foreign_keys = ON');
 
   initSchema(db);
+  migrateAlerts(db);
   return db;
 }
 
@@ -127,10 +128,12 @@ function initSchema(db: Database.Database): void {
       alert_type TEXT NOT NULL,
       value REAL,
       threshold REAL,
+      fingerprint TEXT NOT NULL DEFAULT '',
+      details TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       suppressed_until INTEGER,
-      UNIQUE (server_id, alert_type)
+      UNIQUE (server_id, alert_type, fingerprint)
     );
 
     CREATE TABLE IF NOT EXISTS security_events (
@@ -178,6 +181,50 @@ function initSchema(db: Database.Database): void {
     );
   `);
 
+}
+
+function migrateAlerts(db: Database.Database): void {
+  const columns = db.prepare('PRAGMA table_info(alerts)').all() as Array<{ name: string }>;
+  const names = new Set(columns.map((c) => c.name));
+
+  if (!names.has('fingerprint')) {
+    db.exec(`ALTER TABLE alerts ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!names.has('details')) {
+    db.exec(`ALTER TABLE alerts ADD COLUMN details TEXT`);
+  }
+
+  // Migrate unique index from (server_id, alert_type) to (server_id, alert_type, fingerprint)
+  const indexes = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'alerts'"
+  ).all() as Array<{ sql: string | null }>;
+
+  const hasOldUnique = indexes.some(
+    (i) => i.sql && i.sql.includes('server_id') && i.sql.includes('alert_type') && !i.sql.includes('fingerprint')
+  );
+
+  if (hasOldUnique) {
+    // Recreate via rename-copy pattern
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS alerts_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        server_id TEXT NOT NULL,
+        alert_type TEXT NOT NULL,
+        value REAL,
+        threshold REAL,
+        fingerprint TEXT NOT NULL DEFAULT '',
+        details TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        suppressed_until INTEGER,
+        UNIQUE (server_id, alert_type, fingerprint)
+      );
+      INSERT OR IGNORE INTO alerts_new (id, server_id, alert_type, value, threshold, fingerprint, details, created_at, updated_at, suppressed_until)
+        SELECT id, server_id, alert_type, value, threshold, COALESCE(fingerprint, ''), details, created_at, updated_at, suppressed_until FROM alerts;
+      DROP TABLE alerts;
+      ALTER TABLE alerts_new RENAME TO alerts;
+    `);
+  }
 }
 
 export function closeDatabase(): void {

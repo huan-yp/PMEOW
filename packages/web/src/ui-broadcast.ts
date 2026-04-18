@@ -19,7 +19,14 @@ export function createUIBroadcast(namespace: Namespace): UIBroadcast {
       namespace.emit("taskEvent", { serverId: event.serverId, eventType: event.eventType, task: event.task });
     },
     alert(alert) {
-      namespace.emit("alert", { serverId: alert.serverId, alertType: alert.alertType, value: alert.value, threshold: alert.threshold });
+      namespace.emit("alert", {
+        serverId: alert.serverId,
+        alertType: alert.alertType,
+        value: alert.value,
+        threshold: alert.threshold,
+        fingerprint: alert.fingerprint,
+        details: alert.details,
+      });
     },
     securityEvent(event) {
       namespace.emit("securityEvent", event);

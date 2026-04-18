@@ -1,20 +1,29 @@
 import { getDatabase } from './database.js';
 import type { AlertRecord, AlertType } from '../types.js';
 
-export function upsertAlert(serverId: string, alertType: AlertType, value: number | null, threshold: number | null): AlertRecord {
+export function upsertAlert(
+  serverId: string,
+  alertType: AlertType,
+  value: number | null,
+  threshold: number | null,
+  fingerprint = '',
+  details: Record<string, unknown> | null = null,
+): AlertRecord {
   const db = getDatabase();
   const now = Date.now();
+  const detailsJson = details ? JSON.stringify(details) : null;
 
   db.prepare(
-    `INSERT INTO alerts (server_id, alert_type, value, threshold, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(server_id, alert_type) DO UPDATE SET
+    `INSERT INTO alerts (server_id, alert_type, value, threshold, fingerprint, details, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(server_id, alert_type, fingerprint) DO UPDATE SET
        value = excluded.value,
        threshold = excluded.threshold,
+       details = excluded.details,
        updated_at = excluded.updated_at`
-  ).run(serverId, alertType, value, threshold, now, now);
+  ).run(serverId, alertType, value, threshold, fingerprint, detailsJson, now, now);
 
-  const row = db.prepare('SELECT * FROM alerts WHERE server_id = ? AND alert_type = ?').get(serverId, alertType) as Record<string, unknown>;
+  const row = db.prepare('SELECT * FROM alerts WHERE server_id = ? AND alert_type = ? AND fingerprint = ?').get(serverId, alertType, fingerprint) as Record<string, unknown>;
   return mapAlertRow(row);
 }
 
@@ -58,12 +67,18 @@ export function deleteAlertsByServerId(serverId: string): void {
 }
 
 function mapAlertRow(r: Record<string, unknown>): AlertRecord {
+  let details: Record<string, unknown> | null = null;
+  if (typeof r.details === 'string') {
+    try { details = JSON.parse(r.details); } catch { /* ignore */ }
+  }
   return {
     id: r.id as number,
     serverId: r.server_id as string,
     alertType: r.alert_type as string,
     value: r.value as number | null,
     threshold: r.threshold as number | null,
+    fingerprint: (r.fingerprint as string) ?? '',
+    details,
     createdAt: r.created_at as number,
     updatedAt: r.updated_at as number,
     suppressedUntil: r.suppressed_until as number | null,

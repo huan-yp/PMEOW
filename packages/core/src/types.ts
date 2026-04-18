@@ -100,7 +100,7 @@ export interface GpuCardReport {
   managedReservedMb: number;
   unmanagedPeakMb: number;
   effectiveFreeMb: number;
-  taskAllocations: { taskId: string; declaredVramMb: number }[];
+  taskAllocations: { taskId: string; declaredVramMb: number; pid?: number; user?: string; command?: string; actualVramMb?: number }[];
   userProcesses: { pid: number; user: string; vramMb: number }[];
   unknownProcesses: { pid: number; vramMb: number }[];
 }
@@ -222,12 +222,14 @@ export interface AlertRecord {
   alertType: string;
   value: number | null;
   threshold: number | null;
+  fingerprint: string;
+  details: Record<string, unknown> | null;
   createdAt: number;
   updatedAt: number;
   suppressedUntil: number | null;
 }
 
-export type AlertType = 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline';
+export type AlertType = 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline' | 'gpu_idle_memory';
 
 // Security types
 export type SecurityEventType = 'suspicious_process' | 'unowned_gpu' | 'high_gpu_utilization' | 'marked_safe' | 'unresolve';
@@ -300,6 +302,9 @@ export interface AppSettings {
   alertDiskThreshold: number;
   alertGpuTempThreshold: number;
   alertOfflineSeconds: number;
+  alertGpuIdleMemoryPercent: number;
+  alertGpuIdleUtilizationPercent: number;
+  alertGpuIdleDurationSeconds: number;
   alertDiskMountPoints: string[];
   alertSuppressDefaultDays: number;
   securityMiningKeywords: string[];
@@ -316,6 +321,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertDiskThreshold: 90,
   alertGpuTempThreshold: 85,
   alertOfflineSeconds: 30,
+  alertGpuIdleMemoryPercent: 20,
+  alertGpuIdleUtilizationPercent: 5,
+  alertGpuIdleDurationSeconds: 60,
   alertDiskMountPoints: ['/'],
   alertSuppressDefaultDays: 7,
   securityMiningKeywords: ['xmrig', 'ethminer', 'nbminer'],

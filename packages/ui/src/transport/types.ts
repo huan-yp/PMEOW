@@ -178,9 +178,11 @@ export interface Task {
 export interface Alert {
   id: number;
   serverId: string;
-  alertType: 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline';
+  alertType: 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline' | 'gpu_idle_memory';
   value: number | null;
   threshold: number | null;
+  fingerprint: string;
+  details: Record<string, unknown> | null;
   createdAt: number;
   updatedAt: number;
   suppressedUntil: number | null;
@@ -292,6 +294,8 @@ export interface AlertEvent {
   alertType: string;
   value: number;
   threshold: number;
+  fingerprint?: string;
+  details?: Record<string, unknown> | null;
 }
 
 // Snapshot with GPU (for history queries)
@@ -321,6 +325,9 @@ export interface Settings {
   alertMemoryThreshold: number;
   alertDiskThreshold: number;
   alertGpuTempThreshold: number;
+  alertGpuIdleMemoryPercent: number;
+  alertGpuIdleUtilizationPercent: number;
+  alertGpuIdleDurationSeconds: number;
   [key: string]: unknown;
 }
 
