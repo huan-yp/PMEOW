@@ -1,7 +1,8 @@
 """Background monitor for active task runtimes (in-memory version).
 
 Scans running tasks for PID disappearance and reserved tasks for attach
-timeout. Operates on the in-memory TaskQueue instead of SQLite.
+timeout.  Instead of mutating the TaskQueue directly, it pushes
+RuntimeObservation objects for the queue's tick() to consume.
 """
 
 from __future__ import annotations
@@ -9,10 +10,12 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import psutil
+
+from pmeow.models import TaskEndReason
+from pmeow.state.task_queue import RuntimeObservation
 
 if TYPE_CHECKING:
     from pmeow.state.task_queue import TaskQueue
@@ -28,12 +31,10 @@ class RuntimeMonitorLoop:
         task_queue: TaskQueue,
         poll_interval: float = 1.0,
         lock: threading.Lock | None = None,
-        on_task_removed: Callable[[str], None] | None = None,
     ) -> None:
         self._task_queue = task_queue
         self._poll_interval = poll_interval
         self._lock = lock
-        self._on_task_removed = on_task_removed
         self._stop = threading.Event()
 
     def stop(self) -> None:
@@ -48,43 +49,50 @@ class RuntimeMonitorLoop:
             self._stop.wait(timeout=self._poll_interval)
 
     def tick(self) -> list[str]:
-        """One monitoring pass. Returns list of removed task IDs."""
-        removed: list[str] = []
+        """One monitoring pass. Returns list of task IDs with new observations."""
+        observed: list[str] = []
         now = time.time()
 
         with self._guard():
             # Check running tasks for dead PIDs
             for task in list(self._task_queue.running.values()):
                 if task.pid is None:
-                    # No PID — should not happen in running state
-                    log.warning("task %s in running state with no PID, removing", task.id)
-                    self._task_queue.remove(task.id)
-                    removed.append(task.id)
+                    log.warning("task %s in running state with no PID", task.id)
+                    self._task_queue.push_runtime(RuntimeObservation(
+                        task_id=task.id,
+                        reason=TaskEndReason.running_no_pid,
+                        timestamp=now,
+                    ))
+                    observed.append(task.id)
                     continue
 
                 if not self._pid_alive(task.pid, task.pid_create_time):
                     log.info(
-                        "task %s: PID %d disappeared, removing from active queue",
+                        "task %s: PID %d disappeared",
                         task.id, task.pid,
                     )
-                    self._task_queue.remove(task.id)
-                    removed.append(task.id)
+                    self._task_queue.push_runtime(RuntimeObservation(
+                        task_id=task.id,
+                        reason=TaskEndReason.pid_disappeared,
+                        timestamp=now,
+                    ))
+                    observed.append(task.id)
 
             # Check reserved tasks for attach timeout
             for task in list(self._task_queue.reserved.values()):
                 if task.attach_deadline is not None and now > task.attach_deadline:
                     log.info(
-                        "task %s: attach deadline expired, removing from active queue",
+                        "task %s: attach deadline expired",
                         task.id,
                     )
-                    self._task_queue.remove(task.id)
-                    removed.append(task.id)
+                    self._task_queue.push_runtime(RuntimeObservation(
+                        task_id=task.id,
+                        reason=TaskEndReason.attach_timeout,
+                        timestamp=now,
+                    ))
+                    observed.append(task.id)
 
-        if self._on_task_removed:
-            for task_id in removed:
-                self._on_task_removed(task_id)
-
-        return removed
+        return observed
 
     def _guard(self):
         """Return the lock as a context manager, or a no-op."""

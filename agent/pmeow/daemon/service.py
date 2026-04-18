@@ -20,6 +20,7 @@ from pmeow.executor.logs import append_task_log_line, ensure_task_log, read_task
 from pmeow.executor.runner import TaskRunner
 from pmeow.models import (
     ScheduleEvaluation,
+    TaskEndReason,
     TaskLaunchMode,
     TaskRecord,
     TaskSpec,
@@ -28,7 +29,7 @@ from pmeow.models import (
 from pmeow.queue.history import GpuHistoryTracker
 from pmeow.queue.scheduler import QueueScheduler, TaskScheduleEvaluation, validate_request_possible
 from pmeow.reporter import Reporter
-from pmeow.state.task_queue import TaskQueue
+from pmeow.state.task_queue import CompletionObservation, TaskQueue
 from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
@@ -170,17 +171,21 @@ class DaemonService:
             # Record GPU history
             self.history.record(snapshot.timestamp, per_gpu)
 
-            # Reap completed tasks via runner
+            # Push completion observations from runner
+            now = time.time()
             for task_id, exit_code in self.runner.check_completed():
-                task = self.task_queue.get(task_id)
-                if task is None:
-                    continue
+                self.task_queue.push_completion(CompletionObservation(
+                    task_id=task_id,
+                    exit_code=exit_code,
+                    timestamp=now,
+                ))
                 self._append_task_message(
                     task_id,
                     self._format_finished_message(task_id, exit_code),
                 )
-                self.task_queue.remove(task_id)
-                log.info("task %s finished (exit=%d)", task_id, exit_code)
+
+            # Tick the state machine — consumes observations, reclaims reported terminals
+            self.task_queue.tick()
 
             # Schedule queued tasks
             queued_tasks = self.task_queue.list_queued()
@@ -284,7 +289,7 @@ class DaemonService:
                 return False
             if task.status == TaskStatus.running:
                 self.runner.cancel(task_id)
-            self.task_queue.remove(task_id)
+            self.task_queue.cancel(task_id)
             log.info("cancelled task %s", task_id)
             return True
 
@@ -336,7 +341,12 @@ class DaemonService:
             if task is None or task.launch_mode != TaskLaunchMode.attached_python:
                 return False
             self._append_task_message(task_id, self._format_finished_message(task_id, exit_code))
-            self.task_queue.remove(task_id)
+            self.task_queue.push_completion(CompletionObservation(
+                task_id=task_id,
+                exit_code=exit_code,
+                timestamp=time.time(),
+            ))
+            self.task_queue.tick()
             log.info("attached task %s finished (exit=%d)", task_id, exit_code)
             return True
 

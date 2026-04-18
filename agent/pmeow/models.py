@@ -63,21 +63,48 @@ def _serialize(obj: object) -> object:
 
 
 class TaskStatus(enum.Enum):
-    """Agent internal task states."""
+    """Agent internal task states (active + terminal)."""
     queued = "queued"
     reserved = "reserved"
     running = "running"
+    # Terminal states
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
+    abnormal = "abnormal"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in _TERMINAL_STATUSES
+
+
+_TERMINAL_STATUSES = frozenset({
+    TaskStatus.succeeded,
+    TaskStatus.failed,
+    TaskStatus.cancelled,
+    TaskStatus.abnormal,
+})
+
+
+class TaskEndReason(enum.Enum):
+    """Fine-grained reason for task termination."""
+    exit_zero = "exit_zero"
+    exit_nonzero = "exit_nonzero"
+    pid_disappeared = "pid_disappeared"
+    attach_timeout = "attach_timeout"
+    running_no_pid = "running_no_pid"
+    cancelled = "cancelled"
+    launch_failed = "launch_failed"
 
 
 class PublicTaskStatus(enum.Enum):
     """Protocol-visible task states (reported to Web)."""
     queued = "queued"
     running = "running"
-
-
-class ArchivedTaskStatus(enum.Enum):
-    """Web archive-only terminal state."""
-    ended = "ended"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
+    abnormal = "abnormal"
 
 
 class TaskLaunchMode(enum.Enum):
@@ -127,12 +154,18 @@ class TaskRecord:
     created_at: float = 0.0
     reserved_at: Optional[float] = None
     started_at: Optional[float] = None
+    finished_at: Optional[float] = None
 
     # Runtime
     pid: Optional[int] = None
     pid_create_time: Optional[float] = None
     assigned_gpus: Optional[list[int]] = None  # GPUs assigned by scheduler
     declared_vram_per_gpu: Optional[int] = None  # VRAM declared per GPU (MB)
+    exit_code: Optional[int] = None
+    end_reason: Optional[TaskEndReason] = None
+
+    # Report tracking — True once the terminal state has been included in a report
+    reported_since_terminal: bool = False
 
     # Schedule evaluation history
     schedule_history: deque[ScheduleEvaluation] = field(
@@ -377,7 +410,7 @@ class LocalUserRecord:
 class TaskInfo:
     """Serializable task info for protocol/report snapshots."""
     task_id: str
-    status: str  # "queued" | "running"
+    status: str  # "queued" | "running" | "succeeded" | "failed" | "cancelled" | "abnormal"
     command: str
     cwd: str
     user: str
@@ -388,7 +421,10 @@ class TaskInfo:
     priority: int
     created_at: float
     started_at: Optional[float] = None
+    finished_at: Optional[float] = None
     pid: Optional[int] = None
+    exit_code: Optional[int] = None
+    end_reason: Optional[str] = None
     assigned_gpus: Optional[list[int]] = None
     declared_vram_per_gpu: Optional[int] = None
     schedule_history: list[dict] = field(default_factory=list)
@@ -396,9 +432,10 @@ class TaskInfo:
 
 @dataclass
 class TaskQueueSnapshot:
-    """Serializable view of active tasks for protocol."""
+    """Serializable view of tasks for protocol."""
     queued: list[TaskInfo] = field(default_factory=list)
     running: list[TaskInfo] = field(default_factory=list)
+    recently_ended: list[TaskInfo] = field(default_factory=list)
 
 
 @dataclass
