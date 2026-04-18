@@ -4,23 +4,19 @@
   "version": "1.0.0",
   "license": "AGPL-3.0-only",
   "workspaces": [
-    "packages/*"
+    "apps/*",
+    "server/*"
   ],
   "description": "PMEOW - GPU cluster monitoring and scheduling platform for labs",
   "scripts": {
-    "dev:ui": "npm run build:core && npm run dev --workspace=@monitor/ui",
-    "dev:web": "npm run build:core && npm run dev --workspace=@monitor/web",
-    "start:dev": "npm run build:core && npm run start:dev --workspace=@monitor/web",
-    "build:core": "npm run build --workspace=@monitor/core",
-    "build:ui": "npm run build:core && npm run build --workspace=@monitor/ui",
-    "build:web": "npm run build:ui && npm run build --workspace=@monitor/web",
-    "build:web-cli": "npm run build:web && npm run build --workspace=pmeow-web",
-    "start:web": "npm run start --workspace=@monitor/web",
-    "test:core": "npm run test --workspace=@monitor/core",
-    "test:web": "npm run build:core && npm run test --workspace=@monitor/web",
-    "typecheck:core": "npm run typecheck --workspace=@monitor/core",
-    "typecheck:web": "npm run build:core && npm run typecheck --workspace=@monitor/web",
-    "build:apk": "npm run build:core && npm run cap:build --workspace=@monitor/ui"
+    "build:web": "node ./scripts/workspace-task.mjs build:web",
+    "run:web": "node ./scripts/run-web-server.mjs",
+    "dev:web": "node ./scripts/workspace-task.mjs dev:web",
+    "dev:mobile": "node ./scripts/workspace-task.mjs dev:mobile",
+    "run:mobile:android": "node ./scripts/workspace-task.mjs run:mobile:android",
+    "build:mobile:apk": "node ./scripts/workspace-task.mjs build:mobile:apk",
+    "check:web": "node ./scripts/workspace-task.mjs check:web",
+    "check:mobile": "node ./scripts/workspace-task.mjs check:mobile"
   },
   "engines": {
     "node": ">=20.0.0"

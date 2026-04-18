@@ -7,9 +7,10 @@ data/
 *.db-shm
 .env
 .DS_Store
-packages/ui/android/app/build/
-packages/ui/android/.gradle/
-packages/ui/android/app/src/main/assets/public/
+apps/web/android/app/build/
+apps/web/android/.gradle/
+apps/web/android/app/src/main/assets/public/
+apps/mobile/android/app/debug.keystore
 
 CLAUDE.md
 .claude/

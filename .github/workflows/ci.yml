@@ -27,26 +27,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Build core
-        run: pnpm build:core
+      - name: Check web stack
+        run: pnpm check:web
 
-      - name: Typecheck core
-        run: pnpm typecheck:core
-
-      - name: Test core
-        run: pnpm test:core
-
-      - name: Build UI
-        run: pnpm build:ui
-
-      - name: Build web
-        run: pnpm build:web
-
-      - name: Typecheck web
-        run: pnpm typecheck:web
-
-      - name: Test web
-        run: pnpm test:web
+      - name: Check mobile stack
+        run: pnpm check:mobile
 
   python:
     name: Python Agent checks

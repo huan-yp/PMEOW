@@ -1,0 +1,32 @@
+export const API_PATHS = {
+  login: '/api/login',
+  sessionMe: '/api/session/me',
+  servers: '/api/servers',
+  statuses: '/api/statuses',
+  latestMetrics: '/api/metrics/latest',
+  metricsHistory: (serverId: string) => `/api/metrics/${encodeURIComponent(serverId)}/history`,
+  tasks: '/api/tasks',
+  task: (taskId: string) => `/api/tasks/${encodeURIComponent(taskId)}`,
+  cancelTask: (serverId: string, taskId: string) => `/api/servers/${encodeURIComponent(serverId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+  setTaskPriority: (serverId: string, taskId: string) => `/api/servers/${encodeURIComponent(serverId)}/tasks/${encodeURIComponent(taskId)}/priority`,
+  alerts: '/api/alerts',
+  securityEvents: '/api/security/events',
+  settings: '/api/settings',
+  persons: '/api/persons',
+  person: (personId: string) => `/api/persons/${encodeURIComponent(personId)}`,
+  personBindings: (personId: string) => `/api/persons/${encodeURIComponent(personId)}/bindings`,
+  personTimeline: (personId: string) => `/api/persons/${encodeURIComponent(personId)}/timeline`,
+  personTasks: (personId: string) => `/api/persons/${encodeURIComponent(personId)}/tasks`,
+  personTokens: (personId: string) => `/api/persons/${encodeURIComponent(personId)}/tokens`,
+  revokePersonToken: (tokenId: number) => `/api/person-tokens/${tokenId}/revoke`,
+  rotatePersonToken: (tokenId: number, note?: string | null) => `/api/person-tokens/${tokenId}/rotate`,
+} as const;
+
+export const UI_SOCKET_EVENTS = {
+  metricsUpdate: 'metricsUpdate',
+  serverStatus: 'serverStatus',
+  taskEvent: 'taskEvent',
+  alertStateChange: 'alertStateChange',
+  securityEvent: 'securityEvent',
+  serversChanged: 'serversChanged',
+} as const;
