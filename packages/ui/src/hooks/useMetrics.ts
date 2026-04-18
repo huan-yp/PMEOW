@@ -92,14 +92,24 @@ export function useMetricsSubscription() {
         addToast(title, `${event.task.command}`, 'info');
       }),
 
-      transport.onAlert((alert) => {
-        const srv = useStore.getState().servers.find((s) => s.id === alert.serverId);
-        const nodeName = srv?.name ?? alert.serverId;
-        addToast(
-          `告警: ${ALERT_TYPE_LABELS[alert.alertType] ?? alert.alertType}`,
-          `节点 ${nodeName} - ${formatAlertToast(alert.alertType, alert.value, alert.threshold)}`,
-          'warning',
-        );
+      transport.onAlertStateChange((event) => {
+        if (event.toStatus === 'active') {
+          const srv = useStore.getState().servers.find((s) => s.id === event.alert.serverId);
+          const nodeName = srv?.name ?? event.alert.serverId;
+          addToast(
+            `告警: ${ALERT_TYPE_LABELS[event.alert.alertType] ?? event.alert.alertType}`,
+            `节点 ${nodeName} - ${formatAlertToast(event.alert.alertType, event.alert.value, event.alert.threshold)}`,
+            'warning',
+          );
+        } else if (event.fromStatus === 'active' && event.toStatus === 'resolved') {
+          const srv = useStore.getState().servers.find((s) => s.id === event.alert.serverId);
+          const nodeName = srv?.name ?? event.alert.serverId;
+          addToast(
+            `恢复: ${ALERT_TYPE_LABELS[event.alert.alertType] ?? event.alert.alertType}`,
+            `节点 ${nodeName} 告警已恢复`,
+            'success',
+          );
+        }
       }),
 
       transport.onSecurityEvent((event) => {

@@ -1,25 +1,25 @@
-import { UnifiedReport, AlertRecord, SecurityEventRecord, TaskInfo, AppSettings } from '../types.js';
+import { UnifiedReport, AlertStateChange, SecurityEventRecord, TaskInfo, AppSettings, AlertCandidate } from '../types.js';
 import { TaskEvent } from '../task/events.js';
 import { diffTasks } from './task-differ.js';
 import { SnapshotScheduler } from './snapshot-scheduler.js';
 import * as snapshotDb from '../db/snapshots.js';
 import * as taskDb from '../db/tasks.js';
 import * as settingsDb from '../db/settings.js';
-import { ThresholdAlertTracker } from '../alert/service.js';
+import * as alertDb from '../db/alerts.js';
+import { collectAlertCandidates } from '../alert/service.js';
 import { GpuIdleMemoryTracker } from '../alert/gpu-idle-tracker.js';
 import { processSecurityCheck } from '../security/pipeline.js';
 
 export interface IngestCallbacks {
   onMetricsUpdate?: (serverId: string, report: UnifiedReport) => void;
   onTaskEvent?: (event: TaskEvent) => void;
-  onAlert?: (alert: AlertRecord) => void;
+  onAlertStateChange?: (change: AlertStateChange) => void;
   onSecurityEvent?: (event: SecurityEventRecord) => void;
 }
 
 export class IngestPipeline {
   private latestReports = new Map<string, UnifiedReport>();
   private scheduler = new SnapshotScheduler();
-  private thresholdAlertTracker = new ThresholdAlertTracker();
   private gpuIdleTracker = new GpuIdleMemoryTracker();
   
   constructor(private callbacks: IngestCallbacks = {}) {}
@@ -45,7 +45,6 @@ export class IngestPipeline {
     const diffs = diffTasks(serverId, prevTasks, currTasks, recentlyEnded);
     
     for (const diff of diffs) {
-      // DB Ops
       if (diff.eventType === 'ended') {
         const finishedAt = diff.task.finishedAt ?? nowSeconds;
         taskDb.endTask(diff.task.taskId, finishedAt, diff.task.exitCode ?? null, diff.task.status, diff.task.endReason ?? null);
@@ -53,7 +52,6 @@ export class IngestPipeline {
         taskDb.upsertTask(serverId, diff.task);
       }
 
-      // Callback
       if (this.callbacks.onTaskEvent) {
         this.callbacks.onTaskEvent({
           serverId,
@@ -63,19 +61,15 @@ export class IngestPipeline {
       }
     }
 
-    // 4. Alert check
-    const alerts = this.thresholdAlertTracker.check(serverId, report, settings);
-    for (const alert of alerts) {
-      if (this.callbacks.onAlert) {
-        this.callbacks.onAlert(alert);
-      }
-    }
+    // 4. Alert closed-loop: collect all anomaly candidates, then reconcile
+    const thresholdCandidates = collectAlertCandidates(report, settings);
+    const gpuIdleCandidates = this.gpuIdleTracker.check(serverId, report, settings);
+    const allCandidates: AlertCandidate[] = [...thresholdCandidates, ...gpuIdleCandidates];
 
-    // 4b. GPU idle-memory alert check
-    const gpuIdleAlerts = this.gpuIdleTracker.check(serverId, report, settings);
-    for (const alert of gpuIdleAlerts) {
-      if (this.callbacks.onAlert) {
-        this.callbacks.onAlert(alert);
+    const alertChanges = alertDb.reconcileAlerts(serverId, allCandidates);
+    for (const change of alertChanges) {
+      if (this.callbacks.onAlertStateChange) {
+        this.callbacks.onAlertStateChange(change);
       }
     }
 

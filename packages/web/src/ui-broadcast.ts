@@ -1,10 +1,10 @@
 import type { Namespace } from "socket.io";
-import type { AlertRecord, SecurityEventRecord, TaskEvent, UnifiedReport } from "@monitor/core";
+import type { AlertStateChange, SecurityEventRecord, TaskEvent, UnifiedReport } from "@monitor/core";
 
 export interface UIBroadcast {
   metricsUpdate(serverId: string, report: UnifiedReport): void;
   taskEvent(event: TaskEvent): void;
-  alert(alert: AlertRecord): void;
+  alertStateChange(change: AlertStateChange): void;
   securityEvent(event: SecurityEventRecord): void;
   serverStatus(data: { serverId: string; status: string; lastSeenAt: number; version?: string }): void;
   serversChanged(): void;
@@ -18,14 +18,11 @@ export function createUIBroadcast(namespace: Namespace): UIBroadcast {
     taskEvent(event) {
       namespace.emit("taskEvent", { serverId: event.serverId, eventType: event.eventType, task: event.task });
     },
-    alert(alert) {
-      namespace.emit("alert", {
-        serverId: alert.serverId,
-        alertType: alert.alertType,
-        value: alert.value,
-        threshold: alert.threshold,
-        fingerprint: alert.fingerprint,
-        details: alert.details,
+    alertStateChange(change) {
+      namespace.emit("alertStateChange", {
+        alert: change.alert,
+        fromStatus: change.fromStatus,
+        toStatus: change.toStatus,
       });
     },
     securityEvent(event) {

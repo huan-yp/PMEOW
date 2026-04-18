@@ -129,11 +129,21 @@ function initSchema(db: Database.Database): void {
       threshold REAL,
       fingerprint TEXT NOT NULL DEFAULT '',
       details TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      suppressed_until INTEGER,
       UNIQUE (server_id, alert_type, fingerprint)
     );
+
+    CREATE TABLE IF NOT EXISTS alert_transitions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alert_id INTEGER NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+      from_status TEXT NOT NULL,
+      to_status TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'detection',
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_alert_transitions_alert ON alert_transitions (alert_id, created_at);
 
     CREATE TABLE IF NOT EXISTS security_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

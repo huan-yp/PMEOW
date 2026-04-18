@@ -1,22 +1,14 @@
 import { Router } from "express";
-import { getAlerts, suppressAlert, unsuppressAlert, batchSuppressAlerts, batchUnsuppressAlerts } from "@monitor/core";
+import { getAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts } from "@monitor/core";
+import type { AlertStatus } from "@monitor/core";
 
 export function alertRoutes(): Router {
   const router = Router();
   
   router.get("/alerts", (req, res) => {
     const serverId = req.query.serverId as string | undefined;
-    let alerts = getAlerts(serverId);
-
-    // Filter by suppressed status
-    const suppressed = req.query.suppressed as string | undefined;
-    if (suppressed === 'true') {
-      const now = Date.now();
-      alerts = alerts.filter(a => a.suppressedUntil != null && a.suppressedUntil > now);
-    } else if (suppressed === 'false') {
-      const now = Date.now();
-      alerts = alerts.filter(a => a.suppressedUntil == null || a.suppressedUntil <= now);
-    }
+    const status = req.query.status as AlertStatus | undefined;
+    let alerts = getAlerts({ serverId, status });
 
     // Pagination
     const offset = Number(req.query.offset) || 0;
@@ -30,30 +22,30 @@ export function alertRoutes(): Router {
     res.json(alerts);
   });
   
-  router.post("/alerts/:id/suppress", (req, res) => {
-    const { until } = req.body;
-    if (!until) { res.status(400).json({ error: "until required" }); return; }
-    suppressAlert(Number(req.params.id), until);
-    res.json({ ok: true });
+  router.post("/alerts/:id/silence", (req, res) => {
+    const change = silenceAlert(Number(req.params.id));
+    if (!change) { res.status(404).json({ error: "not found or already silenced" }); return; }
+    res.json({ ok: true, change });
   });
   
-  router.post("/alerts/:id/unsuppress", (req, res) => {
-    unsuppressAlert(Number(req.params.id));
-    res.json({ ok: true });
+  router.post("/alerts/:id/unsilence", (req, res) => {
+    const change = unsilenceAlert(Number(req.params.id));
+    if (!change) { res.status(404).json({ error: "not found or not silenced" }); return; }
+    res.json({ ok: true, change });
   });
 
-  router.post("/alerts/batch/suppress", (req, res) => {
-    const { ids, until } = req.body;
-    if (!Array.isArray(ids) || !until) { res.status(400).json({ error: "ids and until required" }); return; }
-    batchSuppressAlerts(ids.map(Number), until);
-    res.json({ ok: true });
-  });
-
-  router.post("/alerts/batch/unsuppress", (req, res) => {
+  router.post("/alerts/batch/silence", (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids)) { res.status(400).json({ error: "ids required" }); return; }
-    batchUnsuppressAlerts(ids.map(Number));
-    res.json({ ok: true });
+    const changes = batchSilenceAlerts(ids.map(Number));
+    res.json({ ok: true, changes });
+  });
+
+  router.post("/alerts/batch/unsilence", (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids)) { res.status(400).json({ error: "ids required" }); return; }
+    const changes = batchUnsilenceAlerts(ids.map(Number));
+    res.json({ ok: true, changes });
   });
   
   return router;

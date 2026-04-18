@@ -174,7 +174,9 @@ export interface Task {
   endReason: string | null;
 }
 
-// Alert (from spec §3.1 alerts table)
+// Alert (three-state model)
+export type AlertStatus = 'active' | 'resolved' | 'silenced';
+
 export interface Alert {
   id: number;
   serverId: string;
@@ -183,15 +185,14 @@ export interface Alert {
   threshold: number | null;
   fingerprint: string;
   details: Record<string, unknown> | null;
+  status: AlertStatus;
   createdAt: number;
   updatedAt: number;
-  suppressedUntil: number | null;
 }
 
 export interface AlertQuery {
   serverId?: string;
-  /** true = only suppressed; false = only active; undefined = all */
-  suppressed?: boolean;
+  status?: AlertStatus;
   limit?: number;
   offset?: number;
 }
@@ -288,14 +289,11 @@ export interface TaskEvent {
   task: TaskInfo;
 }
 
-// Alert Event (pushed via WebSocket)
-export interface AlertEvent {
-  serverId: string;
-  alertType: string;
-  value: number;
-  threshold: number;
-  fingerprint?: string;
-  details?: Record<string, unknown> | null;
+// Alert State Change Event (pushed via WebSocket)
+export interface AlertStateChangeEvent {
+  alert: Alert;
+  fromStatus: AlertStatus | null;
+  toStatus: AlertStatus;
 }
 
 // Snapshot with GPU (for history queries)
@@ -350,7 +348,7 @@ export interface TransportAdapter {
   onMetricsUpdate(cb: (data: { serverId: string; snapshot: UnifiedReport }) => void): () => void;
   onServerStatus(cb: (status: ServerStatus) => void): () => void;
   onTaskEvent(cb: (event: TaskEvent) => void): () => void;
-  onAlert(cb: (alert: AlertEvent) => void): () => void;
+  onAlertStateChange(cb: (event: AlertStateChangeEvent) => void): () => void;
   onSecurityEvent(cb: (event: SecurityEvent) => void): () => void;
   onServersChanged(cb: () => void): () => void;
 
@@ -388,10 +386,10 @@ export interface TransportAdapter {
 
   // Alerts (spec §8.7)
   getAlerts(query?: AlertQuery): Promise<Alert[]>;
-  suppressAlert(id: number, until: number): Promise<void>;
-  unsuppressAlert(id: number): Promise<void>;
-  batchSuppressAlerts(ids: number[], until: number): Promise<void>;
-  batchUnsuppressAlerts(ids: number[]): Promise<void>;
+  silenceAlert(id: number): Promise<void>;
+  unsilenceAlert(id: number): Promise<void>;
+  batchSilenceAlerts(ids: number[]): Promise<void>;
+  batchUnsilenceAlerts(ids: number[]): Promise<void>;
 
   // Security (spec §8.8)
   getSecurityEvents(query?: { serverId?: string; resolved?: boolean }): Promise<SecurityEvent[]>;

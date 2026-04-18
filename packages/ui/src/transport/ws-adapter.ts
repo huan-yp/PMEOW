@@ -2,7 +2,7 @@ import { io, Socket } from 'socket.io-client';
 import type {
   TransportAdapter, Server, ServerStatus, UnifiedReport, Task, Alert, AlertQuery,
   SecurityEvent, Person, PersonBinding, PersonBindingCandidate, PersonTimelinePoint, SnapshotWithGpu,
-  GpuOverviewResponse, Settings, TaskEvent, AlertEvent, CreatePersonWizardInput, CreatePersonWizardResult,
+  GpuOverviewResponse, Settings, TaskEvent, AlertStateChangeEvent, CreatePersonWizardInput, CreatePersonWizardResult,
 } from './types.js';
 
 export class WebSocketAdapter implements TransportAdapter {
@@ -74,9 +74,9 @@ export class WebSocketAdapter implements TransportAdapter {
     return () => { this.socket?.off('taskEvent', cb); };
   }
 
-  onAlert(cb: (alert: AlertEvent) => void): () => void {
-    this.socket?.on('alert', cb);
-    return () => { this.socket?.off('alert', cb); };
+  onAlertStateChange(cb: (event: AlertStateChangeEvent) => void): () => void {
+    this.socket?.on('alertStateChange', cb);
+    return () => { this.socket?.off('alertStateChange', cb); };
   }
 
   onSecurityEvent(cb: (event: SecurityEvent) => void): () => void {
@@ -214,22 +214,22 @@ export class WebSocketAdapter implements TransportAdapter {
   async getAlerts(query: AlertQuery = {}): Promise<Alert[]> {
     const params = new URLSearchParams();
     if (query.serverId) params.set('serverId', query.serverId);
-    if (query.suppressed !== undefined) params.set('suppressed', String(query.suppressed));
+    if (query.status) params.set('status', query.status);
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     return this.fetch(`/api/alerts?${params}`);
   }
-  async suppressAlert(id: number, until: number): Promise<void> {
-    await this.fetch(`/api/alerts/${id}/suppress`, { method: 'POST', body: JSON.stringify({ until }) });
+  async silenceAlert(id: number): Promise<void> {
+    await this.fetch(`/api/alerts/${id}/silence`, { method: 'POST' });
   }
-  async unsuppressAlert(id: number): Promise<void> {
-    await this.fetch(`/api/alerts/${id}/unsuppress`, { method: 'POST' });
+  async unsilenceAlert(id: number): Promise<void> {
+    await this.fetch(`/api/alerts/${id}/unsilence`, { method: 'POST' });
   }
-  async batchSuppressAlerts(ids: number[], until: number): Promise<void> {
-    await this.fetch('/api/alerts/batch/suppress', { method: 'POST', body: JSON.stringify({ ids, until }) });
+  async batchSilenceAlerts(ids: number[]): Promise<void> {
+    await this.fetch('/api/alerts/batch/silence', { method: 'POST', body: JSON.stringify({ ids }) });
   }
-  async batchUnsuppressAlerts(ids: number[]): Promise<void> {
-    await this.fetch('/api/alerts/batch/unsuppress', { method: 'POST', body: JSON.stringify({ ids }) });
+  async batchUnsilenceAlerts(ids: number[]): Promise<void> {
+    await this.fetch('/api/alerts/batch/unsilence', { method: 'POST', body: JSON.stringify({ ids }) });
   }
 
   // Security

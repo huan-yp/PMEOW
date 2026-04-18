@@ -1,17 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTransport } from '../transport/TransportProvider.js';
-import type { Alert, AlertQuery } from '../transport/types.js';
+import type { Alert, AlertQuery, AlertStatus } from '../transport/types.js';
 
 const PAGE_SIZE = 50;
 
-type Tab = 'all' | 'active' | 'suppressed';
+type Tab = 'all' | 'active' | 'resolved' | 'silenced';
 type SortCol = 'updatedAt' | 'serverId' | 'alertType' | 'value';
 
-const TAB_LABELS: Record<Tab, string> = { all: '全部', active: '活跃', suppressed: '已忽略' };
+const TAB_LABELS: Record<Tab, string> = { all: '全部', active: '活跃', resolved: '已恢复', silenced: '已静默' };
 const EMPTY_LABELS: Record<Tab, string> = {
   all: '暂无告警记录',
   active: '暂无活跃告警',
-  suppressed: '暂无已忽略告警',
+  resolved: '暂无已恢复告警',
+  silenced: '暂无已静默告警',
+};
+
+const STATUS_LABELS: Record<AlertStatus, string> = { active: '告警中', resolved: '已恢复', silenced: '已静默' };
+const STATUS_COLORS: Record<AlertStatus, string> = {
+  active: 'text-accent-yellow',
+  resolved: 'text-green-400',
+  silenced: 'text-slate-500',
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -61,7 +69,7 @@ function formatAlertThreshold(alert: Alert): string {
 }
 
 function getAlertStatusLabel(alert: Alert): string {
-  return alert.alertType === 'offline' ? '离线中' : '告警中';
+  return STATUS_LABELS[alert.status] ?? alert.status;
 }
 
 function toDisplayDate(ts: number): Date {
@@ -92,10 +100,10 @@ export default function Alerts() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [suppressingId, setSuppressingId] = useState<number | null>(null);
-  const [unsuppressingId, setUnsuppressingId] = useState<number | null>(null);
-  const [batchSuppressingDays, setBatchSuppressingDays] = useState<number | null>(null);
-  const [batchUnsuppressing, setBatchUnsuppressing] = useState(false);
+  const [silencingId, setSilencingId] = useState<number | null>(null);
+  const [unsilencingId, setUnsilencingId] = useState<number | null>(null);
+  const [batchSilencing, setBatchSilencing] = useState(false);
+  const [batchUnsilencing, setBatchUnsilencing] = useState(false);
 
   const loadRef = useRef<() => Promise<void>>();
 
@@ -103,8 +111,7 @@ export default function Alerts() {
     setLoading(true);
     try {
       const query: AlertQuery = { limit: PAGE_SIZE, offset };
-      if (tab === 'active') query.suppressed = false;
-      else if (tab === 'suppressed') query.suppressed = true;
+      if (tab !== 'all') query.status = tab as AlertStatus;
       const data = await transport.getAlerts(query);
       setAlerts(data);
     } catch {
@@ -117,9 +124,9 @@ export default function Alerts() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Real-time: reload when a new alert arrives
+  // Real-time: reload when alert state changes
   useEffect(() => {
-    const unsub = transport.onAlert(() => { loadRef.current?.(); });
+    const unsub = transport.onAlertStateChange(() => { loadRef.current?.(); });
     return unsub;
   }, [transport]);
 
@@ -139,58 +146,55 @@ export default function Alerts() {
     }
   };
 
-  const daysToUntil = (days: number) => Math.floor(Date.now() / 1000) + days * 86400;
-
-  const handleSuppress = async (id: number, days: number) => {
-    setSuppressingId(id);
+  const handleSilence = async (id: number) => {
+    setSilencingId(id);
     try {
-      await transport.suppressAlert(id, daysToUntil(days));
+      await transport.silenceAlert(id);
       await load();
     } catch {
       // ignore
     }
-    setSuppressingId(null);
+    setSilencingId(null);
   };
 
-  const handleUnsuppress = async (id: number) => {
-    setUnsuppressingId(id);
+  const handleUnsilence = async (id: number) => {
+    setUnsilencingId(id);
     try {
-      await transport.unsuppressAlert(id);
+      await transport.unsilenceAlert(id);
       await load();
     } catch {
       // ignore
     }
-    setUnsuppressingId(null);
+    setUnsilencingId(null);
   };
 
-  const handleBatchSuppress = async (days: number) => {
+  const handleBatchSilence = async () => {
     if (selectedIds.size === 0) return;
-    setBatchSuppressingDays(days);
+    setBatchSilencing(true);
     try {
-      await transport.batchSuppressAlerts([...selectedIds], daysToUntil(days));
+      await transport.batchSilenceAlerts([...selectedIds]);
       setSelectedIds(new Set());
       await load();
     } catch {
       // ignore
     }
-    setBatchSuppressingDays(null);
+    setBatchSilencing(false);
   };
 
-  const handleBatchUnsuppress = async () => {
+  const handleBatchUnsilence = async () => {
     if (selectedIds.size === 0) return;
-    setBatchUnsuppressing(true);
+    setBatchUnsilencing(true);
     try {
-      await transport.batchUnsuppressAlerts([...selectedIds]);
+      await transport.batchUnsilenceAlerts([...selectedIds]);
       setSelectedIds(new Set());
       await load();
     } catch {
       // ignore
     }
-    setBatchUnsuppressing(false);
+    setBatchUnsilencing(false);
   };
 
   const formatTime = (ts: number) => toDisplayDate(ts).toLocaleString('zh-CN');
-  const now = Date.now() / 1000;
 
   // Client-side search filter
   const q = searchQuery.trim().toLowerCase();
@@ -278,24 +282,19 @@ export default function Alerts() {
         <div className="flex items-center gap-3 px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-sm">
           <span className="text-slate-400">已选 {selectedIds.size} 条</span>
           <span className="text-slate-600">|</span>
-          <span className="text-slate-500">批量忽略:</span>
-          {[1, 3, 7, 30].map((d) => (
-            <button
-              key={d}
-              onClick={() => handleBatchSuppress(d)}
-              disabled={batchSuppressingDays !== null || batchUnsuppressing}
-              className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
-            >
-              {d}天
-            </button>
-          ))}
-          <span className="text-slate-600">|</span>
           <button
-            onClick={handleBatchUnsuppress}
-            disabled={batchSuppressingDays !== null || batchUnsuppressing}
+            onClick={handleBatchSilence}
+            disabled={batchSilencing || batchUnsilencing}
             className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
           >
-            批量取消忽略
+            批量静默
+          </button>
+          <button
+            onClick={handleBatchUnsilence}
+            disabled={batchSilencing || batchUnsilencing}
+            className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
+          >
+            批量取消静默
           </button>
         </div>
       )}
@@ -344,13 +343,12 @@ export default function Alerts() {
             </thead>
             <tbody>
               {sorted.map((a) => {
-                const isSuppressed = a.suppressedUntil != null && a.suppressedUntil > now;
                 const isSelected = selectedIds.has(a.id);
                 return (
                   <tr
                     key={a.id}
                     className={`border-b border-dark-border/50 ${
-                      isSuppressed ? 'opacity-60' : ''
+                      a.status === 'silenced' ? 'opacity-60' : ''
                     } ${isSelected ? 'bg-dark-hover/30' : ''}`}
                   >
                     <td className="p-3 pr-2">
@@ -374,38 +372,29 @@ export default function Alerts() {
                     </td>
                     <td className="p-3 pr-4 font-mono text-slate-500">{formatAlertThreshold(a)}</td>
                     <td className="p-3 pr-4">
-                      {isSuppressed ? (
-                        <span className="text-xs text-slate-500">
-                          已忽略至 {formatTime(a.suppressedUntil!)}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-accent-yellow">{getAlertStatusLabel(a)}</span>
-                      )}
+                      <span className={`text-xs ${STATUS_COLORS[a.status]}`}>
+                        {getAlertStatusLabel(a)}
+                      </span>
                     </td>
                     <td className="p-3">
-                      {isSuppressed ? (
+                      {a.status === 'silenced' ? (
                         <button
-                          onClick={() => handleUnsuppress(a.id)}
-                          disabled={unsuppressingId === a.id}
-                          aria-label={`取消忽略 ${a.id}`}
+                          onClick={() => handleUnsilence(a.id)}
+                          disabled={unsilencingId === a.id}
+                          aria-label={`取消静默 ${a.id}`}
                           className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
                         >
-                          取消忽略
+                          取消静默
                         </button>
-                      ) : (
-                        <div className="flex gap-1">
-                          {[1, 3, 7, 30].map((d) => (
-                            <button
-                              key={d}
-                              onClick={() => handleSuppress(a.id, d)}
-                              disabled={suppressingId === a.id}
-                              className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
-                            >
-                              {d}天
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      ) : a.status === 'active' ? (
+                        <button
+                          onClick={() => handleSilence(a.id)}
+                          disabled={silencingId === a.id}
+                          className="px-2 py-0.5 text-xs border border-dark-border text-slate-400 rounded hover:bg-dark-hover hover:text-slate-200 transition-colors disabled:opacity-50"
+                        >
+                          静默
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );

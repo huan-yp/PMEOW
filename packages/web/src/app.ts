@@ -11,8 +11,9 @@ import {
   IngestPipeline,
   SnapshotScheduler,
   getSettings,
-  checkOffline,
-  type AlertRecord,
+  collectOfflineCandidates,
+  reconcileAlerts,
+  type AlertStateChange,
   type SecurityEventRecord,
   type TaskEvent,
   type UnifiedReport,
@@ -87,7 +88,7 @@ export function createWebRuntime(): WebRuntime {
   const pipeline = new IngestPipeline({
     onMetricsUpdate: (serverId, report) => broadcast.metricsUpdate(serverId, report),
     onTaskEvent: (event) => broadcast.taskEvent(event),
-    onAlert: (alert) => broadcast.alert(alert),
+    onAlertStateChange: (change) => broadcast.alertStateChange(change),
     onSecurityEvent: (event) => broadcast.securityEvent(event),
   });
   
@@ -157,9 +158,12 @@ export function createWebRuntime(): WebRuntime {
     
     offlineTimer = setInterval(() => {
       const settings = getSettings();
-      const alerts = checkOffline(registry, settings);
-      for (const alert of alerts) {
-        broadcast.alert(alert);
+      const offlineResults = collectOfflineCandidates(registry, settings);
+      for (const { serverId, candidates } of offlineResults) {
+        const changes = reconcileAlerts(serverId, candidates);
+        for (const change of changes) {
+          broadcast.alertStateChange(change);
+        }
       }
     }, 10_000);
     

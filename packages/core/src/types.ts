@@ -216,6 +216,8 @@ export interface TaskRecord {
   endReason: string | null;
 }
 
+export type AlertStatus = 'active' | 'resolved' | 'silenced';
+
 export interface AlertRecord {
   id: number;
   serverId: string;
@@ -224,12 +226,34 @@ export interface AlertRecord {
   threshold: number | null;
   fingerprint: string;
   details: Record<string, unknown> | null;
+  status: AlertStatus;
   createdAt: number;
   updatedAt: number;
-  suppressedUntil: number | null;
+}
+
+export interface AlertTransition {
+  alertId: number;
+  fromStatus: AlertStatus;
+  toStatus: AlertStatus;
+  source: 'detection' | 'user_action';
+  createdAt: number;
+}
+
+export interface AlertStateChange {
+  alert: AlertRecord;
+  fromStatus: AlertStatus;
+  toStatus: AlertStatus;
 }
 
 export type AlertType = 'cpu' | 'memory' | 'disk' | 'gpu_temp' | 'offline' | 'gpu_idle_memory';
+
+export interface AlertCandidate {
+  alertType: AlertType;
+  value: number;
+  threshold: number;
+  fingerprint: string;
+  details: Record<string, unknown> | null;
+}
 
 // Security types
 export type SecurityEventType = 'suspicious_process' | 'unowned_gpu' | 'high_gpu_utilization' | 'marked_safe' | 'unresolve';

@@ -7,7 +7,7 @@ export { getAllServers, getServerById, getServerByAgentId, createServer, updateS
 export { saveSnapshot, deleteOldRecentSnapshots, getSnapshotHistory, getLatestSnapshot } from "./db/snapshots.js";
 export type { SnapshotWithGpus } from "./db/snapshots.js";
 export { upsertTask, endTask, getTasks, countTasks, getTaskById, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
-export { upsertAlert, getAlerts, suppressAlert, unsuppressAlert, batchSuppressAlerts, batchUnsuppressAlerts, deleteAlertsByServerId } from "./db/alerts.js";
+export { getAlerts, getActiveAlerts, getAlertByKey, reconcileAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts, deleteAlertsByServerId } from "./db/alerts.js";
 export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "./db/security-events.js";
 export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";
 export { createPerson, getPersonById, listPersons, updatePerson } from "./db/persons.js";
@@ -36,7 +36,7 @@ export { listTasks, getTask, cancelTask, setPriority } from "./task/service.js";
 export type { TaskEvent, TaskEventType } from "./task/events.js";
 
 // Alert
-export { ThresholdAlertTracker, checkOffline } from "./alert/service.js";
+export { collectAlertCandidates, collectOfflineCandidates } from "./alert/service.js";
 
 // Security
 export { analyzeReport } from "./security/analyzer.js";
