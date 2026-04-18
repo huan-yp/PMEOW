@@ -35,10 +35,12 @@
 ## 开发文档
 
 - [developer/README.md](developer/README.md) - 开发文档入口与阅读建议
-- [developer/architecture.md](developer/architecture.md) - 当前架构、运行边界与关键数据流
-- [developer/local-development.md](developer/local-development.md) - 本地开发、构建、发版与环境配置
-- [developer/protocol-and-api.md](developer/protocol-and-api.md) - REST、Socket.IO、Agent 协议与共享术语
-- [developer/testing-and-debugging.md](developer/testing-and-debugging.md) - 测试入口、隔离约束与调试方法
+- [developer/Web 模块架构.md](developer/Web%20%E6%A8%A1%E5%9D%97%E6%9E%B6%E6%9E%84.md) - Web 模块边界和页面装配
+- [developer/Web 数据摄入链路.md](developer/Web%20%E6%95%B0%E6%8D%AE%E6%91%84%E5%85%A5%E9%93%BE%E8%B7%AF.md) - Web 数据获取与实时消费链路
+- [developer/UI 模块架构.md](developer/UI%20%E6%A8%A1%E5%9D%97%E6%9E%B6%E6%9E%84.md) - UI 共享层与组件组织
+- [developer/Agent 模块架构.md](developer/Agent%20%E6%A8%A1%E5%9D%97%E6%9E%B6%E6%9E%84.md) - Agent 模块结构与运行方式
+- [developer/任务事件模型.md](developer/%E4%BB%BB%E5%8A%A1%E4%BA%8B%E4%BB%B6%E6%A8%A1%E5%9E%8B.md) - 任务事件定义与状态流转
+- [developer/告警事件处理.md](developer/%E5%91%8A%E8%AD%A6%E4%BA%8B%E4%BB%B6%E5%A4%84%E7%90%86.md) - 告警与安全事件处理边界
 
 ## 如果文档和代码冲突
 
