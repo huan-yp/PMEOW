@@ -27,6 +27,18 @@ pnpm run:web
 
 首次访问时会要求设置密码，**请设置强密码**。
 
+### Web 开发模式
+
+```bash
+npm run dev:web
+```
+
+该命令会先构建共享包，再同时启动前后端开发进程：
+
+- `apps/web` 使用 Vite，前端改动会直接热更新。
+- `server/runtime` 使用 `tsx watch`，后端改动会自动重启进程。
+- `server/contracts`、`apps/common`、`server/core` 会进入 watch；共享包产物变化后，前后端开发进程会自动吃到最新结果。
+
 ### 接入计算节点
 
 在节点上安装 `pmeow-agent`，设置环境变量 `PMEOW_SERVER_URL` 为 Web 服务端地址（例如 `http://localhost:17200`），再执行 `pmeow-agent run`（前台运行）。

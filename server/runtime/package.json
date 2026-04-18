@@ -5,8 +5,8 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start:dev": "tsx watch src/server.ts --debug-reports",
+    "dev": "tsx watch --include ../core/dist/**/*.js --include ../core/dist/**/*.d.ts --include ../contracts/dist/**/*.js --include ../contracts/dist/**/*.d.ts src/server.ts",
+    "start:dev": "tsx watch --include ../core/dist/**/*.js --include ../core/dist/**/*.d.ts --include ../contracts/dist/**/*.js --include ../contracts/dist/**/*.d.ts src/server.ts --debug-reports",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "vitest run",

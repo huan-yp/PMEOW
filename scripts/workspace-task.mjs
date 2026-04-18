@@ -83,9 +83,12 @@ async function runDevWeb() {
   await runWorkspaceScript('@monitor/app-common', 'build');
   await runWorkspaceScript('@monitor/core', 'build');
 
+  const contractsChild = spawnCommand(['run', 'dev', '--workspace=@monitor/server-contracts']);
+  const commonChild = spawnCommand(['run', 'dev', '--workspace=@monitor/app-common']);
+  const coreChild = spawnCommand(['run', 'dev', '--workspace=@monitor/core']);
   const runtimeChild = spawnCommand(['run', 'dev', '--workspace=@monitor/web']);
   const uiChild = spawnCommand(['run', 'dev', '--workspace=@monitor/ui']);
-  const children = [runtimeChild, uiChild];
+  const children = [contractsChild, commonChild, coreChild, runtimeChild, uiChild];
   let shuttingDown = false;
 
   const terminateChildren = (signal = 'SIGTERM') => {
