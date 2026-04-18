@@ -204,6 +204,9 @@ class GpuTaskAllocation:
     gpu_index: int
     declared_vram_mb: int
     actual_vram_mb: float
+    pid: Optional[int] = None
+    user: Optional[str] = None
+    command: Optional[str] = None
 
 
 @dataclass
@@ -251,6 +254,10 @@ class GpuAllocationSummary:
 class GpuCardTaskReport:
     task_id: str
     declared_vram_mb: int = field(metadata={"alias": "declaredVramMb"})
+    pid: Optional[int] = None
+    user: Optional[str] = None
+    command: Optional[str] = None
+    actual_vram_mb: Optional[float] = field(default=None, metadata={"alias": "actualVramMb"})
 
 
 @dataclass

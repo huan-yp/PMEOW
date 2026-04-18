@@ -146,11 +146,16 @@ def attribute_gpu_processes(
         task = pid_to_task.get(proc.pid)
 
         if task is not None:
+            username_for_task = _get_process_username(proc.pid)
+            cmdline_for_task = _read_proc_cmdline(proc.pid) or ""
             task_allocs[gpu_idx].append(GpuTaskAllocation(
                 task_id=task.id,
                 gpu_index=gpu_idx,
                 declared_vram_mb=task.require_vram_mb,
                 actual_vram_mb=proc.used_memory_mb,
+                pid=proc.pid,
+                user=username_for_task,
+                command=cmdline_for_task,
             ))
             continue
 
