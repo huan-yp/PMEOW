@@ -1,5 +1,5 @@
 {
-  "name": "@monitor/app-common",
+  "name": "@pmeow/app-common",
   "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -19,7 +19,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@monitor/server-contracts": "file:../../server/contracts"
+    "@pmeow/server-contracts": "file:../../server/contracts"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

@@ -1,4 +1,4 @@
-import type { ServerStatus, UnifiedReport } from '@monitor/app-common';
+import type { ServerStatus, UnifiedReport } from '@pmeow/app-common';
 import { normalizeTimestamp } from '../app/formatters';
 import { MobileRealtimeClient } from '../lib/realtime';
 import {

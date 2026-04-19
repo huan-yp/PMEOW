@@ -6,7 +6,7 @@ import {
   type ServerStatus,
   type TaskEvent,
   type UnifiedReport,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 
 interface MobileRealtimeCallbacks {
   onConnect?: () => void;

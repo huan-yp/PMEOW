@@ -16,7 +16,7 @@ import {
   type SecurityEventRecord,
   type TaskEvent,
   type UnifiedReport,
-} from "@monitor/core";
+} from "@pmeow/core";
 import { loginHandler, authMiddleware, socketAuthMiddleware } from "./auth.js";
 import {
   createAgentNamespace,

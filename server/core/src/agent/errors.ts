@@ -1,2 +1,2 @@
-export { AgentCommandError, isAgentCommandError } from '@monitor/server-contracts';
-export type { AgentCommandErrorCode } from '@monitor/server-contracts';
+export { AgentCommandError, isAgentCommandError } from '@pmeow/server-contracts';
+export type { AgentCommandErrorCode } from '@pmeow/server-contracts';

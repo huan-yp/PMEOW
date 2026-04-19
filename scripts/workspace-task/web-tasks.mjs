@@ -1,32 +1,32 @@
 import { pnpmCommand, runWorkspaceScript, spawnCommand, waitForManagedChildren } from './process-utils.mjs';
 
 export async function runBuildWeb() {
-  await runWorkspaceScript('@monitor/server-contracts', 'build');
-  await runWorkspaceScript('@monitor/app-common', 'build');
-  await runWorkspaceScript('@monitor/core', 'build');
-  await runWorkspaceScript('@monitor/web', 'build');
-  await runWorkspaceScript('@monitor/ui', 'build');
+  await runWorkspaceScript('@pmeow/server-contracts', 'build');
+  await runWorkspaceScript('@pmeow/app-common', 'build');
+  await runWorkspaceScript('@pmeow/core', 'build');
+  await runWorkspaceScript('@pmeow/web', 'build');
+  await runWorkspaceScript('@pmeow/ui', 'build');
 }
 
 export async function runCheckWeb() {
   await runBuildWeb();
-  await runWorkspaceScript('@monitor/ui', 'typecheck');
-  await runWorkspaceScript('@monitor/web', 'typecheck');
-  await runWorkspaceScript('@monitor/core', 'test');
-  await runWorkspaceScript('@monitor/web', 'test');
+  await runWorkspaceScript('@pmeow/ui', 'typecheck');
+  await runWorkspaceScript('@pmeow/web', 'typecheck');
+  await runWorkspaceScript('@pmeow/core', 'test');
+  await runWorkspaceScript('@pmeow/web', 'test');
 }
 
 export async function runDevWeb() {
-  await runWorkspaceScript('@monitor/server-contracts', 'build');
-  await runWorkspaceScript('@monitor/app-common', 'build');
-  await runWorkspaceScript('@monitor/core', 'build');
+  await runWorkspaceScript('@pmeow/server-contracts', 'build');
+  await runWorkspaceScript('@pmeow/app-common', 'build');
+  await runWorkspaceScript('@pmeow/core', 'build');
 
   const children = [
-    spawnCommand(pnpmCommand, ['--filter', '@monitor/server-contracts', 'run', 'dev']),
-    spawnCommand(pnpmCommand, ['--filter', '@monitor/app-common', 'run', 'dev']),
-    spawnCommand(pnpmCommand, ['--filter', '@monitor/core', 'run', 'dev']),
-    spawnCommand(pnpmCommand, ['--filter', '@monitor/web', 'run', 'dev']),
-    spawnCommand(pnpmCommand, ['--filter', '@monitor/ui', 'run', 'dev']),
+    spawnCommand(pnpmCommand, ['--filter', '@pmeow/server-contracts', 'run', 'dev']),
+    spawnCommand(pnpmCommand, ['--filter', '@pmeow/app-common', 'run', 'dev']),
+    spawnCommand(pnpmCommand, ['--filter', '@pmeow/core', 'run', 'dev']),
+    spawnCommand(pnpmCommand, ['--filter', '@pmeow/web', 'run', 'dev']),
+    spawnCommand(pnpmCommand, ['--filter', '@pmeow/ui', 'run', 'dev']),
   ];
 
   await waitForManagedChildren(children, 'dev:web worker');

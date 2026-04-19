@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { UnifiedReport } from '@monitor/app-common';
+import type { UnifiedReport } from '@pmeow/app-common';
 import { MobileApiClient } from '../lib/api';
 import {
   appendChartPoint,

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "@monitor/core";
+import { listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
 
 export function securityRoutes(): Router {

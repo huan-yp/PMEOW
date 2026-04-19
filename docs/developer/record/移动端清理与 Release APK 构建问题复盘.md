@@ -38,8 +38,8 @@
 在清理前，以下命令都无法稳定运行：
 
 - `pnpm dev:mobile`
-- `pnpm run start --workspace=@monitor/mobile`
-- `pnpm --filter @monitor/mobile start`
+- `pnpm run start --workspace=@pmeow/mobile`
+- `pnpm --filter @pmeow/mobile start`
 - `node scripts/run-mobile-react-native.mjs start`
 - `pnpm run:mobile:android`
 
@@ -68,8 +68,8 @@
 
 一开始执行 `pnpm build:apk`，在真正进入 Android 构建前，先失败在两个 TypeScript 子包：
 
-- `@monitor/server-contracts`
-- `@monitor/app-common`
+- `@pmeow/server-contracts`
+- `@pmeow/app-common`
 
 典型报错：
 
@@ -94,7 +94,7 @@
 
 ### 结果
 
-`@monitor/server-contracts` 和 `@monitor/app-common` 都能独立完成构建，不再被根目录其他包的类型定义污染。
+`@pmeow/server-contracts` 和 `@pmeow/app-common` 都能独立完成构建，不再被根目录其他包的类型定义污染。
 
 ### 经验
 

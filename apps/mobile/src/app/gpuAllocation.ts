@@ -1,4 +1,4 @@
-import type { GpuCardReport, TaskInfo } from '@monitor/app-common';
+import type { GpuCardReport, TaskInfo } from '@pmeow/app-common';
 
 export interface OwnerGroup {
   key: string;

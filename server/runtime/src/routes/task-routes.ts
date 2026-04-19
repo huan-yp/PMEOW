@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { canAccessTask, cancelTask, getTask, listTasks, setPriority, type AgentSessionRegistry, type TaskRecord } from "@monitor/core";
+import { canAccessTask, cancelTask, getTask, listTasks, setPriority, type AgentSessionRegistry, type TaskRecord } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
 
 function toApiTask(r: TaskRecord) {

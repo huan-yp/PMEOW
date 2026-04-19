@@ -5,7 +5,7 @@ import type {
   SecurityEvent,
   Server,
   TaskEvent,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 import {
   pushNotificationInboxItem,
   saveNotificationInbox,

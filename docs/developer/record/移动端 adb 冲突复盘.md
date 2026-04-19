@@ -25,8 +25,8 @@
 
 [scripts/workspace-task/mobile-tasks.mjs](../../../scripts/workspace-task/mobile-tasks.mjs) 中的 `runDevMobile()` 顺序非常直接：
 
-1. 构建 `@monitor/server-contracts`
-2. 构建 `@monitor/app-common`
+1. 构建 `@pmeow/server-contracts`
+2. 构建 `@pmeow/app-common`
 3. 启动或复用 Metro
 4. 执行 `ensureMetroReverse()`
 5. 执行 `installAndLaunchMobileDebugApp()`

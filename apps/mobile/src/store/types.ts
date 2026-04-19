@@ -7,7 +7,7 @@ import type {
   Task,
   TaskEvent,
   UnifiedReport,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import type { MobileNotificationSettings } from '../lib/preferences';
 import type { ConnectionMode } from '../lib/storage';

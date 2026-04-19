@@ -1,5 +1,5 @@
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import type { Server, ServerStatus, UnifiedReport } from '@monitor/app-common';
+import type { Server, ServerStatus, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
 import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type HostRealtimeHistory, type PerGpuRealtimeHistory } from '../app/metrics';
 import { styles } from '../app/styles';

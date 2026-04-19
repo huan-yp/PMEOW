@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcryptjs from 'bcryptjs';
-import { getAccessibleServerIds, getSettings, saveSetting, verifyPersonToken, getPersonById } from '@monitor/core';
-import type { Principal } from '@monitor/core';
+import { getAccessibleServerIds, getSettings, saveSetting, verifyPersonToken, getPersonById } from '@pmeow/core';
+import type { Principal } from '@pmeow/core';
 import type { Request, Response, NextFunction } from 'express';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'monitor_' + Date.now().toString(36);

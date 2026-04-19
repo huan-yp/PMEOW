@@ -1,5 +1,5 @@
 {
-  "name": "@monitor/ui",
+  "name": "@pmeow/ui",
   "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -17,7 +17,7 @@
     "apk:debug": "cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
-    "@monitor/app-common": "file:../common",
+    "@pmeow/app-common": "file:../common",
     "@capacitor/core": "^6.2.1",
     "echarts": "^5.5.0",
     "echarts-for-react": "^3.0.2",

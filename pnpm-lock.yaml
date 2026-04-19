@@ -16,7 +16,7 @@ importers:
 
   apps/common:
     dependencies:
-      '@monitor/server-contracts':
+      '@pmeow/server-contracts':
         specifier: file:../../server/contracts
         version: link:../../server/contracts
     devDependencies:
@@ -29,7 +29,7 @@ importers:
       '@babel/runtime':
         specifier: ^7.29.2
         version: 7.29.2
-      '@monitor/app-common':
+      '@pmeow/app-common':
         specifier: file:../common
         version: link:../common
       '@react-native-async-storage/async-storage':
@@ -75,7 +75,7 @@ importers:
       '@capacitor/core':
         specifier: ^6.2.1
         version: 6.2.1
-      '@monitor/app-common':
+      '@pmeow/app-common':
         specifier: file:../common
         version: link:../common
       echarts:
@@ -154,7 +154,7 @@ importers:
 
   server/core:
     dependencies:
-      '@monitor/server-contracts':
+      '@pmeow/server-contracts':
         specifier: file:../contracts
         version: link:../contracts
       bcryptjs:
@@ -179,7 +179,7 @@ importers:
 
   server/runtime:
     dependencies:
-      '@monitor/core':
+      '@pmeow/core':
         specifier: file:../core
         version: link:../core
       bcryptjs:

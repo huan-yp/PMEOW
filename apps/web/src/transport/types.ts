@@ -25,9 +25,9 @@ import type {
   Task,
   TaskEvent,
   UnifiedReport,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 
-export * from '@monitor/app-common';
+export * from '@pmeow/app-common';
 
 // Toast (UI-only)
 export interface Toast {

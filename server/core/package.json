@@ -1,5 +1,5 @@
 {
-  "name": "@monitor/core",
+  "name": "@pmeow/core",
   "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -21,7 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@monitor/server-contracts": "file:../contracts",
+    "@pmeow/server-contracts": "file:../contracts",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.7.0"
   },

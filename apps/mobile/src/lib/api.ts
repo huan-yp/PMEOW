@@ -11,7 +11,7 @@ import {
   type SnapshotWithGpu,
   type Task,
   type UnifiedReport,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 
 export interface TaskQuery {
   page?: number;

@@ -1,5 +1,5 @@
 import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
-import type { Server } from '@monitor/app-common';
+import type { Server } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import { styles } from '../app/styles';
 import { NotificationInboxSection, SectionCard } from '../components/common';

@@ -174,19 +174,19 @@ sqlite3 "$MONITOR_DB_PATH" "DELETE FROM settings WHERE key='password';"
 如果当前机器没有安装 `sqlite3` 命令，但你是在 PMEOW 仓库内操作，也可以直接复用项目依赖里的 `better-sqlite3`：
 
 ```bash
-pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('/absolute/path/to/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+pnpm --filter @pmeow/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('/absolute/path/to/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
 ```
 
 例如本地默认部署可以写成：
 
 ```bash
-pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+pnpm --filter @pmeow/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
 ```
 
 如果你是按 README 中的根目录 workspace 脚本方式启动 Web，更稳妥的写法通常是：
 
 ```bash
-pnpm --filter @monitor/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('server/runtime/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
+pnpm --filter @pmeow/core exec node --input-type=module -e "import Database from 'better-sqlite3'; const db = new Database('server/runtime/data/monitor.db'); db.prepare('DELETE FROM settings WHERE key = ?').run('password'); db.close(); console.log('password reset');"
 ```
 
 如果你使用的是 Docker 部署，但不方便在容器内使用 `sqlite3`，也可以使用任意 SQLite 工具直接对容器内的 `/data/monitor.db` 执行上面的 SQL，或者在容器内运行同样的 Node 命令。

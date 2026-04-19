@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Circle, G, Line, Polyline } from 'react-native-svg';
-import type { GpuCardReport, TaskInfo, UnifiedReport } from '@monitor/app-common';
+import type { GpuCardReport, TaskInfo, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent } from '../app/formatters';
 import {
   FREE_COLOR,

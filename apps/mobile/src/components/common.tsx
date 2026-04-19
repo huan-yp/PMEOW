@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import type { Server, ServerStatus, Task, TaskInfo, UnifiedReport } from '@monitor/app-common';
+import type { Server, ServerStatus, Task, TaskInfo, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import {
   formatNotificationKind,

@@ -1,5 +1,5 @@
 import { ScrollView, Text, View } from 'react-native';
-import type { Server, ServerStatus, Task, TaskEvent, UnifiedReport } from '@monitor/app-common';
+import type { Server, ServerStatus, Task, TaskEvent, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import { formatTaskEventLabel, formatTimestamp } from '../app/formatters';
 import { styles } from '../app/styles';

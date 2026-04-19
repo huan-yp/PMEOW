@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createServer, deleteServer, getAccessibleServerIds, getAllServers, type AgentSessionRegistry } from "@monitor/core";
+import { createServer, deleteServer, getAccessibleServerIds, getAllServers, type AgentSessionRegistry } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
 
 export function serverRoutes(registry: AgentSessionRegistry): Router {

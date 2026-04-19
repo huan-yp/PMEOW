@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type {
   AuthSession,
   Task,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 import { formatMobileApiError, MobileApiClient, normalizeBaseUrl } from '../lib/api';
 import {
   loadNotificationInbox,

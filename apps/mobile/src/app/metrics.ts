@@ -1,4 +1,4 @@
-import type { DiskInfo, GpuCardReport, SnapshotWithGpu } from '@monitor/app-common';
+import type { DiskInfo, GpuCardReport, SnapshotWithGpu } from '@pmeow/app-common';
 
 export type ChartPoint = { time: number; value: number };
 

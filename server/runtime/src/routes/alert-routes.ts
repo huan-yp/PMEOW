@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { getAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts } from "@monitor/core";
-import type { AlertStatus } from "@monitor/core";
+import { getAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts } from "@pmeow/core";
+import type { AlertStatus } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
 
 export function alertRoutes(): Router {

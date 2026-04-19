@@ -6,7 +6,7 @@ import type {
   ServerStatus,
   TaskEvent,
   UnifiedReport,
-} from '@monitor/app-common';
+} from '@pmeow/app-common';
 import {
   formatAlertType,
   formatAlertValue,

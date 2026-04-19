@@ -1,5 +1,5 @@
 {
-  "name": "@monitor/web",
+  "name": "@pmeow/web",
   "version": "1.0.0",
   "private": true,
   "license": "AGPL-3.0-only",
@@ -14,7 +14,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@monitor/core": "file:../core",
+    "@pmeow/core": "file:../core",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.21.0",

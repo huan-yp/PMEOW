@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { canAccessServer, getAccessibleServerIds, getSnapshotHistory, type IngestPipeline } from "@monitor/core";
+import { canAccessServer, getAccessibleServerIds, getSnapshotHistory, type IngestPipeline } from "@pmeow/core";
 
 export function metricsRoutes(pipeline: IngestPipeline): Router {
   const router = Router();

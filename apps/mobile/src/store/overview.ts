@@ -1,4 +1,4 @@
-import type { AuthSession } from '@monitor/app-common';
+import type { AuthSession } from '@pmeow/app-common';
 import { MobileApiClient } from '../lib/api';
 import { savePersistedSession, type PersistedMobileSession } from '../lib/storage';
 import type { OverviewData } from './types';

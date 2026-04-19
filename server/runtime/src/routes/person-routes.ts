@@ -5,8 +5,8 @@ import {
   createPersonFromWizard, getPersonTimeline, getPersonTasks, getPersonDirectory, PersonWizardConflictError,
   autoAddUnassignedUsers,
   createPersonToken, getPersonTokenById, getPersonTokensByPersonId, revokePersonToken, rotatePersonToken,
-} from "@monitor/core";
-import type { PersonTokenRecord, TaskRecord } from "@monitor/core";
+} from "@pmeow/core";
+import type { PersonTokenRecord, TaskRecord } from "@pmeow/core";
 import { adminOnly, canAccessPersonId } from "../auth.js";
 
 export function personRoutes(): Router {

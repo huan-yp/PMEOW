@@ -1,4 +1,4 @@
-import type { Alert, SecurityEvent, Task, TaskEvent, TaskInfo } from '@monitor/app-common';
+import type { Alert, SecurityEvent, Task, TaskEvent, TaskInfo } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 
 export function normalizeTimestamp(timestamp: number | null): number | null {

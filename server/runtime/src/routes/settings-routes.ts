@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getSettings, saveSettings } from "@monitor/core";
+import { getSettings, saveSettings } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
 
 export function settingsRoutes(): Router {

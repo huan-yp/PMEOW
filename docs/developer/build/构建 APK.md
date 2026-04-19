@@ -5,10 +5,6 @@
 - 开发调试链路：用于 Windows 模拟器上的 debug 安装、Metro 热刷新和日志回流
 - release 构建链路：用于生成可手动安装验证的 release APK
 
-这次链路收缩和构建修复过程中遇到的问题、根因和处理过程，见 [移动端清理与 Release APK 构建问题复盘.md](./移动端清理与%20Release%20APK%20构建问题复盘.md)。
-
-如果你在 Windows 上执行 `pnpm dev:mobile` 时遇到 `adb server version mismatch`、`device offline` 或 APK 安装失败，另见 [移动端 adb 冲突复盘.md](./移动端%20adb%20冲突复盘.md)。
-
 ## 前置依赖
 
 构建前需要本机已经具备：

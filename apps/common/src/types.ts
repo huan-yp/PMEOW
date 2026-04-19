@@ -35,7 +35,7 @@ import type {
   TaskRecord,
   UnifiedReport,
   UserResourceSummary,
-} from '@monitor/server-contracts';
+} from '@pmeow/server-contracts';
 
 // Re-export types that frontends consume
 export type {
@@ -65,10 +65,10 @@ export type {
   TaskInfo,
   UnifiedReport,
   UserResourceSummary,
-} from '@monitor/server-contracts';
+} from '@pmeow/server-contracts';
 
 // Re-export boundary constants
-export { API_PATHS, UI_SOCKET_EVENTS } from '@monitor/server-contracts';
+export { API_PATHS, UI_SOCKET_EVENTS } from '@pmeow/server-contracts';
 
 // ========================
 // Frontend view models

@@ -409,8 +409,8 @@ async function waitForPersistentLogcat(metroChild = null) {
 }
 
 export async function runBuildApk() {
-  await runWorkspaceScript('@monitor/server-contracts', 'build');
-  await runWorkspaceScript('@monitor/app-common', 'build');
+  await runWorkspaceScript('@pmeow/server-contracts', 'build');
+  await runWorkspaceScript('@pmeow/app-common', 'build');
 
   const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
   await runCommand(gradlew, ['assembleRelease'], { cwd: mobileAndroidDir, env: getJavaEnv() });
@@ -423,8 +423,8 @@ export async function runMobileLogsOnly() {
 }
 
 export async function runDevMobile() {
-  await runWorkspaceScript('@monitor/server-contracts', 'build');
-  await runWorkspaceScript('@monitor/app-common', 'build');
+  await runWorkspaceScript('@pmeow/server-contracts', 'build');
+  await runWorkspaceScript('@pmeow/app-common', 'build');
 
   let usingExistingMetro = await isPortOpen('127.0.0.1', mobileMetroPort);
   let metroChild = usingExistingMetro ? null : startMetro();

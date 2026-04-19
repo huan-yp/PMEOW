@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import type { Server as SocketServer, Namespace } from "socket.io";
-import type { AlertStateChange, SecurityEventRecord, TaskEvent, UnifiedReport, Principal } from "@monitor/core";
+import type { AlertStateChange, SecurityEventRecord, TaskEvent, UnifiedReport, Principal } from "@pmeow/core";
 import {
   AGENT_EVENT,
   isAgentRegisterPayload,
@@ -14,7 +14,7 @@ import {
   createAgentSession,
   canAccessServer,
   canAccessTask,
-} from "@monitor/core";
+} from "@pmeow/core";
 
 const AGENT_NAMESPACE = "/agent";
 const REPORT_DEBUG_ENV = "PMEOW_WEB_DEBUG_REPORTS";
