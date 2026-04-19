@@ -58,6 +58,8 @@ export default function People() {
   const [rows, setRows] = useState<PersonDirectoryItem[] | null>(null);
   const [sortField, setSortField] = useState<SortField>('cpu');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [batchTokens, setBatchTokens] = useState<Array<{ displayName: string; personId: string; plainToken: string }> | null>(null);
+  const [batchTokenLoading, setBatchTokenLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +83,46 @@ export default function People() {
       cancelled = true;
     };
   }, [transport]);
+
+  async function handleBatchTokenGenerate() {
+    if (!rows || rows.length === 0) return;
+    setBatchTokenLoading(true);
+    const results: Array<{ displayName: string; personId: string; plainToken: string }> = [];
+    const activePersons = rows.filter((r) => r.status === 'active');
+    for (const person of activePersons) {
+      try {
+        const result = await transport.createPersonToken(person.id, '批量签发');
+        results.push({ displayName: person.displayName, personId: person.id, plainToken: result.plainToken });
+      } catch {
+        // skip
+      }
+    }
+    setBatchTokens(results);
+    setBatchTokenLoading(false);
+  }
+
+  function handleDownloadBatchTokens() {
+    if (!batchTokens) return;
+    const lines = [
+      '# PMEOW 人员访问令牌',
+      `# 生成时间: ${new Date().toLocaleString('zh-CN')}`,
+      '#',
+      '# 格式: 显示名称 | 令牌',
+      '',
+    ];
+    for (const { displayName, plainToken } of batchTokens) {
+      lines.push(`${displayName} | ${plainToken}`);
+    }
+    const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pmeow-tokens.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   const activeCount = rows?.filter((row) => row.status === 'active').length ?? 0;
   const archivedCount = rows?.filter((row) => row.status === 'archived').length ?? 0;
@@ -106,10 +148,58 @@ export default function People() {
           <h1 className="mt-2 text-2xl font-semibold text-slate-100">人员</h1>
           <p className="mt-2 text-sm text-slate-500">共 {rows?.length ?? 0} 人，活跃 {activeCount}，归档 {archivedCount}。当前按 {SORT_LABELS[sortField]}{sortDir === 'desc' ? '降序' : '升序'}排序。</p>
         </div>
-        <Link to="/people/new" className="inline-flex items-center justify-center rounded-lg bg-accent-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-blue/80">
-          添加人员
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { void handleBatchTokenGenerate(); }}
+            disabled={batchTokenLoading || !rows || rows.length === 0}
+            className="inline-flex items-center justify-center rounded-lg border border-dark-border px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/5 disabled:opacity-50"
+          >
+            {batchTokenLoading ? '签发中...' : '批量签发令牌'}
+          </button>
+          <Link to="/people/new" className="inline-flex items-center justify-center rounded-lg bg-accent-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent-blue/80">
+            添加人员
+          </Link>
+        </div>
       </div>
+
+      {batchTokens !== null && (
+        <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/5 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-200">访问令牌</p>
+              <p className="mt-1 text-xs text-slate-500">
+                已为 {batchTokens.length} 位活跃人员签发新令牌。令牌仅显示一次，请及时保存。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {batchTokens.length > 0 && (
+                <button
+                  onClick={handleDownloadBatchTokens}
+                  className="rounded-lg bg-accent-blue px-3 py-1.5 text-xs text-white hover:bg-accent-blue/80"
+                >
+                  下载 token.txt
+                </button>
+              )}
+              <button
+                onClick={() => setBatchTokens(null)}
+                className="rounded-lg border border-dark-border px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+          {batchTokens.length > 0 && (
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {batchTokens.map(({ personId, displayName, plainToken }) => (
+                <div key={personId} className="flex items-center justify-between gap-2 rounded-lg bg-dark-bg/60 px-3 py-2 text-xs">
+                  <span className="text-slate-200 shrink-0">{displayName}</span>
+                  <code className="text-slate-400 select-all break-all text-right">{plainToken}</code>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {rows !== null && rows.length > 0 && (
         <div className="flex items-center gap-2 text-xs text-slate-400">

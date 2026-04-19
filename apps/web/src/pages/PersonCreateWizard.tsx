@@ -40,6 +40,8 @@ export default function PersonCreateWizard() {
   const [autoAddLoading, setAutoAddLoading] = useState(false);
   const [autoAddError, setAutoAddError] = useState<string | null>(null);
   const [autoAddPage, setAutoAddPage] = useState(1);
+  const [autoAddTokens, setAutoAddTokens] = useState<Map<string, { displayName: string; plainToken: string }>>(new Map());
+  const [tokenGenerating, setTokenGenerating] = useState(false);
 
   useEffect(() => {
     setLoadingCandidates(true);
@@ -131,10 +133,33 @@ export default function PersonCreateWizard() {
     setAutoAddError(null);
     setAutoAddReport(null);
     setAutoAddPage(1);
+    setAutoAddTokens(new Map());
     try {
       const report = await transport.autoAddUnassigned();
       setAutoAddReport(report);
       setStep('auto-add-result');
+
+      // Auto-generate tokens for created/reused persons
+      const personEntries = report.entries.filter(
+        (e) => (e.action === 'created' || e.action === 'reused') && e.personId,
+      );
+      if (personEntries.length > 0) {
+        setTokenGenerating(true);
+        const tokenMap = new Map<string, { displayName: string; plainToken: string }>();
+        const uniquePersons = new Map<string, string>(
+          personEntries.map((e) => [e.personId!, e.personDisplayName ?? e.systemUser]),
+        );
+        for (const [personId, displayName] of uniquePersons) {
+          try {
+            const result = await transport.createPersonToken(personId, '一键创建自动签发');
+            tokenMap.set(personId, { displayName, plainToken: result.plainToken });
+          } catch {
+            // Skip failed token creation
+          }
+        }
+        setAutoAddTokens(tokenMap);
+        setTokenGenerating(false);
+      }
     } catch (error) {
       setAutoAddError(error instanceof Error ? error.message : '批量添加失败');
     } finally {
@@ -488,6 +513,8 @@ export default function PersonCreateWizard() {
           onPageChange={setAutoAddPage}
           onBack={() => setStep('entry')}
           onNavigate={(personId) => navigate(`/people/${personId}`)}
+          tokenMap={autoAddTokens}
+          tokenGenerating={tokenGenerating}
         />
       )}
     </div>
@@ -598,12 +625,16 @@ function AutoAddResultView({
   onPageChange,
   onBack,
   onNavigate,
+  tokenMap,
+  tokenGenerating,
 }: {
   report: AutoAddReport;
   page: number;
   onPageChange: (page: number) => void;
   onBack: () => void;
   onNavigate: (personId: string) => void;
+  tokenMap: Map<string, { displayName: string; plainToken: string }>;
+  tokenGenerating: boolean;
 }) {
   const totalPages = Math.max(1, Math.ceil(report.entries.length / AUTO_ADD_PAGE_SIZE));
   const pagedEntries = report.entries.slice((page - 1) * AUTO_ADD_PAGE_SIZE, page * AUTO_ADD_PAGE_SIZE);
@@ -623,6 +654,39 @@ function AutoAddResultView({
           { label: '总计', value: String(report.entries.length) },
         ]}
       />
+
+      {(tokenMap.size > 0 || tokenGenerating) && (
+        <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/5 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-200">访问令牌</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {tokenGenerating
+                  ? '正在为新人员签发令牌...'
+                  : `已为 ${tokenMap.size} 位人员签发令牌。令牌仅显示一次，请及时保存。`}
+              </p>
+            </div>
+            {tokenMap.size > 0 && (
+              <button
+                onClick={() => downloadTokenFile(tokenMap)}
+                className="rounded-lg bg-accent-blue px-3 py-1.5 text-xs text-white hover:bg-accent-blue/80"
+              >
+                下载 token.txt
+              </button>
+            )}
+          </div>
+          {tokenMap.size > 0 && (
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {Array.from(tokenMap.entries()).map(([personId, { displayName, plainToken }]) => (
+                <div key={personId} className="flex items-center justify-between gap-2 rounded-lg bg-dark-bg px-3 py-2 text-xs">
+                  <span className="text-slate-200 shrink-0">{displayName}</span>
+                  <code className="text-slate-400 select-all break-all text-right">{plainToken}</code>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {report.entries.length === 0 ? (
         <div className="py-8 text-center text-sm text-slate-500">没有需要处理的未归属用户。</div>
@@ -727,4 +791,26 @@ function toConflict(candidate: PersonBindingCandidate): PersonBindingConflict {
     activeBinding: candidate.activeBinding!,
     activePerson: candidate.activePerson,
   };
+}
+
+function downloadTokenFile(tokens: Map<string, { displayName: string; plainToken: string }>) {
+  const lines = [
+    '# PMEOW 人员访问令牌',
+    `# 生成时间: ${new Date().toLocaleString('zh-CN')}`,
+    '#',
+    '# 格式: 显示名称 | 令牌',
+    '',
+  ];
+  for (const { displayName, plainToken } of tokens.values()) {
+    lines.push(`${displayName} | ${plainToken}`);
+  }
+  const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pmeow-tokens.txt';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
