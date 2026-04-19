@@ -17,6 +17,9 @@ apps/mobile/android/app/build/
 apps/mobile/android/app/.cxx/
 apps/mobile/android/local.properties
 apps/mobile/android/app/debug.keystore
+apps/mobile/android/app/release.keystore
+apps/mobile/android/signing.properties
 
 CLAUDE.md
 .claude/
+.vscode/
