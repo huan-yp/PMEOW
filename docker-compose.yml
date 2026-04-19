@@ -1,16 +1,14 @@
 services:
-  monitor:
+  pmeow-web:
     build: .
-    container_name: monitor
+    container_name: pmeow-web
     restart: unless-stopped
     ports:
       - "17200:17200"
     volumes:
-      - monitor_data:/data
-      - ~/.ssh:/root/.ssh:ro    # Mount SSH keys (read-only)
+      - ./docker-data:/data
     environment:
-      - PORT=17200
-      - MONITOR_DB_PATH=/data/monitor.db
-
-volumes:
-  monitor_data:
+      HOST: 0.0.0.0
+      PORT: 17200
+      MONITOR_DB_PATH: /data/monitor.db
+      JWT_SECRET: ${JWT_SECRET:-change-me-before-production}

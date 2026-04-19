@@ -48,20 +48,21 @@ pnpm run:web
 
 ### Docker 模式
 
-仓库已经提供了完整镜像和 Compose 文件：
+当前仓库提供的是“只启动 Web 服务端”的最小 Docker 部署方案，数据默认持久化到仓库根目录下的 `docker-data/`：
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 默认 Compose 行为：
 
+- 只启动 Web 服务端容器 `pmeow-web`
 - 端口映射为 `17200:17200`
-- 持久化卷挂载到容器内 `/data`
+- 宿主机 `./docker-data` 挂载到容器内 `/data`
 - 数据库默认路径为 `/data/monitor.db`
-- 宿主机 `~/.ssh` 以只读方式挂载到容器内 `/root/.ssh`
+- `JWT_SECRET` 可通过宿主机环境变量覆盖；未覆盖时会使用 Compose 文件里的默认占位值
 
-如果你的节点是 SSH 模式，这个只读挂载很重要，因为服务端需要用这些私钥去连接远端主机。
+如果你后续确实需要容器内直接读取宿主机 SSH 私钥，再按你的部署环境额外补挂载即可；当前最小方案不再默认挂载 `~/.ssh`。
 
 ## 服务端环境变量
 
@@ -110,7 +111,7 @@ Web API 的密钥上传接口会把文件保存到当前工作目录下的 `data
 这意味着：
 
 - 你的工作目录需要是可写的。
-- 如果是 Docker 部署，应该确认该目录是否也需要持久化。
+- 如果是 Docker 部署，`/data` 已经映射到宿主机 `./docker-data`，这里的数据会随之持久化。
 - 如果你不希望通过网页上传密钥，可以直接在服务器文件系统中放置密钥，再在“节点”页面填写绝对路径。
 
 ## 首次登录与认证边界
@@ -155,7 +156,7 @@ DELETE FROM settings WHERE key = 'password';
 - 本地默认部署：`data/monitor.db`
 - 使用根目录 workspace 脚本启动 Web 时，通常是 `server/runtime/data/monitor.db`
 - 显式设置了 `MONITOR_DB_PATH`：以该环境变量指定的绝对路径为准
-- Docker 默认部署：容器内 `/data/monitor.db`
+- Docker 默认部署：宿主机 `./docker-data/monitor.db`，容器内 `/data/monitor.db`
 
 ### 常见操作示例
 

@@ -20,20 +20,11 @@ COPY apps/web apps/web
 COPY server/runtime server/runtime
 COPY tsconfig.base.json ./
 
-# Build server-contracts
-RUN cd server/contracts && pnpm exec tsc
-
-# Build core
-RUN cd server/core && pnpm exec tsc
-
-# Build app-common
-RUN cd apps/common && pnpm exec tsc
-
-# Build UI
-RUN cd apps/web && pnpm exec vite build
-
-# Build runtime
-RUN cd server/runtime && pnpm exec tsc
+RUN cd server/contracts && pnpm exec tsc \
+ && cd /app/server/core && pnpm exec tsc \
+ && cd /app/apps/common && pnpm exec tsc \
+ && cd /app/apps/web && pnpm exec vite build \
+ && cd /app/server/runtime && pnpm exec tsc
 
 # Production stage
 FROM node:20-slim
@@ -57,6 +48,8 @@ COPY scripts/run-web-server.mjs scripts/run-web-server.mjs
 
 # Data directory for SQLite
 RUN mkdir -p /data
+ENV HOST=0.0.0.0
+ENV PORT=17200
 ENV MONITOR_DB_PATH=/data/monitor.db
 
 EXPOSE 17200
