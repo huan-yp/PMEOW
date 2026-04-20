@@ -17,11 +17,6 @@ class SystemdServicePaths:
 
 def render_unit_file(*, executable_path: str, working_directory: str, environment_file: str, service_name: str, socket_group: str = "") -> str:
     supplementary = f"SupplementaryGroups={socket_group}\n" if socket_group else ""
-    chmod_cmd = (
-        f"ExecStartPost=/bin/chmod 0770 /run/{service_name}/pmeow.sock\n"
-        if socket_group
-        else f"ExecStartPost=/bin/chmod 0666 /run/{service_name}/pmeow.sock\n"
-    )
     return f"""[Unit]
 Description=PMEOW Agent Daemon
 After=network.target
@@ -33,7 +28,7 @@ EnvironmentFile={environment_file}
 RuntimeDirectory={service_name}
 RuntimeDirectoryMode=0755
 {supplementary}ExecStart={executable_path} run
-{chmod_cmd}Restart=on-failure
+Restart=on-failure
 RestartSec=10
 UMask=0002
 
