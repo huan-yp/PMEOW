@@ -165,7 +165,7 @@ class SocketServer:
 # RPC method implementations
 # ------------------------------------------------------------------
 
-def _to_task_dict(rec: Any, *, log_dir: str | None = None) -> dict:
+def _to_task_dict(rec: Any, *, log_path: str | None = None) -> dict:
     result = {
         "id": rec.id,
         "command": rec.command,
@@ -183,9 +183,8 @@ def _to_task_dict(rec: Any, *, log_dir: str | None = None) -> dict:
         "started_at": rec.started_at,
         "pid": rec.pid,
     }
-    if log_dir is not None:
-        from pmeow.executor.logs import get_task_log_path
-        result["log_path"] = get_task_log_path(rec.id, log_dir)
+    if log_path is not None:
+        result["log_path"] = log_path
     return result
 
 
@@ -206,14 +205,14 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         submit_gid=params.get("_peer_gid"),
     )
     rec = svc.submit_task(spec)
-    return _to_task_dict(rec, log_dir=svc.config.log_dir)
+    return _to_task_dict(rec, log_path=svc.get_task_log_path(rec.id))
 
 
 def _list_tasks(svc: DaemonService, params: dict) -> list[dict]:
     status = None
     if "status" in params and params["status"] is not None:
         status = TaskStatus(params["status"])
-    return [_to_task_dict(t, log_dir=svc.config.log_dir) for t in svc.list_tasks(status)]
+    return [_to_task_dict(t, log_path=svc.get_task_log_path(t.id)) for t in svc.list_tasks(status)]
 
 
 def _cancel_task(svc: DaemonService, params: dict) -> bool:
@@ -226,7 +225,7 @@ def _get_logs(svc: DaemonService, params: dict) -> str:
 
 def _get_task(svc: DaemonService, params: dict) -> dict | None:
     task = svc.get_task(params["task_id"])
-    return _to_task_dict(task, log_dir=svc.config.log_dir) if task is not None else None
+    return _to_task_dict(task, log_path=svc.get_task_log_path(task.id)) if task is not None else None
 
 
 def _confirm_attached_launch(svc: DaemonService, params: dict) -> bool:

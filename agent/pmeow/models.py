@@ -178,6 +178,7 @@ class TaskRecord:
     attach_deadline: Optional[float] = None
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
+    task_log_dir: Optional[str] = None
 
     @property
     def public_status(self) -> PublicTaskStatus:

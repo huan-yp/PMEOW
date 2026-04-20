@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import signal
 import subprocess
 import sys
@@ -39,6 +40,7 @@ def run_attached_python(
     # child output so the terminal still behaves like a foreground python run.
     child_env.setdefault("PYTHONUNBUFFERED", "1")
     stdin_mode = subprocess.PIPE if stdin_source is not None else None
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
 
     with open(log_path, "ab") as log_fh:
         proc = subprocess.Popen(
