@@ -204,7 +204,7 @@ pmeow-agent resume
 `submit` 模式还有两个关键特点：
 
 - 提交时会把当前工作目录和当前进程环境整体保存到任务记录里；真正开始运行时，daemon 会按这份快照启动任务。
-- 如果命令形态是 `python ...`、`py ...` 或 `python3 ...` 且后面跟的是脚本、`-m` 或 `-c`，CLI 会优先解析调用侧当前激活环境的解释器；解析顺序是 `PMEOW_PYTHON_EXECUTABLE`、`VIRTUAL_ENV` / `CONDA_PREFIX`、当前 `PATH` 里的 `python`，最后才回退到 CLI 自己的解释器。
+- `submit` 不会改写你输入的命令；如果你写的是 `python train.py`，真正排队保存的就是这条原始命令。需要固定解释器时，请显式写绝对路径，或者改用下方的 Python 直达模式。
 
 ## Python 直达模式
 
@@ -224,7 +224,7 @@ pmeow -vram=10g -gpus=2 --report train.py --epochs 50
 这意味着 Python 直达模式更接近“排队成功后在当前终端前台执行 Python”：
 
 - daemon 不会替你在后台真正拉起 Python 子进程，而是由当前等待中的终端在资源就绪后 attached 启动。
-- 工作目录沿用提交时 cwd，Python argv 沿用提交时记录的解释器与脚本参数。
+- 工作目录沿用提交时 cwd，Python 以字面量 `python script.py` 语义启动，并沿用提交时记录的脚本参数。
 - 环境来自当前等待进程所在终端，并由调度器额外注入 `CUDA_VISIBLE_DEVICES`。
 
 ### 可选 PyTorch 样例任务

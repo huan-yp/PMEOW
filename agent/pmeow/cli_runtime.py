@@ -75,6 +75,7 @@ def install_service(args) -> None:
     )
 
     config = load_config()
+    warn_missing_server_url(config)
     paths = SystemdServicePaths(
         service_name="pmeow-agent",
         unit_path=Path("/etc/systemd/system/pmeow-agent.service"),

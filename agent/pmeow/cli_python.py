@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shlex
-import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -30,47 +29,6 @@ def parse_vram_mb(value: str) -> int:
     if raw.endswith("m"):
         return int(float(raw[:-1]))
     return int(float(raw))
-
-
-def resolve_submission_python() -> str:
-    """Resolve the caller-side Python interpreter for submitted Python tasks.
-
-    When the CLI is installed globally but invoked from another virtual
-    environment, sys.executable points at the CLI's own interpreter rather
-    than the caller's. Prefer the active environment's Python so queued and
-    attached Python tasks run with the same interpreter the user expects.
-    """
-    override = os.environ.get("PMEOW_PYTHON_EXECUTABLE")
-    if override:
-        return str(Path(os.path.expanduser(override)).resolve())
-
-    candidates: list[Path] = []
-
-    virtual_env = os.environ.get("VIRTUAL_ENV")
-    if virtual_env:
-        base = Path(virtual_env)
-        if os.name == "nt":
-            candidates.extend([base / "Scripts" / "python.exe", base / "python.exe"])
-        else:
-            candidates.append(base / "bin" / "python")
-
-    conda_prefix = os.environ.get("CONDA_PREFIX")
-    if conda_prefix:
-        base = Path(conda_prefix)
-        if os.name == "nt":
-            candidates.extend([base / "python.exe", base / "Scripts" / "python.exe"])
-        else:
-            candidates.append(base / "bin" / "python")
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return str(candidate.resolve())
-
-    path_python = shutil.which("python")
-    if path_python:
-        return str(Path(path_python).resolve())
-
-    return sys.executable
 
 
 def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
@@ -146,7 +104,7 @@ def run_python_invocation(
     from pmeow.executor.attached import run_attached_python
 
     socket_path = invocation.socket_path or _resolve_default_socket()
-    argv = [resolve_submission_python(), invocation.script_path, *invocation.script_args]
+    argv = ["python", invocation.script_path, *invocation.script_args]
 
     submit = send_request(socket_path, "submit_task", {
         "command": shlex.join(argv),

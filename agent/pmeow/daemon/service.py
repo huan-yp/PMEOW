@@ -6,6 +6,7 @@ Pure in-memory version: uses TaskQueue instead of SQLite for task state.
 from __future__ import annotations
 
 import logging
+import os
 import signal
 import socket
 import threading
@@ -305,7 +306,19 @@ class DaemonService:
                     raise ValueError(err)
             rec = self.task_queue.submit(spec)
             self._submit_credentials[rec.id] = (spec.submit_uid, spec.submit_gid)
-            ensure_task_log(rec.id, self.config.log_dir)
+            log_path = ensure_task_log(rec.id, self.config.log_dir)
+            if (
+                rec.launch_mode == TaskLaunchMode.attached_python
+                and spec.submit_uid is not None
+            ):
+                try:
+                    os.chown(
+                        log_path,
+                        spec.submit_uid,
+                        spec.submit_gid if spec.submit_gid is not None else -1,
+                    )
+                except OSError:
+                    log.exception("failed to hand over attached log file %s", log_path)
             self._append_task_message(rec.id, self._format_submitted_message(rec))
             log.info(
                 "submitted task %s user=%s mode=%s cwd=%s",

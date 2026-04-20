@@ -31,7 +31,7 @@ sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow-agent /usr/local/bin/pmeow-agent
 sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow /usr/local/bin/pmeow
 ```
 
-这样 `pmeow-agent` 和 `pmeow` 在节点上只有一份固定安装，systemd 也可以稳定指向这套解释器；与此同时，用户在别的虚拟环境里调用 `pmeow` 时，CLI 仍会优先解析调用侧当前激活环境的 Python，而不是 Agent 自己的安装解释器。
+这样 `pmeow-agent` 和 `pmeow` 在节点上只有一份固定安装，systemd 也可以稳定指向这套解释器；与此同时，用户在别的虚拟环境里调用 `pmeow` 时，直达模式仍会保留字面量 `python` 调用语义，不会替你改写成别的解释器路径。
 
 如果某个项目虚拟环境里也安装了另一份 `pmeow-agent`，shell 会优先命中那一份；想强制走系统级命令时，请显式调用 `/usr/local/bin/pmeow` 或 `/usr/local/bin/pmeow-agent`。
 
@@ -99,7 +99,7 @@ pmeow-agent submit --pvram 0 --gpu 0 -- bash run_preprocessing.sh
 `submit` 模式的执行语义有两点需要注意：
 
 - 提交时会冻结当前工作目录和当前进程环境；任务真正开始时，daemon 会用这份 cwd 和整份环境快照启动命令。
-- 如果命令看起来是 `python ...`、`py ...` 或 `python3 ...`，并且后面跟的是脚本、`-m` 或 `-c`，CLI 会优先解析调用侧当前激活环境的 Python；解析顺序是 `PMEOW_PYTHON_EXECUTABLE`、`VIRTUAL_ENV` / `CONDA_PREFIX`、当前 `PATH` 里的 `python`，最后才回退到 CLI 自己的解释器。
+- `submit` 不会改写你输入的命令；如果你写的是 `python train.py`，真正排队保存的就是这条原始命令。需要固定解释器时，请显式写绝对路径，或者改用下方的 Python 直达模式。
 
 ### 查看队列状态
 
@@ -138,7 +138,7 @@ pmeow -vram=10g -gpus=2 --report train.py --epochs 50
 这个 Python 直达模式和 `submit` 的区别是：
 
 - daemon 只负责排队、资源保留和状态同步；真正的 Python 进程是在当前等待中的终端里以前台 attached 方式启动。
-- 启动时仍然使用提交时记录的工作目录与解释器参数，但 stdin、stdout 和 stderr 行为更接近你直接在这个终端里运行 `python script.py`。
+- 启动时仍然使用提交时记录的工作目录与脚本参数，并以字面量 `python script.py` 语义运行；stdin、stdout 和 stderr 行为更接近你直接在这个终端里执行同一条命令。
 - 调度器仍然会额外注入 `CUDA_VISIBLE_DEVICES`，所以它不是完全裸的本地执行，而是“带资源绑定的前台 Python”。
 
 ### 可选的 PyTorch 样例任务

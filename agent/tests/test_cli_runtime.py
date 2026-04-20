@@ -36,9 +36,8 @@ def test_run_foreground_writes_runtime_logs_to_console(monkeypatch, capsys, tmp_
     assert "foreground ready" in capsys.readouterr().out
 
 
-def test_submit_freezes_current_cwd_environment_and_python_interpreter(monkeypatch, tmp_path):
+def test_submit_freezes_current_cwd_and_environment_without_rewriting_python(monkeypatch, tmp_path):
     captured: dict[str, Any] = {}
-    resolved_python = str(tmp_path / "venv-python")
 
     def fake_send_request(socket_path, method, params):
         captured["socket_path"] = socket_path
@@ -47,7 +46,6 @@ def test_submit_freezes_current_cwd_environment_and_python_interpreter(monkeypat
         return {"ok": True, "result": {"id": "task-1"}}
 
     monkeypatch.setattr("pmeow.daemon.socket_server.send_request", fake_send_request)
-    monkeypatch.setattr("pmeow.cli_python.resolve_submission_python", lambda: resolved_python)
     monkeypatch.setenv("USER", "tester")
     monkeypatch.setenv("PMEOW_TEST_ENV", "submit-snapshot")
     monkeypatch.chdir(tmp_path)
@@ -58,5 +56,5 @@ def test_submit_freezes_current_cwd_environment_and_python_interpreter(monkeypat
     assert captured["method"] == "submit_task"
     assert params["cwd"] == str(tmp_path)
     assert params["env_overrides"]["PMEOW_TEST_ENV"] == "submit-snapshot"
-    assert params["argv"] == [resolved_python, "train.py", "--epochs", "3"]
-    assert params["command"] == shlex.join([resolved_python, "train.py", "--epochs", "3"])
+    assert params["argv"] is None
+    assert params["command"] == shlex.join(["python", "train.py", "--epochs", "3"])
