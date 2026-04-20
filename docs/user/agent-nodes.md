@@ -178,14 +178,22 @@ Agent 启动后会向服务端 `/agent` namespace 发送注册、指标、任务
 
 ## 本地 CLI 工作流
 
-Agent CLI 通过 Unix socket 与本地 daemon 通信，常用命令如下：
+Agent CLI 通过 Unix socket 与本地 daemon 通信。当前实际的任务提交只有两种模式：
+
+- `submit`：内部 launch mode 是 `daemon_shell`
+- Python 直达模式：内部 launch mode 是 `attached_python`
+
+常用命令如下：
 
 ```bash
 # 查看队列摘要
 pmeow-agent status
 
-# 提交任务
-pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
+# 查看活跃任务明细
+pmeow-agent tasks
+
+# 后台提交 shell 命令
+pmeow-agent submit --vram 4096 --gpus 1 python train.py --epochs 50
 
 # 查看日志
 pmeow-agent logs <task_id>
@@ -193,39 +201,80 @@ pmeow-agent logs <task_id> --tail 50
 
 # 取消任务
 pmeow-agent cancel <task_id>
-
-# 暂停 / 恢复队列
-pmeow-agent pause
-pmeow-agent resume
 ```
 
-当前 CLI 的 `submit` 命令会把命令行剩余部分拼成一条 shell 命令字符串，并记录当前工作目录和当前系统用户名。
+当前本地 CLI 没有 `pause` / `resume` 子命令，这两个写法不再适用。
 
-`submit` 模式还有两个关键特点：
+## submit 模式
 
-- 提交时会把当前工作目录和当前进程环境整体保存到任务记录里；真正开始运行时，daemon 会按这份快照启动任务。
-- `submit` 不会改写你输入的命令；如果你写的是 `python train.py`，真正排队保存的就是这条原始命令。需要固定解释器时，请显式写绝对路径，或者改用下方的 Python 直达模式。
+`submit` 对应后台启动模式。CLI 会把命令行剩余部分拼成一条 shell 命令字符串，交给 daemon 在资源满足时启动。
+
+```bash
+# 1 卡、每卡申请 4096 MB 显存
+pmeow-agent submit --vram 4096 --gpus 1 python train.py --epochs 50
+
+# 纯 CPU 任务
+pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
+```
+
+当前实际行为：
+
+- `submit` 后面直接跟要执行的命令。
+- CLI 会冻结提交时的 `cwd` 和整份环境变量快照；真正开始运行时，daemon 用这份快照启动进程。
+- `submit` 不会改写命令。如果你提交的是 `python train.py`，后台保存和启动的就是这条字面命令。
+- daemon 最终按 shell 命令执行，因此重定向、管道和 `&&` 这类 shell 语法会按 shell 语义生效。
+
+资源参数写法：
+
+- `--vram`：每张 GPU 需要的显存，单位固定为 MB，只接受整数，例如 `4096`
+- `--gpus`：需要的 GPU 数量，默认 `1`
+- `--gpu`：`--gpus` 的兼容别名
+- `--priority`：优先级，数字越小越先调度，默认 `10`
+
+需要特别注意两点：
+
+- 这里的显存值是“每张 GPU 的需求”，不是多卡总显存。比如 `--vram 4096 --gpus 2` 表示要 2 张 GPU，并且每张都至少能提供 4096 MB。
+- 当 `--gpus` 大于 `0` 且 `--vram` 为 `0` 时，调度器按“独占空闲 GPU”处理；当 `--gpus 0` 时表示这是一个不需要 GPU 的任务。
 
 ## Python 直达模式
 
-除了 `pmeow-agent submit` 命令，你也可以用更简洁的语法直接提交 Python 脚本：
+除了 `pmeow-agent submit`，你也可以直接把 Python 脚本作为命令入口提交。这个模式通常写成 `pmeow`，内部 launch mode 是 `attached_python`。
 
 ```bash
-pmeow -vram=10g -gpus=2 --report train.py --epochs 50
+pmeow --vram 10g --gpus 2 train.py --epochs 50
 ```
 
-规则：
+当前实际规则：
 
-- `.py` 路径之前的 token 是 PMEOW flags（`-vram`、`-gpus`、`--priority`、`--report`）
-- `.py` 路径之后的 token 原样传给 Python
-- `--report` 在排队期间打印队列尝试和 GPU 占用概览
-- GPU 资源到位后，当前终端直接变成 Python 进程的 stdin、stdout 和 stderr
+- 第一个 `.py` 路径之前的 token 会被当作 PMEOW flags 解析。
+- 第一个 `.py` 路径之后的 token 会原样传给 Python 脚本。
+- 资源满足前，CLI 会在当前终端等待；资源满足后，由当前终端以前台方式启动 Python 进程。
+- CLI 会把脚本路径解析成绝对路径，实际启动形式是 `python /abs/path/to/script.py ...`。
+- 启动时沿用提交时的工作目录，环境来自当前等待中的终端，并由调度器额外注入 `CUDA_VISIBLE_DEVICES`。
 
-这意味着 Python 直达模式更接近“排队成功后在当前终端前台执行 Python”：
+这个模式和 `submit` 的关键差异是：
 
-- daemon 不会替你在后台真正拉起 Python 子进程，而是由当前等待中的终端在资源就绪后 attached 启动。
-- 工作目录沿用提交时 cwd，Python 以字面量 `python script.py` 语义启动，并沿用提交时记录的脚本参数。
-- 环境来自当前等待进程所在终端，并由调度器额外注入 `CUDA_VISIBLE_DEVICES`。
+- daemon 不会在后台替你启动 Python 子进程，只负责排队、保留 GPU、记录状态。
+- Python 进程是在当前等待中的终端里启动的，所以 stdin、stdout 和 stderr 直接接到当前终端。
+- 它不会像 `submit` 那样把整份环境变量快照保存到 daemon 侧；最终使用的是等待中的 CLI 进程当时的环境。
+
+资源参数写法：
+
+- `-vram 10g`、`--vram 10g`、`-vram=10g`、`--vram=10g` 都可以
+- `-gpus 2`、`--gpus 2`、`-gpus=2`、`--gpus=2` 都可以
+- `--priority 5` 可以，当前实现不支持 `--priority=5`
+- `--socket /path/to/pmeow.sock` 可以
+
+单位规则：
+
+- `--vram 10240` 表示 10240 MB
+- `--vram 512m` 表示 512 MB
+- `--vram 10g` 表示 10240 MB
+
+当前实现里，Python 直达模式不支持这些写法：
+
+- `--gpu`
+- `--report`
 
 ### 可选 PyTorch 样例任务
 
@@ -233,7 +282,7 @@ pmeow -vram=10g -gpus=2 --report train.py --epochs 50
 
 ```bash
 pmeow -vram=8g -gpus=1 examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
-pmeow -vram=12g -gpus=2 --report examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
+pmeow -vram=12g -gpus=2 examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
 pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
 ```
 

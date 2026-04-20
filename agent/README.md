@@ -84,22 +84,25 @@ systemd 会以前台模式托管进程，运行日志进入 journal。
 ### 提交任务
 
 ```bash
-pmeow-agent submit --pvram 4000 --gpus 1 -- python train.py
+pmeow-agent submit --vram 4000 --gpus 1 python train.py
 
 # 如果不需要 GPU
-pmeow-agent submit --pvram 0 --gpus 0 -- bash run_preprocessing.sh
+pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
 ```
 
 常用参数：
 
-- `--pvram`：每张 GPU 需要的显存，单位 MB，默认 `0`
+- `--vram`：每张 GPU 需要的显存，单位 MB，默认 `0`
 - `--gpus`：需要的 GPU 数量，默认 `1`
+- `--gpu`：`--gpus` 的兼容别名
 - `--priority`：优先级，数字越小越先调度，默认 `10`
 
 `submit` 模式的执行语义有两点需要注意：
 
+- `submit` 后面直接跟命令，不要再额外写一个独立的 `--`；当前实现会把这个 `--` 也保存进命令字符串。
 - 提交时会冻结当前工作目录和当前进程环境；任务真正开始时，daemon 会用这份 cwd 和整份环境快照启动命令。
 - `submit` 不会改写你输入的命令；如果你写的是 `python train.py`，真正排队保存的就是这条原始命令。需要固定解释器时，请显式写绝对路径，或者改用下方的 Python 直达模式。
+- `--vram` 表示每张 GPU 的显存需求，不是多卡总显存。比如 `--vram 4096 --gpus 2` 表示需要 2 张 GPU，并且每张都至少满足 4096 MB。
 
 ### 查看队列状态
 
@@ -107,7 +110,13 @@ pmeow-agent submit --pvram 0 --gpus 0 -- bash run_preprocessing.sh
 pmeow-agent status
 ```
 
-该命令会输出 queued、running、completed、failed 和 cancelled 等任务数量。
+该命令当前输出的是 `queued`、`reserved` 和 `running` 三个数量。
+
+如果需要看活跃任务明细，可以用：
+
+```bash
+pmeow-agent tasks
+```
 
 ### 查看任务日志
 
@@ -125,15 +134,21 @@ pmeow-agent cancel <task_id>
 ### 直接运行 Python 任务
 
 ```bash
-pmeow -vram=10g -gpus=2 --report train.py --epochs 50
+pmeow --vram 10g --gpus 2 train.py --epochs 50
 ```
 
 规则如下：
 
-- 第一个 `.py` 路径之前的 token 会被解析为 PMEOW flags，例如 `-vram`、`-gpus`、`--priority`、`--report`
+- 第一个 `.py` 路径之前的 token 会被解析为 PMEOW flags，目前只支持 `-vram` / `--vram`、`-gpus` / `--gpus`、`--priority` 和 `--socket`
 - 脚本路径之后的参数会原样传给 Python
-- `--report` 会在排队期间打印调度尝试和当前 GPU 占用概览
 - GPU 资源就绪后，同一个终端会直接切换成 Python 进程的 stdin、stdout 和 stderr
+
+资源参数规则：
+
+- `--vram` 支持 MB 整数，或者 `m` / `g` 后缀，例如 `10240`、`512m`、`10g`
+- `--gpus` 表示 GPU 数量
+- 显存值同样表示“每张 GPU 的需求”，不是总显存
+- 当前实现不支持 `--gpu` 或 `--report`
 
 这个 Python 直达模式和 `submit` 的区别是：
 
@@ -147,18 +162,9 @@ PyTorch 样例任务是可选能力。使用前请自行安装与当前 CUDA 运
 
 ```bash
 pmeow -vram=8g -gpus=1 examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
-pmeow -vram=12g -gpus=2 --report examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
+pmeow -vram=12g -gpus=2 examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
 pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
 ```
-
-### 暂停 / 恢复队列
-
-```bash
-pmeow-agent pause
-pmeow-agent resume
-```
-
-队列暂停后不会再启动新任务，但已经 running 的任务会继续执行到结束。
 
 ## 环境变量
 

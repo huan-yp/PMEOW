@@ -31,7 +31,7 @@ def test_detect_python_invocation_splits_flags_and_script_args(tmp_path):
 
 
 def test_detect_python_invocation_edge_cases():
-    assert detect_python_invocation(["submit", "--pvram", "1024", "--", "python", "train.py"]) is None
+    assert detect_python_invocation(["submit", "--vram", "1024", "--", "python", "train.py"]) is None
     assert detect_python_invocation([]) is None
     assert detect_python_invocation(["-vram=10g"]) is None
 

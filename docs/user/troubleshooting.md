@@ -126,7 +126,7 @@ DELETE FROM settings WHERE key = 'password';
 1. 先看“任务调度”页对应节点是否处于暂停状态。
 2. 再看节点详情里的 GPU allocation 和进程审计。
 3. 在节点本地执行 `pmeow-agent status` 和 `pmeow-agent logs <task_id>`。
-4. 核对提交任务时的 `--pvram` 和 `--gpu` 是否过于激进。
+4. 核对提交任务时的 `--vram` 和 `--gpu` 是否过于激进。
 
 要特别注意，Agent 调度不仅看当前瞬时资源，还会看历史窗口数据。默认窗口为 120 秒。
 

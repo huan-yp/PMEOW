@@ -11,7 +11,10 @@ def test_import():
 def test_cli_status():
     from pmeow.__main__ import main
 
-    with pytest.raises((SystemExit, ConnectionRefusedError, FileNotFoundError)):
+    with pytest.raises(
+        RuntimeError,
+        match=r"(daemon socket .* does not exist|connection refused for daemon socket .*)",
+    ):
         main(["status"])
 
 
