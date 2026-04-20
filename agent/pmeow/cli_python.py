@@ -44,7 +44,7 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
         "install-service", "uninstall-service", "status", "cancel",
         "logs", "submit", "tasks",
     }
-    if not argv or argv[0] in known_subcommands or argv[0] in {"-h", "--help"}:
+    if not argv or argv[0] in known_subcommands or argv[0] in {"-h", "--help", "--version"}:
         return None
 
     socket_path: str | None = None
