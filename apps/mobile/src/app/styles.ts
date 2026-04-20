@@ -556,6 +556,22 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  ruleEditorCard: {
+    marginTop: 16,
+    borderRadius: 18,
+    padding: 16,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#20384d',
+  },
+  ruleInputRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  ruleInputCell: {
+    flex: 1,
+  },
   subscriptionWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',

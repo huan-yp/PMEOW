@@ -1,10 +1,40 @@
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { Server, ServerStatus, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
 import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type HostRealtimeHistory, type PerGpuRealtimeHistory } from '../app/metrics';
 import { styles } from '../app/styles';
 import { QueueTaskRow, SectionCard, StatBlock } from '../components/common';
+import { DEFAULT_IDLE_GPU_NOTIFICATION_RULE, type IdleGpuNotificationRule } from '../lib/preferences';
 import { CpuMemoryTrendCard, DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
+
+function buildEditableRule(rule: IdleGpuNotificationRule | null): {
+  minIdleGpuCount: string;
+  idleWindowSeconds: string;
+  maxGpuUtilizationPercent: string;
+  minSchedulableFreePercent: string;
+} {
+  const effective = rule ?? DEFAULT_IDLE_GPU_NOTIFICATION_RULE;
+  return {
+    minIdleGpuCount: String(effective.minIdleGpuCount),
+    idleWindowSeconds: String(effective.idleWindowSeconds),
+    maxGpuUtilizationPercent: String(effective.maxGpuUtilizationPercent),
+    minSchedulableFreePercent: String(effective.minSchedulableFreePercent),
+  };
+}
+
+function parseRuleNumber(value: string, min: number, max: number): number | null {
+  if (!value.trim()) {
+    return null;
+  }
+
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return Math.min(max, Math.max(min, Math.round(parsed * 10) / 10));
+}
 
 export function ServerDetailScreen(props: {
   server: Server;
@@ -15,8 +45,10 @@ export function ServerDetailScreen(props: {
   realtimeHistoryLoading: boolean;
   isAdmin: boolean;
   subscribed: boolean;
+  subscriptionRule: IdleGpuNotificationRule | null;
   onBack: () => void;
   onToggleSubscription: () => void;
+  onSaveSubscriptionRule: (rule: IdleGpuNotificationRule) => void;
 }) {
   const gpuCards = props.report?.resourceSnapshot.gpuCards ?? [];
   const gpuTotals = computeGpuTotals(gpuCards);
@@ -29,6 +61,48 @@ export function ServerDetailScreen(props: {
   const memoryUsage = props.report?.resourceSnapshot.memory.usagePercent;
   const gpuPalette = getUsagePalette(gpuTotals.averageUtilization);
   const vramPalette = getUsagePalette(gpuTotals.totalVramPercent);
+  const [editableRule, setEditableRule] = useState(() => buildEditableRule(props.subscriptionRule));
+  const [ruleError, setRuleError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEditableRule(buildEditableRule(props.subscriptionRule));
+    setRuleError(null);
+  }, [props.server.id, props.subscriptionRule]);
+
+  const currentRule = useMemo(() => {
+    return props.subscriptionRule ?? DEFAULT_IDLE_GPU_NOTIFICATION_RULE;
+  }, [props.subscriptionRule]);
+
+  const canConfigureGpuIdle = gpuCards.length > 0;
+
+  const saveRule = () => {
+    const minIdleGpuCount = parseRuleNumber(editableRule.minIdleGpuCount, 1, 16);
+    const idleWindowSeconds = parseRuleNumber(editableRule.idleWindowSeconds, 10, 3600);
+    const maxGpuUtilizationPercent = parseRuleNumber(editableRule.maxGpuUtilizationPercent, 0, 100);
+    const minSchedulableFreePercent = parseRuleNumber(editableRule.minSchedulableFreePercent, 0, 100);
+
+    if (
+      minIdleGpuCount == null
+      || idleWindowSeconds == null
+      || maxGpuUtilizationPercent == null
+      || minSchedulableFreePercent == null
+    ) {
+      setRuleError('四个字段都需要填写有效数字。');
+      return;
+    }
+    if (gpuCards.length > 0 && minIdleGpuCount > gpuCards.length) {
+      setRuleError(`当前机器只有 ${gpuCards.length} 张 GPU，最少空闲 GPU 数不能更高。`);
+      return;
+    }
+
+    setRuleError(null);
+    props.onSaveSubscriptionRule({
+      minIdleGpuCount: Math.round(minIdleGpuCount),
+      idleWindowSeconds: Math.round(idleWindowSeconds),
+      maxGpuUtilizationPercent,
+      minSchedulableFreePercent,
+    });
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
@@ -49,9 +123,74 @@ export function ServerDetailScreen(props: {
           <Text style={styles.connectionMeta}>总显存 <Text style={{ color: vramPalette.textColor }}>{formatMemoryPairGb(gpuTotals.totalVramUsedMb, gpuTotals.totalVramMb)}</Text> · 总利用率 <Text style={{ color: gpuPalette.textColor }}>{formatPercent(gpuTotals.averageUtilization)}</Text></Text>
         ) : null}
         {!props.isAdmin ? (
-          <Pressable style={styles.secondaryButtonWide} onPress={props.onToggleSubscription}>
-            <Text style={styles.secondaryButtonText}>{props.subscribed ? '取消空闲订阅' : '订阅空闲提醒'}</Text>
-          </Pressable>
+          canConfigureGpuIdle ? (
+            <>
+              <Pressable style={styles.secondaryButtonWide} onPress={props.onToggleSubscription}>
+                <Text style={styles.secondaryButtonText}>{props.subscribed ? '取消 GPU 空闲订阅' : '订阅 GPU 空闲提醒'}</Text>
+              </Pressable>
+              {props.subscribed ? (
+                <View style={styles.ruleEditorCard}>
+                  <Text style={styles.preferenceTitle}>订阅规则</Text>
+                  <Text style={styles.preferenceBody}>同机只在重新离开并再次满足规则后再提醒；全局 15 分钟内最多发 1 条。</Text>
+                  <Text style={styles.connectionMeta}>当前规则：至少 {currentRule.minIdleGpuCount} 张 GPU 在最近 {currentRule.idleWindowSeconds} 秒内利用率低于 {currentRule.maxGpuUtilizationPercent}% 且调度可用显存高于 {currentRule.minSchedulableFreePercent}%。</Text>
+                  <View style={styles.ruleInputRow}>
+                    <View style={styles.ruleInputCell}>
+                      <Text style={styles.fieldLabel}>最少空闲 GPU 数</Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        placeholder="1"
+                        placeholderTextColor="#60758a"
+                        style={styles.input}
+                        value={editableRule.minIdleGpuCount}
+                        onChangeText={(value) => setEditableRule((current) => ({ ...current, minIdleGpuCount: value }))}
+                      />
+                    </View>
+                    <View style={styles.ruleInputCell}>
+                      <Text style={styles.fieldLabel}>观测窗口秒数</Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        placeholder="60"
+                        placeholderTextColor="#60758a"
+                        style={styles.input}
+                        value={editableRule.idleWindowSeconds}
+                        onChangeText={(value) => setEditableRule((current) => ({ ...current, idleWindowSeconds: value }))}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.ruleInputRow}>
+                    <View style={styles.ruleInputCell}>
+                      <Text style={styles.fieldLabel}>GPU 利用率上限 %</Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        placeholder="5"
+                        placeholderTextColor="#60758a"
+                        style={styles.input}
+                        value={editableRule.maxGpuUtilizationPercent}
+                        onChangeText={(value) => setEditableRule((current) => ({ ...current, maxGpuUtilizationPercent: value }))}
+                      />
+                    </View>
+                    <View style={styles.ruleInputCell}>
+                      <Text style={styles.fieldLabel}>调度可用显存下限 %</Text>
+                      <TextInput
+                        keyboardType="numeric"
+                        placeholder="80"
+                        placeholderTextColor="#60758a"
+                        style={styles.input}
+                        value={editableRule.minSchedulableFreePercent}
+                        onChangeText={(value) => setEditableRule((current) => ({ ...current, minSchedulableFreePercent: value }))}
+                      />
+                    </View>
+                  </View>
+                  {ruleError ? <Text style={styles.errorText}>{ruleError}</Text> : null}
+                  <Pressable style={styles.primaryButton} onPress={saveRule}>
+                    <Text style={styles.primaryButtonText}>保存订阅规则</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.connectionMeta}>当前机器没有 GPU，无法配置 GPU 空闲提醒。</Text>
+          )
         ) : null}
         <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
           <Text style={styles.ghostButtonText}>返回</Text>

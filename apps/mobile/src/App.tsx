@@ -43,6 +43,7 @@ export default function App() {
   const toggleAdminCategory = useAppStore((state) => state.toggleAdminCategory);
   const togglePersonTaskNotifications = useAppStore((state) => state.togglePersonTaskNotifications);
   const toggleIdleServerSubscription = useAppStore((state) => state.toggleIdleServerSubscription);
+  const updateIdleServerRule = useAppStore((state) => state.updateIdleServerRule);
   const clearError = useAppStore((state) => state.clearError);
 
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
@@ -85,6 +86,10 @@ export default function App() {
     : '管理员';
 
   const isAdmin = session.authenticated && session.principal.kind === 'admin';
+  const personNotificationServers = useMemo(
+    () => servers.filter((server) => (latestMetrics[server.id]?.resourceSnapshot.gpuCards.length ?? 0) > 0),
+    [latestMetrics, servers],
+  );
 
   if (!hydrated) {
     return (
@@ -139,9 +144,11 @@ export default function App() {
             gpuRealtimeHistory={gpuRealtimeHistory}
             realtimeHistoryLoading={realtimeHistoryLoading}
             isAdmin={isAdmin}
-            subscribed={notificationSettings.person.idleServerIds.includes(selectedServer.id)}
+            subscribed={Boolean(notificationSettings.person.idleServerRules[selectedServer.id])}
+            subscriptionRule={notificationSettings.person.idleServerRules[selectedServer.id] ?? null}
             onBack={() => setSelectedServerId(null)}
             onToggleSubscription={() => toggleIdleServerSubscription(selectedServer.id)}
+            onSaveSubscriptionRule={(rule) => updateIdleServerRule(selectedServer.id, rule)}
           />
         </AuthenticatedShell>
       ) : isAdmin ? (
@@ -176,7 +183,7 @@ export default function App() {
               notificationPermissionGranted={notificationPermissionGranted}
               adminCategorySettings={notificationSettings.adminCategories}
               personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
-              idleServerIds={notificationSettings.person.idleServerIds}
+              idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
               servers={servers}
               notificationInbox={notificationInbox}
               onToggleNotificationsEnabled={toggleNotificationsEnabled}
@@ -221,8 +228,8 @@ export default function App() {
               notificationPermissionGranted={notificationPermissionGranted}
               adminCategorySettings={notificationSettings.adminCategories}
               personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
-              idleServerIds={notificationSettings.person.idleServerIds}
-              servers={servers}
+              idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
+              servers={personNotificationServers}
               notificationInbox={notificationInbox}
               onToggleNotificationsEnabled={toggleNotificationsEnabled}
               onToggleAdminCategory={toggleAdminCategory}

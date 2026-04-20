@@ -9,6 +9,7 @@ import {
 } from '../lib/notification-inbox';
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_IDLE_GPU_NOTIFICATION_RULE,
   loadNotificationSettings,
 } from '../lib/preferences';
 import {
@@ -323,14 +324,35 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
 
   toggleIdleServerSubscription: (serverId) => {
     const current = get().notificationSettings;
-    const exists = current.person.idleServerIds.includes(serverId);
+    const exists = Object.prototype.hasOwnProperty.call(current.person.idleServerRules, serverId);
     const next = {
       ...current,
       person: {
         ...current.person,
-        idleServerIds: exists
-          ? current.person.idleServerIds.filter((value) => value !== serverId)
-          : [...current.person.idleServerIds, serverId],
+        idleServerRules: exists
+          ? Object.fromEntries(
+              Object.entries(current.person.idleServerRules).filter(([value]) => value !== serverId),
+            )
+          : {
+              ...current.person.idleServerRules,
+              [serverId]: { ...DEFAULT_IDLE_GPU_NOTIFICATION_RULE },
+            },
+      },
+    };
+    set({ notificationSettings: next });
+    void persistNotificationSettings(next);
+  },
+
+  updateIdleServerRule: (serverId, rule) => {
+    const current = get().notificationSettings;
+    const next = {
+      ...current,
+      person: {
+        ...current.person,
+        idleServerRules: {
+          ...current.person.idleServerRules,
+          [serverId]: rule,
+        },
       },
     };
     set({ notificationSettings: next });

@@ -77,9 +77,9 @@ export function SettingsScreen(props: {
             </Pressable>
             <View style={styles.preferenceStack}>
               <Text style={styles.preferenceTitle}>机器空闲订阅</Text>
-              <Text style={styles.preferenceBody}>当订阅机器从繁忙转为空闲时，在本机发送系统通知。</Text>
+              <Text style={styles.preferenceBody}>按机器订阅 GPU 空闲规则；具体阈值在机器详情页编辑。</Text>
               {props.servers.length === 0 ? (
-                <Text style={styles.emptyText}>当前没有可订阅的机器。</Text>
+                <Text style={styles.emptyText}>当前没有可订阅的 GPU 机器。</Text>
               ) : (
                 <View style={styles.subscriptionWrap}>
                   {props.servers.map((server) => {

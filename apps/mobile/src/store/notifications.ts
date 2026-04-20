@@ -16,8 +16,12 @@ import {
   prepareNativeNotifications,
   showNativeNotification,
 } from '../lib/native-notifications';
-import { saveNotificationSettings, type MobileNotificationSettings } from '../lib/preferences';
+import { saveNotificationSettings, type IdleGpuNotificationRule, type MobileNotificationSettings } from '../lib/preferences';
 import type { StateGetter, StateSetter } from './types';
+
+function formatPercentValue(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
 
 function persistNotificationInboxAsync(items: NotificationInboxItem[]): void {
   void saveNotificationInbox(items);
@@ -90,7 +94,7 @@ export async function persistNotificationSettings(settings: MobileNotificationSe
 async function dispatchNotification(
   item: NotificationInboxItem,
   set: StateSetter,
-): Promise<void> {
+): Promise<boolean> {
   const shown = await showNativeNotification({
     title: item.title,
     body: item.body,
@@ -115,6 +119,8 @@ async function dispatchNotification(
       notificationInbox: nextInbox,
     };
   });
+
+  return shown;
 }
 
 export async function maybeNotifyTaskEvent(event: TaskEvent, set: StateSetter, get: StateGetter): Promise<void> {
@@ -184,24 +190,30 @@ export async function maybeNotifySecurityEvent(event: SecurityEvent, set: StateS
   }, set);
 }
 
-export async function maybeNotifyServerIdle(serverId: string, set: StateSetter, get: StateGetter): Promise<void> {
+export async function maybeNotifyServerIdle(
+  serverId: string,
+  idleGpuCount: number,
+  rule: IdleGpuNotificationRule,
+  set: StateSetter,
+  get: StateGetter,
+): Promise<boolean> {
   const state = get();
   if (!state.session.authenticated || state.session.principal.kind !== 'person') {
-    return;
+    return false;
   }
   if (!state.notificationSettings.notificationsEnabled) {
-    return;
+    return false;
   }
-  if (!state.notificationSettings.person.idleServerIds.includes(serverId)) {
-    return;
+  if (!state.notificationSettings.person.idleServerRules[serverId]) {
+    return false;
   }
 
   const serverName = findServerName(state.servers, serverId);
-  await dispatchNotification({
+  return dispatchNotification({
     id: buildNotificationId('idle'),
     kind: 'idle',
-    title: `机器空闲 · ${serverName}`,
-    body: '当前无运行任务，可以尝试提交作业。',
+    title: `GPU 空闲 · ${serverName}`,
+    body: `${idleGpuCount} 张 GPU 在最近 ${rule.idleWindowSeconds} 秒内利用率低于 ${formatPercentValue(rule.maxGpuUtilizationPercent)}%，调度可用显存高于 ${formatPercentValue(rule.minSchedulableFreePercent)}%。`,
     timestamp: Date.now(),
     serverId,
   }, set);
