@@ -15,6 +15,7 @@ def test_detect_foreground_invocation_splits_flags_and_command(tmp_path):
     invocation = detect_foreground_invocation([
         "--vram=10g",
         "--gpus=2",
+        "--name=nightly-train",
         "python",
         "train.py",
         "--epochs",
@@ -24,6 +25,7 @@ def test_detect_foreground_invocation_splits_flags_and_command(tmp_path):
     assert invocation is not None
     assert invocation.require_vram_mb == 10240
     assert invocation.require_gpu_count == 2
+    assert invocation.task_name == "nightly-train"
     assert invocation.argv == ["python", "train.py", "--epochs", "3"]
 
 
@@ -93,6 +95,7 @@ def test_run_foreground_invocation_submits_with_explicit_argv(monkeypatch, tmp_p
             require_vram_mb=0,
             require_gpu_count=1,
             priority=10,
+            task_name="nightly-train",
             argv=["python", "train.py", "--epochs", "3"],
         ),
         stdout_target=io.BytesIO(),
@@ -104,3 +107,4 @@ def test_run_foreground_invocation_submits_with_explicit_argv(monkeypatch, tmp_p
     assert params["cwd"] == str(tmp_path)
     assert params["argv"] == ["python", "train.py", "--epochs", "3"]
     assert params["launch_mode"] == "foreground"
+    assert params["task_name"] == "nightly-train"

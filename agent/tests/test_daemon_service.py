@@ -92,6 +92,7 @@ def test_collect_cycle_records_blocked_schedule_history_and_log(monkeypatch, tmp
     assert len(current.schedule_history) == 1
     assert current.schedule_history[0].result == "blocked_by_priority"
 
-    log_content = read_task_log(task.id, svc.config.log_dir)
+    log_content = read_task_log(svc.get_task_log_path(task.id))
     assert "submitted task" in log_content
     assert "schedule blocked_by_priority" in log_content
+    assert task.id.split("-", 1)[0] in svc.get_task_log_path(task.id)

@@ -50,11 +50,12 @@ def test_submit_freezes_current_cwd_and_environment_without_rewriting_python(mon
     monkeypatch.setenv("PMEOW_TEST_ENV", "submit-snapshot")
     monkeypatch.chdir(tmp_path)
 
-    main(["submit", "python", "train.py", "--epochs", "3"])
+    main(["submit", "--name", "nightly-train", "python", "train.py", "--epochs", "3"])
 
     params = captured["params"]
     assert captured["method"] == "submit_task"
     assert params["cwd"] == str(tmp_path)
     assert params["env_overrides"]["PMEOW_TEST_ENV"] == "submit-snapshot"
     assert params["argv"] is None
+    assert params["task_name"] == "nightly-train"
     assert params["command"] == shlex.join(["python", "train.py", "--epochs", "3"])

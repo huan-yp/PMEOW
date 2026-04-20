@@ -82,6 +82,7 @@ systemd 会以前台模式托管进程，运行日志进入 journal。
 
 ```bash
 pmeow-agent submit --vram 4000 --gpus 1 python train.py
+pmeow-agent submit --name nightly-train --vram 4000 --gpus 1 python train.py
 
 # 如果不需要 GPU
 pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
@@ -93,6 +94,7 @@ pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
 - `--gpus`：需要的 GPU 数量，默认 `1`
 - `--gpu`：`--gpus` 的兼容别名
 - `--priority`：优先级，数字越小越先调度，默认 `10`
+- `--name`：可选任务名，仅用于 Agent 本地日志文件名
 
 `submit` 模式的执行语义有两点需要注意：
 
@@ -122,6 +124,8 @@ pmeow-agent logs <task_id>
 pmeow-agent logs <task_id> --tail 50
 ```
 
+任务日志文件会按 `yyyymmddhhmmss.mmm-任务名.log` 命名；如果没有显式传 `--name`，默认使用任务 ID 的第一段。
+
 ### 取消任务
 
 ```bash
@@ -131,6 +135,7 @@ pmeow-agent cancel <task_id>
 ### 前台模式
 
 ```bash
+pmeow --name nightly-train --vram 10g --gpus 2 python train.py --epochs 50
 pmeow --vram 10g --gpus 2 python train.py --epochs 50
 pmeow --gpus 1 sh run.sh
 ```
@@ -145,6 +150,7 @@ pmeow --gpus 1 sh run.sh
 
 - `--vram` 支持 MB 整数，或者 `m` / `g` 后缀，例如 `10240`、`512m`、`10g`
 - `--gpus` 表示 GPU 数量
+- `--name` 可选，仅用于 Agent 本地日志文件名
 - 显存值同样表示“每张 GPU 的需求”，不是总显存
 
 前台模式和 `submit` 的区别是：

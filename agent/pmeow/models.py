@@ -123,6 +123,7 @@ class TaskSpec:
     priority: int = 10
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
+    task_name: Optional[str] = None
     launch_mode: TaskLaunchMode = TaskLaunchMode.background
     submit_uid: Optional[int] = None
     submit_gid: Optional[int] = None
@@ -151,6 +152,7 @@ class TaskRecord:
     require_gpu_count: int
     gpu_ids: Optional[list[int]] = None  # user-requested GPU affinity
     priority: int = 10
+    task_name: str = ""
 
     # Timeline
     created_at: float = 0.0
@@ -179,6 +181,7 @@ class TaskRecord:
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
     task_log_dir: Optional[str] = None
+    task_log_path: Optional[str] = None
 
     @property
     def public_status(self) -> PublicTaskStatus:

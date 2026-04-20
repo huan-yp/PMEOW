@@ -49,7 +49,6 @@ class TaskRunner:
         self,
         task: TaskRecord,
         gpu_ids: list[int],
-        log_dir: str,
         *,
         submit_uid: int | None = None,
         submit_gid: int | None = None,
@@ -59,7 +58,9 @@ class TaskRunner:
         Sets ``CUDA_VISIBLE_DEVICES``, redirects stdout+stderr to a log
         file, and runs the command inside the task's ``cwd``.
         """
-        log_fh = open_task_log(task.id, log_dir, append=True)
+        if task.task_log_path is None:
+            raise ValueError(f"task {task.id} is missing task_log_path")
+        log_fh = open_task_log(task.task_log_path, append=True)
         env = task.env_overrides.copy() if task.env_overrides is not None else os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_ids)
 

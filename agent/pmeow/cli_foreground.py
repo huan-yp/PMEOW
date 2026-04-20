@@ -16,6 +16,7 @@ class ForegroundInvocation:
     require_vram_mb: int
     require_gpu_count: int
     priority: int
+    task_name: str | None
     argv: list[str]
 
 
@@ -36,7 +37,7 @@ _KNOWN_SUBCOMMANDS = frozenset({
 })
 
 # PMEOW flags that consume a following value token.
-_VALUE_FLAGS = {"--vram", "--gpus", "--priority", "--socket"}
+_VALUE_FLAGS = {"--vram", "--gpus", "--priority", "--socket", "--name"}
 
 
 def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None:
@@ -57,6 +58,7 @@ def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None
     require_vram_mb = 0
     require_gpu_count = 1
     priority = 10
+    task_name: str | None = None
 
     index = 0
     while index < len(argv):
@@ -92,6 +94,13 @@ def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None
             socket_path = argv[index]
         elif token.startswith("--socket="):
             socket_path = token.split("=", 1)[1]
+        elif token == "--name":
+            index += 1
+            if index >= len(argv):
+                raise SystemExit("error: --name requires a value")
+            task_name = argv[index]
+        elif token.startswith("--name="):
+            task_name = token.split("=", 1)[1]
         else:
             # Reject single-dash long flags that look like old PMEOW syntax.
             bare = token.split("=", 1)[0]
@@ -108,6 +117,7 @@ def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None
                 require_vram_mb=require_vram_mb,
                 require_gpu_count=require_gpu_count,
                 priority=priority,
+                task_name=task_name,
                 argv=command_argv,
             )
         index += 1
@@ -143,6 +153,7 @@ def run_foreground_invocation(
         "require_gpu_count": invocation.require_gpu_count,
         "priority": invocation.priority,
         "argv": argv,
+        "task_name": invocation.task_name,
         "launch_mode": "foreground",
     })
     if not submit.get("ok"):

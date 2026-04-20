@@ -206,6 +206,7 @@ class TaskQueue:
             require_gpu_count=spec.require_gpu_count,
             gpu_ids=spec.gpu_ids,
             priority=spec.priority,
+            task_name=spec.task_name or "",
             created_at=time.time(),
             argv=spec.argv,
             env_overrides=spec.env_overrides,

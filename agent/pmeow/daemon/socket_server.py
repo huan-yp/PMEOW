@@ -200,6 +200,7 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         priority=params.get("priority", 10),
         argv=params.get("argv"),
         env_overrides=params.get("env_overrides"),
+        task_name=params.get("task_name"),
         launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.background,
         submit_uid=params.get("_peer_uid"),
         submit_gid=params.get("_peer_gid"),

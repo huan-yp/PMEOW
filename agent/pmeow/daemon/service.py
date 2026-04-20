@@ -18,7 +18,14 @@ from pmeow.collector.internet import InternetProbe, load_probe_from_env
 from pmeow.collector.snapshot import collect_snapshot
 from pmeow.config import AgentConfig
 from pmeow.daemon.runtime_monitor import RuntimeMonitorLoop
-from pmeow.executor.logs import append_task_log_line, ensure_task_log, read_task_log
+from pmeow.executor.logs import (
+    append_task_log_line,
+    build_task_log_path,
+    default_task_name,
+    ensure_task_log,
+    normalize_task_name,
+    read_task_log,
+)
 from pmeow.executor.runner import TaskRunner
 from pmeow.models import (
     ScheduleEvaluation,
@@ -62,6 +69,7 @@ class DaemonService:
         self.runner = TaskRunner()
         self._submit_credentials: dict[str, tuple[int | None, int | None]] = {}
         self._task_log_dirs: dict[str, str] = {}
+        self._task_log_paths: dict[str, str] = {}
         self.runtime_monitor = RuntimeMonitorLoop(
             self.task_queue,
             poll_interval=1.0,
@@ -267,7 +275,7 @@ class DaemonService:
                     )
                     cred = self._submit_credentials.get(task.id, (None, None))
                     proc = self.runner.start(
-                        task, dec.gpu_ids, self.get_task_log_dir(task.id),
+                        task, dec.gpu_ids,
                         submit_uid=cred[0], submit_gid=cred[1],
                     )
                     self.task_queue.start(task.id, proc.pid)
@@ -312,9 +320,13 @@ class DaemonService:
                     raise ValueError(err)
             rec = self.task_queue.submit(spec)
             rec.task_log_dir = self._resolve_task_log_dir(spec.submit_uid)
+            requested_name = spec.task_name.strip() if spec.task_name else ""
+            rec.task_name = normalize_task_name(requested_name or default_task_name(rec.id))
+            rec.task_log_path = build_task_log_path(rec.task_log_dir, rec.created_at, rec.task_name)
             self._submit_credentials[rec.id] = (spec.submit_uid, spec.submit_gid)
             self._task_log_dirs[rec.id] = rec.task_log_dir
-            log_path = ensure_task_log(rec.id, rec.task_log_dir)
+            self._task_log_paths[rec.id] = rec.task_log_path
+            log_path = ensure_task_log(rec.task_log_path)
             self._handover_task_log_ownership(
                 log_path,
                 log_dir=rec.task_log_dir,
@@ -358,7 +370,7 @@ class DaemonService:
 
     def get_logs(self, task_id: str, tail: int = 100) -> str:
         try:
-            return read_task_log(task_id, self.get_task_log_dir(task_id), tail=tail)
+            return read_task_log(self.get_task_log_path(task_id), tail=tail)
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"log file not found for task {task_id}") from exc
 
@@ -369,9 +381,13 @@ class DaemonService:
         return self._task_log_dirs.get(task_id, self.config.log_dir)
 
     def get_task_log_path(self, task_id: str) -> str:
-        from pmeow.executor.logs import get_task_log_path
-
-        return get_task_log_path(task_id, self.get_task_log_dir(task_id))
+        task = self.task_queue.get(task_id)
+        if task is not None and task.task_log_path:
+            return task.task_log_path
+        cached = self._task_log_paths.get(task_id)
+        if cached is not None:
+            return cached
+        return os.path.join(self.get_task_log_dir(task_id), f"{task_id}.log")
 
     def set_task_priority(self, task_id: str, priority: int) -> bool:
         with self._lock:
@@ -413,7 +429,7 @@ class DaemonService:
     # ------------------------------------------------------------------
 
     def _append_task_message(self, task_id: str, message: str) -> None:
-        append_task_log_line(task_id, self.get_task_log_dir(task_id), message)
+        append_task_log_line(self.get_task_log_path(task_id), message)
 
     def _resolve_task_log_dir(self, submit_uid: int | None) -> str:
         if os.getuid() != 0 or submit_uid is None or submit_uid == 0:
@@ -520,7 +536,7 @@ class DaemonService:
 
     def _format_submitted_message(self, task: TaskRecord) -> str:
         return (
-            f"submitted task {task.id} mode={task.launch_mode.value} user={task.user} cwd={task.cwd}; "
+            f"submitted task {task.id} name={task.task_name} mode={task.launch_mode.value} user={task.user} cwd={task.cwd}; "
             f"need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB"
         )
 

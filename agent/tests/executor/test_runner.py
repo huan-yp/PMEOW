@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 
@@ -26,17 +27,18 @@ def _make_task(
         require_gpu_count=0,
         gpu_ids=None,
         priority=10,
+        task_name=task_id,
         created_at=time.time(),
+        task_log_path=os.path.join(cwd, f"{task_id}.log"),
     )
 
 
 class TestTaskRunner:
     def test_start_and_complete_successfully(self, tmp_path) -> None:
-        log_dir = str(tmp_path)
         runner = TaskRunner()
         task = _make_task("echo hello", cwd=str(tmp_path))
 
-        proc = runner.start(task, gpu_ids=[0], log_dir=log_dir)
+        proc = runner.start(task, gpu_ids=[0])
         proc.wait(timeout=10)
 
         completed = runner.check_completed()
@@ -44,11 +46,10 @@ class TestTaskRunner:
         assert completed[0] == (task.id, 0)
 
     def test_cancel_running_task(self, tmp_path) -> None:
-        log_dir = str(tmp_path)
         runner = TaskRunner()
         task = _make_task("sleep 60", cwd=str(tmp_path))
 
-        proc = runner.start(task, gpu_ids=[0], log_dir=log_dir)
+        proc = runner.start(task, gpu_ids=[0])
         assert runner.is_running(task.id)
 
         ok = runner.cancel(task.id)
@@ -57,7 +58,6 @@ class TestTaskRunner:
         assert proc.poll() is not None
 
     def test_cuda_visible_devices_set(self, tmp_path) -> None:
-        log_dir = str(tmp_path)
         runner = TaskRunner()
         task = _make_task(sys.executable, cwd=str(tmp_path), task_id="cuda-test")
         task.argv = [
@@ -66,9 +66,9 @@ class TestTaskRunner:
             "import os; print(os.environ.get('CUDA_VISIBLE_DEVICES', ''))",
         ]
 
-        proc = runner.start(task, gpu_ids=[2, 5], log_dir=log_dir)
+        proc = runner.start(task, gpu_ids=[2, 5])
         proc.wait(timeout=10)
         runner.check_completed()
 
-        content = read_task_log("cuda-test", log_dir)
+        content = read_task_log(task.task_log_path)
         assert "2,5" in content

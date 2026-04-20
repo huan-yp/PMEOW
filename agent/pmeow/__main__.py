@@ -88,6 +88,7 @@ def _cmd_submit(args: argparse.Namespace) -> None:
         "priority": args.priority,
         "argv": argv,
         "env_overrides": dict(os.environ),
+        "task_name": args.name,
     })
     if not resp.get("ok"):
         print(f"error: {resp.get('error')}", file=sys.stderr)
@@ -181,6 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
     submit_parser.add_argument("--gpus", dest="gpus", type=int, default=1, help="GPU count")
     submit_parser.add_argument("--gpu", dest="gpus", type=int, help=argparse.SUPPRESS)
     submit_parser.add_argument("--priority", type=int, default=10, help="Priority")
+    submit_parser.add_argument("--name", default=None, help="Optional task name used for local logs")
     submit_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Command to run")
 
     tasks_parser = sub.add_parser("tasks", help="List tasks")

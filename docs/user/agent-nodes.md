@@ -220,6 +220,7 @@ pmeow-agent cancel <task_id>
 ```bash
 # 1 卡、每卡申请 4096 MB 显存
 pmeow-agent submit --vram 4096 --gpus 1 python train.py --epochs 50
+pmeow-agent submit --name nightly-train --vram 4096 --gpus 1 python train.py --epochs 50
 
 # 纯 CPU 任务
 pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
@@ -238,6 +239,7 @@ pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
 - `--gpus`：需要的 GPU 数量，默认 `1`
 - `--gpu`：`--gpus` 的兼容别名
 - `--priority`：优先级，数字越小越先调度，默认 `10`
+- `--name`：可选任务名，仅用于 Agent 节点本地日志文件名
 
 需要特别注意两点：
 
@@ -249,6 +251,7 @@ pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
 除了 `pmeow-agent submit`，你也可以直接在当前终端以前台方式运行任务。这个模式通常写成 `pmeow`，内部 launch mode 是 `foreground`。
 
 ```bash
+pmeow --name nightly-train --vram 10g --gpus 2 python train.py --epochs 50
 pmeow --vram 10g --gpus 2 python train.py --epochs 50
 pmeow --gpus 1 sh run.sh
 pmeow --vram 0 --gpus 0 bash -lc 'echo hi'
@@ -274,6 +277,7 @@ pmeow --vram 0 --gpus 0 bash -lc 'echo hi'
 - `--gpus 2`、`--gpus=2` — 单横线写法（如 `-gpus`）不再支持
 - `--priority 5`、`--priority=5`
 - `--socket /path/to/pmeow.sock`
+- `--name nightly-train`、`--name=nightly-train`
 
 单位规则：
 
@@ -308,6 +312,7 @@ pmeow --vram=6g --gpus=1 python examples/tasks/pytorch_chatty.py --gpus 1 --mem-
 - `pmeow.db`：本地 SQLite，保存任务和运行时状态
 - `pmeow.sock`：CLI 和 daemon 的控制通道
 - `logs/`：任务 stdout 和 stderr 日志
+- 日志文件名格式：`yyyymmddhhmmss.mmm-任务名.log`；如果提交时未指定 `--name`，默认使用任务 ID 第一段
 
 ## 推荐的首次接入流程
 
