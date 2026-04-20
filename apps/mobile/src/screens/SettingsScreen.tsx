@@ -18,6 +18,7 @@ export function SettingsScreen(props: {
   };
   personTaskNotificationsEnabled: boolean;
   idleServerIds: string[];
+  adminHiddenServerIds: string[];
   servers: Server[];
   notificationInbox: NotificationInboxItem[];
   onOpenBatteryOptimizationSettings: () => void;
@@ -25,6 +26,7 @@ export function SettingsScreen(props: {
   onToggleAdminCategory: (category: 'alerts' | 'security' | 'taskEvents') => void;
   onTogglePersonTaskNotifications: () => void;
   onToggleIdleServerSubscription: (serverId: string) => void;
+  onToggleAdminHiddenServer: (serverId: string) => void;
   onSignOut: () => Promise<void>;
 }) {
   return (
@@ -86,6 +88,29 @@ export function SettingsScreen(props: {
               </View>
               <Text style={styles.preferenceValue}>{props.adminCategorySettings.taskEvents ? '开' : '关'}</Text>
             </Pressable>
+            <View style={styles.preferenceStack}>
+              <Text style={styles.preferenceTitle}>首页隐藏机器</Text>
+              <Text style={styles.preferenceBody}>只影响当前设备上的管理员首页，不会改变其他设备或账号的可见范围。</Text>
+              {props.servers.length === 0 ? (
+                <Text style={styles.emptyText}>当前没有可设置的机器。</Text>
+              ) : (
+                <View style={styles.subscriptionWrap}>
+                  {props.servers.map((server) => {
+                    const hidden = props.adminHiddenServerIds.includes(server.id);
+
+                    return (
+                      <Pressable
+                        key={server.id}
+                        style={[styles.subscriptionChip, hidden ? styles.subscriptionChipActive : null]}
+                        onPress={() => props.onToggleAdminHiddenServer(server.id)}
+                      >
+                        <Text style={[styles.subscriptionChipText, hidden ? styles.subscriptionChipTextActive : null]}>{hidden ? '已隐藏' : '显示中'} · {server.name}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
           </>
         ) : (
           <>

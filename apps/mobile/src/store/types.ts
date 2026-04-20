@@ -9,7 +9,7 @@ import type {
   UnifiedReport,
 } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
-import type { IdleGpuNotificationRule, MobileNotificationSettings } from '../lib/preferences';
+import type { IdleGpuNotificationRule, MobileHomeView, MobileNotificationSettings } from '../lib/preferences';
 import type { ConnectionMode } from '../lib/storage';
 
 export const UNAUTHENTICATED_SESSION: AuthSession = {
@@ -68,6 +68,8 @@ export interface MobileAppState {
   togglePersonTaskNotifications: () => void;
   toggleIdleServerSubscription: (serverId: string) => void;
   updateIdleServerRule: (serverId: string, rule: IdleGpuNotificationRule) => void;
+  setHomeView: (role: 'admin' | 'person', view: MobileHomeView) => void;
+  toggleAdminHiddenServer: (serverId: string) => void;
   resumeRealtimeFromForeground: () => Promise<void>;
   refreshAndroidBackgroundState: () => Promise<void>;
   openBatteryOptimizationSettings: () => Promise<void>;

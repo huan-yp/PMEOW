@@ -217,6 +217,11 @@ export const styles = StyleSheet.create({
     gap: 12,
     marginTop: 12,
   },
+  summaryGridTight: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
   rowHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -723,5 +728,52 @@ export const styles = StyleSheet.create({
   gpuIdleSection: {
     gap: 6,
     marginBottom: 4,
+  },
+  detailStripeRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  detailStripe: {
+    flex: 1,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 4,
+    backgroundColor: '#091723',
+    borderColor: '#20384d',
+  },
+  detailStripeOnline: {
+    borderColor: '#2f8750',
+    backgroundColor: '#10291b',
+  },
+  detailStripeOffline: {
+    borderColor: '#8c3b50',
+    backgroundColor: '#2a131b',
+  },
+  detailStripeNeutral: {
+    backgroundColor: '#0b1c2b',
+  },
+  detailStripeLabel: {
+    color: '#8ea5b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  detailStripeValue: {
+    color: '#f3f8fc',
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  detailStripeValueOnline: {
+    color: '#82e6a3',
+  },
+  detailStripeValueOffline: {
+    color: '#ff9ca8',
+  },
+  detailStripeMeta: {
+    color: '#b7cad8',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

@@ -1,8 +1,9 @@
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { Server, ServerStatus, Task, TaskEvent, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import { formatTaskEventLabel, formatTimestamp } from '../app/formatters';
 import { styles } from '../app/styles';
+import type { MobileHomeView } from '../lib/preferences';
 import {
   ExpandableList,
   GpuIdleBar,
@@ -20,14 +21,30 @@ export function PersonHomeScreen(props: {
   personTasks: Task[];
   recentTaskEvents: TaskEvent[];
   notificationInbox: NotificationInboxItem[];
+  homeView: MobileHomeView;
+  onChangeHomeView: (view: MobileHomeView) => void;
   onSelectServer: (serverId: string) => void;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
-      <SectionCard title="GPU 空闲概览" description="每台机器的空闲 GPU 数量，点击可进入详情。">
+      <SectionCard title="机器视图" description="默认优先查看 GPU 空闲情况，也可切换到机器摘要。">
+        <View style={styles.segmentRow}>
+          <Pressable
+            style={[styles.segment, props.homeView === 'gpuIdle' ? styles.segmentActive : null]}
+            onPress={() => props.onChangeHomeView('gpuIdle')}
+          >
+            <Text style={[styles.segmentText, props.homeView === 'gpuIdle' ? styles.segmentTextActive : null]}>GPU 空闲情况</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.segment, props.homeView === 'summary' ? styles.segmentActive : null]}
+            onPress={() => props.onChangeHomeView('summary')}
+          >
+            <Text style={[styles.segmentText, props.homeView === 'summary' ? styles.segmentTextActive : null]}>机器摘要</Text>
+          </Pressable>
+        </View>
         {props.servers.length === 0 ? (
           <Text style={styles.emptyText}>当前没有可见机器。</Text>
-        ) : (
+        ) : props.homeView === 'gpuIdle' ? (
           <View style={styles.gpuIdleSection}>
             {props.servers.map((server) => (
               <GpuIdleBar
@@ -38,21 +55,15 @@ export function PersonHomeScreen(props: {
               />
             ))}
           </View>
-        )}
-      </SectionCard>
-
-      <SectionCard title="机器列表" description="点击机器进入详情，可查看运行队列并管理空闲订阅。">
-        {props.servers.length === 0 ? (
-          <Text style={styles.emptyText}>当前没有与你绑定的机器。</Text>
         ) : (
           props.servers.map((server) => (
             <ServerCard
-              key={server.id}
-              server={server}
-              status={props.statuses[server.id]}
-              report={props.latestMetrics[server.id]}
-              onPress={() => props.onSelectServer(server.id)}
-            />
+                key={server.id}
+                server={server}
+                status={props.statuses[server.id]}
+                report={props.latestMetrics[server.id]}
+                onPress={() => props.onSelectServer(server.id)}
+              />
           ))
         )}
       </SectionCard>

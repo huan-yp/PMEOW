@@ -7,6 +7,8 @@ export interface IdleGpuNotificationRule {
   minSchedulableFreePercent: number;
 }
 
+export type MobileHomeView = 'summary' | 'gpuIdle';
+
 export const DEFAULT_IDLE_GPU_NOTIFICATION_RULE: IdleGpuNotificationRule = {
   minIdleGpuCount: 1,
   idleWindowSeconds: 60,
@@ -65,6 +67,18 @@ function migrateIdleServerIds(value: unknown): Record<string, IdleGpuNotificatio
   );
 }
 
+function sanitizeHomeView(value: unknown, fallback: MobileHomeView): MobileHomeView {
+  return value === 'summary' || value === 'gpuIdle' ? value : fallback;
+}
+
+function sanitizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.filter((item): item is string => typeof item === 'string' && item.length > 0)));
+}
+
 export interface MobileNotificationSettings {
   notificationsEnabled: boolean;
   adminCategories: {
@@ -72,13 +86,23 @@ export interface MobileNotificationSettings {
     security: boolean;
     taskEvents: boolean;
   };
+  home: {
+    adminView: MobileHomeView;
+    personView: MobileHomeView;
+    adminHiddenServerIds: string[];
+  };
   person: {
     taskEvents: boolean;
     idleServerRules: Record<string, IdleGpuNotificationRule>;
   };
 }
 
-interface LegacyMobileNotificationSettings extends Omit<MobileNotificationSettings, 'person'> {
+interface LegacyMobileNotificationSettings extends Omit<MobileNotificationSettings, 'person' | 'home'> {
+  home?: {
+    adminView?: MobileHomeView;
+    personView?: MobileHomeView;
+    adminHiddenServerIds?: string[];
+  };
   person?: {
     taskEvents?: boolean;
     idleServerRules?: Record<string, IdleGpuNotificationRule>;
@@ -95,6 +119,11 @@ export const DEFAULT_NOTIFICATION_SETTINGS: MobileNotificationSettings = {
     alerts: true,
     security: true,
     taskEvents: true,
+  },
+  home: {
+    adminView: 'summary',
+    personView: 'gpuIdle',
+    adminHiddenServerIds: [],
   },
   person: {
     taskEvents: true,
@@ -116,6 +145,11 @@ export async function loadNotificationSettings(): Promise<MobileNotificationSett
         alerts: parsed.adminCategories?.alerts ?? DEFAULT_NOTIFICATION_SETTINGS.adminCategories.alerts,
         security: parsed.adminCategories?.security ?? DEFAULT_NOTIFICATION_SETTINGS.adminCategories.security,
         taskEvents: parsed.adminCategories?.taskEvents ?? DEFAULT_NOTIFICATION_SETTINGS.adminCategories.taskEvents,
+      },
+      home: {
+        adminView: sanitizeHomeView(parsed.home?.adminView, DEFAULT_NOTIFICATION_SETTINGS.home.adminView),
+        personView: sanitizeHomeView(parsed.home?.personView, DEFAULT_NOTIFICATION_SETTINGS.home.personView),
+        adminHiddenServerIds: sanitizeStringList(parsed.home?.adminHiddenServerIds),
       },
       person: {
         taskEvents: parsed.person?.taskEvents ?? DEFAULT_NOTIFICATION_SETTINGS.person.taskEvents,
