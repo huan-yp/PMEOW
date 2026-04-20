@@ -6,7 +6,7 @@
 
 ## 运行要求
 
-- Python 3.10+
+- Python 3.8+
 - Linux（依赖 `/proc` 采集系统指标）
 - 可选：NVIDIA GPU 与 `nvidia-smi`，用于 GPU 指标和 GPU 归属视图
 
@@ -31,7 +31,7 @@ sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow-agent /usr/local/bin/pmeow-agent
 sudo ln -sf /opt/pmeow-agent/.venv/bin/pmeow /usr/local/bin/pmeow
 ```
 
-这样 `pmeow-agent` 和 `pmeow` 在节点上只有一份固定安装，systemd 也可以稳定指向这套解释器；与此同时，用户在别的虚拟环境里调用 `pmeow` 时，直达模式仍会保留字面量 `python` 调用语义，不会替你改写成别的解释器路径。
+这样 `pmeow-agent` 和 `pmeow` 在节点上只有一份固定安装，systemd 也可以稳定指向这套解释器；
 
 如果某个项目虚拟环境里也安装了另一份 `pmeow-agent`，shell 会优先命中那一份；想强制走系统级命令时，请显式调用 `/usr/local/bin/pmeow` 或 `/usr/local/bin/pmeow-agent`。
 
@@ -51,9 +51,6 @@ pip install -e ".[dev]"
 ```bash
 export PMEOW_SERVER_URL=http://your-server:17200
 pmeow-agent run
-
-# 兼容别名
-pmeow-agent daemon
 ```
 
 当前更推荐写成 `pmeow-agent run`。前台模式会把 Agent 运行日志直接打印到当前终端，适合首次接入和现场排障。
@@ -101,7 +98,7 @@ pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
 
 - `submit` 后面直接跟命令，不要再额外写一个独立的 `--`；当前实现会把这个 `--` 也保存进命令字符串。
 - 提交时会冻结当前工作目录和当前进程环境；任务真正开始时，daemon 会用这份 cwd 和整份环境快照启动命令。
-- `submit` 不会改写你输入的命令；如果你写的是 `python train.py`，真正排队保存的就是这条原始命令。需要固定解释器时，请显式写绝对路径，或者改用下方的 Python 直达模式。
+- `submit` 不会改写你输入的命令；如果你写的是 `python train.py`，真正排队保存的就是这条原始命令。需要固定解释器时，请显式写绝对路径，或者改用下方的前台模式。
 - `--vram` 表示每张 GPU 的显存需求，不是多卡总显存。比如 `--vram 4096 --gpus 2` 表示需要 2 张 GPU，并且每张都至少满足 4096 MB。
 
 ### 查看队列状态
@@ -131,39 +128,41 @@ pmeow-agent logs <task_id> --tail 50
 pmeow-agent cancel <task_id>
 ```
 
-### 直接运行 Python 任务
+### 前台模式
 
 ```bash
-pmeow --vram 10g --gpus 2 train.py --epochs 50
+pmeow --vram 10g --gpus 2 python train.py --epochs 50
+pmeow --gpus 1 sh run.sh
 ```
 
 规则如下：
 
-- 第一个 `.py` 路径之前的 token 会被解析为 PMEOW flags，目前只支持 `-vram` / `--vram`、`-gpus` / `--gpus`、`--priority` 和 `--socket`
-- 脚本路径之后的参数会原样传给 Python
-- GPU 资源就绪后，同一个终端会直接切换成 Python 进程的 stdin、stdout 和 stderr
+- PMEOW 参数只能出现在命令前面，且只接受标准的 `--flag value` 或 `--flag=value` 写法（单横线写法如 `-vram` 不再支持）。
+- 第一个不是 PMEOW 参数的 token 开始，后面的所有内容原样透传给子进程。
+- GPU 资源就绪后，同一个终端会直接切换成子进程的 stdin、stdout 和 stderr。
 
 资源参数规则：
 
 - `--vram` 支持 MB 整数，或者 `m` / `g` 后缀，例如 `10240`、`512m`、`10g`
 - `--gpus` 表示 GPU 数量
 - 显存值同样表示“每张 GPU 的需求”，不是总显存
-- 当前实现不支持 `--gpu` 或 `--report`
 
-这个 Python 直达模式和 `submit` 的区别是：
+前台模式和 `submit` 的区别是：
 
-- daemon 只负责排队、资源保留和状态同步；真正的 Python 进程是在当前等待中的终端里以前台 attached 方式启动。
-- 启动时仍然使用提交时记录的工作目录与脚本参数，并以字面量 `python script.py` 语义运行；stdin、stdout 和 stderr 行为更接近你直接在这个终端里执行同一条命令。
-- 调度器仍然会额外注入 `CUDA_VISIBLE_DEVICES`，所以它不是完全裸的本地执行，而是“带资源绑定的前台 Python”。
+- daemon 只负责排队、资源保留和状态同步；真正的子进程是在当前等待中的终端里以前台 attached 方式启动。
+- 启动时仍然使用提交时记录的工作目录与命令参数；stdin、stdout 和 stderr 行为更接近你直接在这个终端里执行同一条命令。
+- 调度器仍然会额外注入 `CUDA_VISIBLE_DEVICES`，所以它不是完全裸的本地执行，而是"带资源绑定的前台命令"。
+
+> **术语说明**：这里的"前台"指的是任务的执行方式（在当前终端前台运行），与 Agent 守护进程本身的运行方式（`pmeow-agent run` 前台运行 Agent）是两个独立概念。
 
 ### 可选的 PyTorch 样例任务
 
 PyTorch 样例任务是可选能力。使用前请自行安装与当前 CUDA 运行时匹配的 `torch`；`pmeow-agent` 不会把 `torch` 作为默认依赖。
 
 ```bash
-pmeow -vram=8g -gpus=1 examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
-pmeow -vram=12g -gpus=2 examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
-pmeow -vram=6g -gpus=1 examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
+pmeow --vram=8g --gpus=1 python examples/tasks/pytorch_hold.py --gpus 1 --mem-per-gpu 7g --seconds 60
+pmeow --vram=12g --gpus=2 python examples/tasks/pytorch_stagger.py --memories 5g,11g --seconds 90
+pmeow --vram=6g --gpus=1 python examples/tasks/pytorch_chatty.py --gpus 1 --mem-per-gpu 4g --seconds 45 --interval 5
 ```
 
 ## 环境变量

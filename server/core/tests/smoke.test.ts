@@ -74,7 +74,7 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     command: 'python train.py',
     cwd: '/home/alice',
     user: 'alice',
-    launchMode: 'daemon_shell',
+    launchMode: 'background',
     requireVramMb: 8000,
     requireGpuCount: 1,
     gpuIds: null,

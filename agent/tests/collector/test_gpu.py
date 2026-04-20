@@ -30,7 +30,7 @@ def _make_task(task_id: str, pid: int, vram: int = 8000, gpu_ids=None) -> TaskRe
         command="train.py",
         cwd="/tmp",
         user="alice",
-        launch_mode=TaskLaunchMode.daemon_shell,
+        launch_mode=TaskLaunchMode.background,
         require_vram_mb=vram,
         require_gpu_count=1,
         gpu_ids=gpu_ids or [0],

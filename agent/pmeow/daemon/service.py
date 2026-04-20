@@ -242,8 +242,8 @@ class DaemonService:
                     if task is None:
                         continue
 
-                    if task.launch_mode == TaskLaunchMode.attached_python:
-                        # Reserve GPUs for attached launch
+                    if task.launch_mode == TaskLaunchMode.foreground:
+                        # Reserve GPUs for foreground launch
                         attach_deadline = time.time() + self.config.attach_timeout
                         self.task_queue.reserve(
                             task.id, dec.gpu_ids,
@@ -254,7 +254,7 @@ class DaemonService:
                             self._format_launch_reserved_message(dec.gpu_ids),
                         )
                         log.info(
-                            "reserved attached launch %s (gpus=%s)",
+                            "reserved foreground launch %s (gpus=%s)",
                             task.id, dec.gpu_ids,
                         )
                         continue
@@ -383,20 +383,20 @@ class DaemonService:
             log.info("task %s priority updated: %d -> %d", task_id, old_task.priority, priority)
             return True
 
-    def confirm_attached_launch(self, task_id: str, pid: int) -> bool:
+    def confirm_foreground_launch(self, task_id: str, pid: int) -> bool:
         with self._lock:
             task = self.task_queue.get(task_id)
             if task is None or task.status != TaskStatus.reserved:
                 return False
             self.task_queue.start(task_id, pid)
             self._append_task_message(task_id, self._format_started_message(task_id, pid))
-            log.info("confirmed attached launch %s (pid=%d)", task_id, pid)
+            log.info("confirmed foreground launch %s (pid=%d)", task_id, pid)
             return True
 
-    def finish_attached_task(self, task_id: str, exit_code: int) -> bool:
+    def finish_foreground_task(self, task_id: str, exit_code: int) -> bool:
         with self._lock:
             task = self.task_queue.get(task_id)
-            if task is None or task.launch_mode != TaskLaunchMode.attached_python:
+            if task is None or task.launch_mode != TaskLaunchMode.foreground:
                 return False
             self._append_task_message(task_id, self._format_finished_message(task_id, exit_code))
             self.task_queue.push_completion(CompletionObservation(
@@ -405,7 +405,7 @@ class DaemonService:
                 timestamp=time.time(),
             ))
             self.task_queue.tick()
-            log.info("attached task %s finished (exit=%d)", task_id, exit_code)
+            log.info("foreground task %s finished (exit=%d)", task_id, exit_code)
             return True
 
     # ------------------------------------------------------------------

@@ -20,7 +20,7 @@ describe('useStore', () => {
     const task = {
       id: 't1', serverId: 's1', command: 'python train.py', cwd: '/home',
       user: 'alice', status: 'queued' as const, priority: 100,
-      requireVramMb: 4096, requireGpuCount: 1, launchMode: 'hold' as const,
+      requireVramMb: 4096, requireGpuCount: 1, launchMode: 'background' as const,
       pid: null, exitCode: null, assignedGpus: null, declaredVramPerGpu: null,
       scheduleHistory: [], createdAt: 0, startedAt: null, finishedAt: null,
     };

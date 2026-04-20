@@ -108,8 +108,8 @@ class PublicTaskStatus(enum.Enum):
 
 
 class TaskLaunchMode(enum.Enum):
-    daemon_shell = "daemon_shell"
-    attached_python = "attached_python"
+    background = "background"
+    foreground = "foreground"
 
 
 @dataclass
@@ -123,7 +123,7 @@ class TaskSpec:
     priority: int = 10
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
-    launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
+    launch_mode: TaskLaunchMode = TaskLaunchMode.background
     submit_uid: Optional[int] = None
     submit_gid: Optional[int] = None
 
@@ -174,7 +174,7 @@ class TaskRecord:
         default_factory=lambda: deque(maxlen=5)
     )
 
-    # attached_python specific
+    # foreground-mode specific
     attach_deadline: Optional[float] = None
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None

@@ -13,7 +13,7 @@ function createTask(): Task {
     command: 'python train.py',
     cwd: '/workspace',
     user: 'alice',
-    launchMode: 'attached_python',
+    launchMode: 'foreground',
     requireVramMb: 5120,
     requireGpuCount: 2,
     gpuIds: null,

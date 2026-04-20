@@ -112,7 +112,7 @@ export interface TaskInfo {
   command: string;
   cwd: string;
   user: string;
-  launchMode: 'daemon_shell' | 'attached_python';
+  launchMode: 'background' | 'foreground';
   requireVramMb: number;
   requireGpuCount: number;
   gpuIds: number[] | null;

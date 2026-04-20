@@ -21,7 +21,7 @@ def _make_task(
         command=command,
         cwd=cwd,
         user="testuser",
-        launch_mode=TaskLaunchMode.daemon_shell,
+        launch_mode=TaskLaunchMode.background,
         require_vram_mb=0,
         require_gpu_count=0,
         gpu_ids=None,
