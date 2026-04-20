@@ -10,11 +10,21 @@ import {
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_IDLE_GPU_NOTIFICATION_RULE,
+  loadBatteryOptimizationPromptShown,
   loadNotificationSettings,
+  saveBatteryOptimizationPromptShown,
 } from '../lib/preferences';
 import {
   loadPersistedSession,
 } from '../lib/storage';
+import {
+  isIgnoringBatteryOptimizations,
+  isNativeGuardServiceRunning,
+  nativeNotificationsSupported,
+  openNativeBatteryOptimizationSettings,
+  startNativeGuardService,
+  stopNativeGuardService,
+} from '../lib/native-notifications';
 import { persistState, loadOverview } from './overview';
 import { enableNotificationsIfPossible, persistNotificationSettings } from './notifications';
 import { connectRealtime, disconnectRealtime, primeRealtimeState } from './realtime';
@@ -24,14 +34,61 @@ import {
 } from './types';
 import type { MobileAppState, SignInInput } from './types';
 
+type GuardServiceSnapshot = Pick<
+  MobileAppState,
+  'baseUrl' | 'authToken' | 'session' | 'notificationSettings' | 'notificationPermissionGranted'
+>;
+
+async function syncNativeGuardServiceState(snapshot: GuardServiceSnapshot): Promise<Pick<MobileAppState, 'guardServiceRunning' | 'batteryOptimizationIgnored'>> {
+  if (!nativeNotificationsSupported()) {
+    return {
+      guardServiceRunning: false,
+      batteryOptimizationIgnored: null,
+    };
+  }
+
+  if (
+    !snapshot.session.authenticated
+    || !snapshot.authToken
+    || !snapshot.baseUrl
+    || !snapshot.notificationSettings.notificationsEnabled
+    || snapshot.notificationPermissionGranted !== true
+  ) {
+    await stopNativeGuardService();
+    return {
+      guardServiceRunning: false,
+      batteryOptimizationIgnored: null,
+    };
+  }
+
+  const started = await startNativeGuardService({
+    baseUrl: snapshot.baseUrl,
+    token: snapshot.authToken,
+    principalKind: snapshot.session.principal.kind,
+    adminAlertsEnabled: snapshot.notificationSettings.adminCategories.alerts,
+    adminSecurityEnabled: snapshot.notificationSettings.adminCategories.security,
+    taskEventsEnabled: snapshot.session.principal.kind === 'admin'
+      ? snapshot.notificationSettings.adminCategories.taskEvents
+      : snapshot.notificationSettings.person.taskEvents,
+  });
+
+  return {
+    guardServiceRunning: started,
+    batteryOptimizationIgnored: await isIgnoringBatteryOptimizations(),
+  };
+}
+
 export const useAppStore = create<MobileAppState>((set, get) => ({
   hydrated: false,
   busy: false,
   refreshing: false,
   realtimeConnected: false,
+  guardServiceRunning: false,
   error: null,
   pendingTaskId: null,
   notificationPermissionGranted: null,
+  batteryOptimizationIgnored: null,
+  batteryOptimizationPromptShown: false,
   notificationSettings: DEFAULT_NOTIFICATION_SETTINGS,
   notificationInbox: [],
   baseUrl: '',
@@ -48,17 +105,23 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     set({ busy: true, error: null });
 
     try {
-      const [persisted, notificationSettings, notificationInbox] = await Promise.all([
+      const [persisted, notificationSettings, notificationInbox, batteryOptimizationPromptShown] = await Promise.all([
         loadPersistedSession(),
         loadNotificationSettings(),
         loadNotificationInbox(),
+        loadBatteryOptimizationPromptShown(),
       ]);
 
       const notificationPermissionGranted = notificationSettings.notificationsEnabled
         ? await enableNotificationsIfPossible()
         : null;
 
-      set({ notificationSettings, notificationInbox, notificationPermissionGranted });
+      set({
+        notificationSettings,
+        notificationInbox,
+        notificationPermissionGranted,
+        batteryOptimizationPromptShown,
+      });
 
       if (!persisted) {
         set({ hydrated: true, busy: false });
@@ -104,6 +167,13 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
       const overview = await loadOverview(client, session);
       primeRealtimeState(overview.statuses, overview.latestMetrics);
       connectRealtime(resolvedBaseUrl, persisted.authToken, set, get);
+      const guardState = await syncNativeGuardServiceState({
+        baseUrl: resolvedBaseUrl,
+        authToken: persisted.authToken,
+        session,
+        notificationSettings,
+        notificationPermissionGranted,
+      });
       if (resolvedBaseUrl !== persisted.baseUrl) {
         await persistState({ ...persisted, baseUrl: resolvedBaseUrl, authToken: persisted.authToken });
       }
@@ -117,15 +187,20 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
         securityEvents: overview.securityEvents,
         personTasks: overview.personTasks,
         recentTaskEvents: [],
+        guardServiceRunning: guardState.guardServiceRunning,
+        batteryOptimizationIgnored: guardState.batteryOptimizationIgnored,
         hydrated: true,
         busy: false,
       });
     } catch (error) {
+      await stopNativeGuardService();
       disconnectRealtime();
       set({
         hydrated: true,
         busy: false,
         realtimeConnected: false,
+        guardServiceRunning: false,
+        batteryOptimizationIgnored: null,
         error: formatMobileApiError(error),
       });
     }
@@ -194,6 +269,13 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
       });
 
       primeRealtimeState(overview.statuses, overview.latestMetrics);
+      const guardState = await syncNativeGuardServiceState({
+        baseUrl,
+        authToken: result.token,
+        session,
+        notificationSettings: state.notificationSettings,
+        notificationPermissionGranted,
+      });
 
       set({
         baseUrl,
@@ -207,14 +289,22 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
         personTasks: overview.personTasks,
         recentTaskEvents: [],
         notificationPermissionGranted,
+        guardServiceRunning: guardState.guardServiceRunning,
+        batteryOptimizationIgnored: guardState.batteryOptimizationIgnored,
         busy: false,
       });
       connectRealtime(baseUrl, result.token, set, get);
       console.info(`[mobile][auth] sign-in success mode=${state.mode} baseUrl="${baseUrl}"`);
     } catch (error) {
+      await stopNativeGuardService();
       disconnectRealtime();
       console.warn(`[mobile][auth] sign-in failed: ${formatMobileApiError(error)}`);
-      set({ busy: false, error: formatMobileApiError(error) });
+      set({
+        busy: false,
+        guardServiceRunning: false,
+        batteryOptimizationIgnored: null,
+        error: formatMobileApiError(error),
+      });
     }
   },
 
@@ -270,6 +360,7 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     });
 
     disconnectRealtime();
+    await stopNativeGuardService();
 
     set({
       authToken: null,
@@ -277,6 +368,8 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
       ...createEmptyOverviewSlice(),
       pendingTaskId: null,
       realtimeConnected: false,
+      guardServiceRunning: false,
+      batteryOptimizationIgnored: null,
       error: null,
     });
   },
@@ -292,8 +385,24 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     if (next.notificationsEnabled) {
       void enableNotificationsIfPossible().then((granted) => {
         set({ notificationPermissionGranted: granted });
+        void syncNativeGuardServiceState({
+          ...get(),
+          notificationSettings: next,
+          notificationPermissionGranted: granted,
+        }).then((guardState) => {
+          set(guardState);
+        });
       });
+      return;
     }
+
+    void syncNativeGuardServiceState({
+      ...get(),
+      notificationSettings: next,
+      notificationPermissionGranted: get().notificationPermissionGranted,
+    }).then((guardState) => {
+      set(guardState);
+    });
   },
 
   toggleAdminCategory: (category) => {
@@ -307,6 +416,12 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     };
     set({ notificationSettings: next });
     void persistNotificationSettings(next);
+    void syncNativeGuardServiceState({
+      ...get(),
+      notificationSettings: next,
+    }).then((guardState) => {
+      set(guardState);
+    });
   },
 
   togglePersonTaskNotifications: () => {
@@ -320,6 +435,12 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     };
     set({ notificationSettings: next });
     void persistNotificationSettings(next);
+    void syncNativeGuardServiceState({
+      ...get(),
+      notificationSettings: next,
+    }).then((guardState) => {
+      set(guardState);
+    });
   },
 
   toggleIdleServerSubscription: (serverId) => {
@@ -357,6 +478,32 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     };
     set({ notificationSettings: next });
     void persistNotificationSettings(next);
+  },
+
+  refreshAndroidBackgroundState: async () => {
+    if (!nativeNotificationsSupported()) {
+      set({ guardServiceRunning: false, batteryOptimizationIgnored: null });
+      return;
+    }
+
+    const [guardServiceRunning, batteryOptimizationIgnored] = await Promise.all([
+      isNativeGuardServiceRunning(),
+      isIgnoringBatteryOptimizations(),
+    ]);
+    set({ guardServiceRunning, batteryOptimizationIgnored });
+  },
+
+  openBatteryOptimizationSettings: async () => {
+    await openNativeBatteryOptimizationSettings();
+  },
+
+  markBatteryOptimizationPromptShown: () => {
+    if (get().batteryOptimizationPromptShown) {
+      return;
+    }
+
+    set({ batteryOptimizationPromptShown: true });
+    void saveBatteryOptimizationPromptShown(true);
   },
 
   clearError: () => set({ error: null }),

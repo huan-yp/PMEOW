@@ -1,14 +1,16 @@
 package com.pmeowmobile
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
+import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
+import android.os.PowerManager
+import android.provider.Settings
+import android.net.Uri
 import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.startForegroundService
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -22,9 +24,6 @@ class PmeowNotificationsModule(
 ) : ReactContextBaseJavaModule(reactContext) {
 
   companion object {
-    private const val CHANNEL_ID = "pmeow-mobile-events"
-    private const val CHANNEL_NAME = "PMEOW 通知"
-    private const val CHANNEL_DESCRIPTION = "PMEOW 移动端值班通知"
     private const val REQUEST_CODE_POST_NOTIFICATIONS = 9105
   }
 
@@ -75,7 +74,7 @@ class PmeowNotificationsModule(
 
   @ReactMethod
   fun createDefaultChannel(promise: Promise) {
-    ensureNotificationChannel()
+    PmeowNotificationHelper.ensureChannels(reactApplicationContext)
     promise.resolve(null)
   }
 
@@ -86,44 +85,102 @@ class PmeowNotificationsModule(
       return
     }
 
-    ensureNotificationChannel()
-
-    val builder = NotificationCompat.Builder(reactApplicationContext, CHANNEL_ID)
-      .setSmallIcon(R.mipmap.ic_launcher)
-      .setContentTitle(title)
-      .setContentText(body)
-      .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-      .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-      .setAutoCancel(true)
-
-    if (data != null && data.hasKey("serverId") && data.getString("serverId") != null) {
-      builder.setSubText(data.getString("serverId"))
-    }
-
-    NotificationManagerCompat.from(reactApplicationContext).notify(nextNotificationId(), builder.build())
+    PmeowNotificationHelper.showEventNotification(
+      reactApplicationContext,
+      title,
+      body,
+      if (data != null && data.hasKey("serverId")) data.getString("serverId") else null,
+    )
     promise.resolve(true)
   }
 
-  private fun ensureNotificationChannel() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+  @ReactMethod
+  fun startGuardService(
+    baseUrl: String,
+    token: String,
+    principalKind: String,
+    adminAlertsEnabled: Boolean,
+    adminSecurityEnabled: Boolean,
+    taskEventsEnabled: Boolean,
+    promise: Promise,
+  ) {
+    if (!notificationsAllowed()) {
+      promise.resolve(false)
       return
     }
 
-    val manager = reactApplicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    val existingChannel = manager.getNotificationChannel(CHANNEL_ID)
-    if (existingChannel != null) {
-      return
-    }
-
-    manager.createNotificationChannel(
-      NotificationChannel(
-        CHANNEL_ID,
-        CHANNEL_NAME,
-        NotificationManager.IMPORTANCE_DEFAULT,
-      ).apply {
-        description = CHANNEL_DESCRIPTION
-      },
+    val config = PmeowGuardServiceConfig(
+      baseUrl = baseUrl,
+      token = token,
+      principalKind = principalKind,
+      adminAlertsEnabled = adminAlertsEnabled,
+      adminSecurityEnabled = adminSecurityEnabled,
+      taskEventsEnabled = taskEventsEnabled,
     )
+
+    if (!config.isValid()) {
+      promise.resolve(false)
+      return
+    }
+
+    PmeowNotificationHelper.ensureChannels(reactApplicationContext)
+    PmeowGuardConfigStore.saveConfig(reactApplicationContext, config)
+    startForegroundService(
+      reactApplicationContext,
+      PmeowGuardService.createStartIntent(reactApplicationContext, config),
+    )
+    promise.resolve(true)
+  }
+
+  @ReactMethod
+  fun stopGuardService(promise: Promise) {
+    PmeowGuardConfigStore.clearConfig(reactApplicationContext)
+    reactApplicationContext.startService(PmeowGuardService.createStopIntent(reactApplicationContext))
+    promise.resolve(null)
+  }
+
+  @ReactMethod
+  fun isGuardServiceRunning(promise: Promise) {
+    val manager = reactApplicationContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val running = manager.getRunningServices(Int.MAX_VALUE).any { serviceInfo ->
+      serviceInfo.service.className == PmeowGuardService::class.java.name
+    }
+    promise.resolve(running)
+  }
+
+  @ReactMethod
+  fun setAppInForeground(inForeground: Boolean, promise: Promise) {
+    PmeowGuardConfigStore.setAppInForeground(reactApplicationContext, inForeground)
+    promise.resolve(null)
+  }
+
+  @ReactMethod
+  fun isIgnoringBatteryOptimizations(promise: Promise) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      promise.resolve(true)
+      return
+    }
+
+    val manager = reactApplicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+    promise.resolve(manager.isIgnoringBatteryOptimizations(reactApplicationContext.packageName))
+  }
+
+  @ReactMethod
+  fun openBatteryOptimizationSettings(promise: Promise) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+      promise.resolve(false)
+      return
+    }
+
+    val intent = Intent(
+      Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+      Uri.parse("package:${reactApplicationContext.packageName}"),
+    ).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    reactApplicationContext.startActivity(intent)
+    promise.resolve(true)
   }
 
   private fun notificationsAllowed(): Boolean {
@@ -131,9 +188,5 @@ class PmeowNotificationsModule(
       reactApplicationContext,
       Manifest.permission.POST_NOTIFICATIONS,
     ) == PackageManager.PERMISSION_GRANTED
-  }
-
-  private fun nextNotificationId(): Int {
-    return (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
   }
 }

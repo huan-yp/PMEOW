@@ -9,6 +9,8 @@ export function SettingsScreen(props: {
   isAdmin: boolean;
   notificationsEnabled: boolean;
   notificationPermissionGranted: boolean | null;
+  guardServiceRunning: boolean;
+  batteryOptimizationIgnored: boolean | null;
   adminCategorySettings: {
     alerts: boolean;
     security: boolean;
@@ -18,6 +20,7 @@ export function SettingsScreen(props: {
   idleServerIds: string[];
   servers: Server[];
   notificationInbox: NotificationInboxItem[];
+  onOpenBatteryOptimizationSettings: () => void;
   onToggleNotificationsEnabled: () => void;
   onToggleAdminCategory: (category: 'alerts' | 'security' | 'taskEvents') => void;
   onTogglePersonTaskNotifications: () => void;
@@ -31,7 +34,7 @@ export function SettingsScreen(props: {
           <View style={styles.preferenceCopy}>
             <Text style={styles.preferenceTitle}>启用系统通知</Text>
             <Text style={styles.preferenceBody}>
-              {props.notificationPermissionGranted === false ? '系统权限尚未授予。' : 'App 前后台存活时会按本地规则触发通知。'}
+              {props.notificationPermissionGranted === false ? '系统权限尚未授予。' : '默认开启横幅通知；登录后会自动启动后台值守服务。'}
             </Text>
           </View>
           <Switch
@@ -41,6 +44,24 @@ export function SettingsScreen(props: {
             thumbColor="#f3f8fc"
           />
         </View>
+
+        <View style={styles.preferenceRow}>
+          <View style={styles.preferenceCopy}>
+            <Text style={styles.preferenceTitle}>后台值守服务</Text>
+            <Text style={styles.preferenceBody}>登录成功且系统通知开启后，安卓会启动前台服务保障实时通知。</Text>
+          </View>
+          <Text style={styles.preferenceValue}>{props.guardServiceRunning ? '运行中' : '未运行'}</Text>
+        </View>
+
+        <Pressable style={styles.preferenceRow} onPress={props.onOpenBatteryOptimizationSettings}>
+          <View style={styles.preferenceCopy}>
+            <Text style={styles.preferenceTitle}>电池优化白名单</Text>
+            <Text style={styles.preferenceBody}>建议关闭系统电池优化，减少最小化后被系统回收的概率。</Text>
+          </View>
+          <Text style={styles.preferenceValue}>
+            {props.batteryOptimizationIgnored == null ? '未知' : props.batteryOptimizationIgnored ? '已放行' : '去设置'}
+          </Text>
+        </Pressable>
 
         {props.isAdmin ? (
           <>

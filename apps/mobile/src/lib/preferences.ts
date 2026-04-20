@@ -87,6 +87,7 @@ interface LegacyMobileNotificationSettings extends Omit<MobileNotificationSettin
 }
 
 const STORAGE_KEY = 'pmeow.mobile.notification-settings';
+const BATTERY_OPTIMIZATION_PROMPT_KEY = 'pmeow.mobile.android-battery-prompted';
 
 export const DEFAULT_NOTIFICATION_SETTINGS: MobileNotificationSettings = {
   notificationsEnabled: true,
@@ -130,4 +131,13 @@ export async function loadNotificationSettings(): Promise<MobileNotificationSett
 
 export async function saveNotificationSettings(settings: MobileNotificationSettings): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+}
+
+export async function loadBatteryOptimizationPromptShown(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(BATTERY_OPTIMIZATION_PROMPT_KEY);
+  return raw === '1';
+}
+
+export async function saveBatteryOptimizationPromptShown(shown: boolean): Promise<void> {
+  await AsyncStorage.setItem(BATTERY_OPTIMIZATION_PROMPT_KEY, shown ? '1' : '0');
 }

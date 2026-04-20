@@ -37,9 +37,12 @@ export interface MobileAppState {
   busy: boolean;
   refreshing: boolean;
   realtimeConnected: boolean;
+  guardServiceRunning: boolean;
   error: string | null;
   pendingTaskId: string | null;
   notificationPermissionGranted: boolean | null;
+  batteryOptimizationIgnored: boolean | null;
+  batteryOptimizationPromptShown: boolean;
   notificationSettings: MobileNotificationSettings;
   notificationInbox: NotificationInboxItem[];
   baseUrl: string;
@@ -65,6 +68,9 @@ export interface MobileAppState {
   togglePersonTaskNotifications: () => void;
   toggleIdleServerSubscription: (serverId: string) => void;
   updateIdleServerRule: (serverId: string, rule: IdleGpuNotificationRule) => void;
+  refreshAndroidBackgroundState: () => Promise<void>;
+  openBatteryOptimizationSettings: () => Promise<void>;
+  markBatteryOptimizationPromptShown: () => void;
   clearError: () => void;
 }
 

@@ -6,6 +6,7 @@ import type {
   Server,
   TaskEvent,
 } from '@pmeow/app-common';
+import { AppState } from 'react-native';
 import {
   pushNotificationInboxItem,
   saveNotificationInbox,
@@ -95,6 +96,10 @@ async function dispatchNotification(
   item: NotificationInboxItem,
   set: StateSetter,
 ): Promise<boolean> {
+  if (AppState.currentState !== 'active') {
+    return false;
+  }
+
   const shown = await showNativeNotification({
     title: item.title,
     body: item.body,

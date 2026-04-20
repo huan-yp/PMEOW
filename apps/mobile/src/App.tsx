@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, SafeAreaView, StatusBar, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, SafeAreaView, StatusBar, Text, View } from 'react-native';
 import { ADMIN_TABS, PERSON_TABS, type AdminTab, type PersonTab } from './app/constants';
 import { useServerGpuHistory } from './app/useServerGpuHistory';
 import { styles } from './app/styles';
 import { AuthenticatedShell, BottomTabs } from './components/common';
+import { setNativeAppInForeground } from './lib/native-notifications';
 import { AdminAlertsScreen, AdminDashboardScreen } from './screens/AdminScreens';
 import { ConnectionScreen } from './screens/ConnectionScreen';
 import { PersonHomeScreen, PersonTasksScreen } from './screens/PersonScreens';
@@ -18,6 +19,9 @@ export default function App() {
   const error = useAppStore((state) => state.error);
   const pendingTaskId = useAppStore((state) => state.pendingTaskId);
   const notificationPermissionGranted = useAppStore((state) => state.notificationPermissionGranted);
+  const guardServiceRunning = useAppStore((state) => state.guardServiceRunning);
+  const batteryOptimizationIgnored = useAppStore((state) => state.batteryOptimizationIgnored);
+  const batteryOptimizationPromptShown = useAppStore((state) => state.batteryOptimizationPromptShown);
   const baseUrl = useAppStore((state) => state.baseUrl);
   const authToken = useAppStore((state) => state.authToken);
   const mode = useAppStore((state) => state.mode);
@@ -44,6 +48,9 @@ export default function App() {
   const togglePersonTaskNotifications = useAppStore((state) => state.togglePersonTaskNotifications);
   const toggleIdleServerSubscription = useAppStore((state) => state.toggleIdleServerSubscription);
   const updateIdleServerRule = useAppStore((state) => state.updateIdleServerRule);
+  const refreshAndroidBackgroundState = useAppStore((state) => state.refreshAndroidBackgroundState);
+  const openBatteryOptimizationSettings = useAppStore((state) => state.openBatteryOptimizationSettings);
+  const markBatteryOptimizationPromptShown = useAppStore((state) => state.markBatteryOptimizationPromptShown);
   const clearError = useAppStore((state) => state.clearError);
 
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
@@ -55,6 +62,22 @@ export default function App() {
   }, [hydrate]);
 
   useEffect(() => {
+    void setNativeAppInForeground(true);
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const active = nextState === 'active';
+      void setNativeAppInForeground(active);
+      if (active) {
+        void refreshAndroidBackgroundState();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+      void setNativeAppInForeground(false);
+    };
+  }, [refreshAndroidBackgroundState]);
+
+  useEffect(() => {
     setSelectedServerId(null);
     if (session.principal?.kind === 'admin') {
       setAdminTab('dashboard');
@@ -63,6 +86,41 @@ export default function App() {
       setPersonTab('home');
     }
   }, [session.principal?.kind]);
+
+  useEffect(() => {
+    if (
+      !session.authenticated
+      || !notificationSettings.notificationsEnabled
+      || !guardServiceRunning
+      || batteryOptimizationIgnored !== false
+      || batteryOptimizationPromptShown
+    ) {
+      return;
+    }
+
+    markBatteryOptimizationPromptShown();
+    Alert.alert(
+      '建议关闭电池优化',
+      '为了提升最小化后的通知可靠性，建议为 PMEOW 关闭系统电池优化。',
+      [
+        { text: '稍后处理', style: 'cancel' },
+        {
+          text: '去设置',
+          onPress: () => {
+            void openBatteryOptimizationSettings();
+          },
+        },
+      ],
+    );
+  }, [
+    batteryOptimizationIgnored,
+    batteryOptimizationPromptShown,
+    guardServiceRunning,
+    markBatteryOptimizationPromptShown,
+    notificationSettings.notificationsEnabled,
+    openBatteryOptimizationSettings,
+    session.authenticated,
+  ]);
 
   const selectedServer = useMemo(
     () => servers.find((server) => server.id === selectedServerId) ?? null,
@@ -181,11 +239,16 @@ export default function App() {
               isAdmin
               notificationsEnabled={notificationSettings.notificationsEnabled}
               notificationPermissionGranted={notificationPermissionGranted}
+              guardServiceRunning={guardServiceRunning}
+              batteryOptimizationIgnored={batteryOptimizationIgnored}
               adminCategorySettings={notificationSettings.adminCategories}
               personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
               idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
               servers={servers}
               notificationInbox={notificationInbox}
+              onOpenBatteryOptimizationSettings={() => {
+                void openBatteryOptimizationSettings();
+              }}
               onToggleNotificationsEnabled={toggleNotificationsEnabled}
               onToggleAdminCategory={toggleAdminCategory}
               onTogglePersonTaskNotifications={togglePersonTaskNotifications}
@@ -226,11 +289,16 @@ export default function App() {
               isAdmin={false}
               notificationsEnabled={notificationSettings.notificationsEnabled}
               notificationPermissionGranted={notificationPermissionGranted}
+              guardServiceRunning={guardServiceRunning}
+              batteryOptimizationIgnored={batteryOptimizationIgnored}
               adminCategorySettings={notificationSettings.adminCategories}
               personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
               idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
               servers={personNotificationServers}
               notificationInbox={notificationInbox}
+              onOpenBatteryOptimizationSettings={() => {
+                void openBatteryOptimizationSettings();
+              }}
               onToggleNotificationsEnabled={toggleNotificationsEnabled}
               onToggleAdminCategory={toggleAdminCategory}
               onTogglePersonTaskNotifications={togglePersonTaskNotifications}
