@@ -60,7 +60,7 @@ export function ConnectionScreen(props: {
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
-          placeholder="https://pmeow.example.com"
+          placeholder="62.234.222.17"
           placeholderTextColor="#60758a"
           style={styles.input}
           value={props.baseUrl}

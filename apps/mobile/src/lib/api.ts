@@ -28,6 +28,8 @@ export class MobileApiError extends Error {
   requestMethod?: string;
 }
 
+const DEFAULT_WEB_PORT = '17200';
+const BASE_URL_PATTERN = /^([a-z][a-z0-9+.-]*:\/\/)(\[[^\]]+\]|[^/?#:]+)(:\d+)?([/?#].*)?$/iu;
 const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//iu;
 
 export function normalizeBaseUrl(input: string): string {
@@ -36,13 +38,19 @@ export function normalizeBaseUrl(input: string): string {
     return '';
   }
 
-  if (URL_SCHEME_PATTERN.test(trimmed)) {
-    return trimmed;
+  const normalized = URL_SCHEME_PATTERN.test(trimmed) ? trimmed : `http://${trimmed}`;
+
+  if (!URL_SCHEME_PATTERN.test(trimmed)) {
+    console.info(`[mobile][api] No URL scheme provided, assuming ${normalized}`);
   }
 
-  const normalized = `http://${trimmed}`;
-  console.info(`[mobile][api] No URL scheme provided, assuming ${normalized}`);
-  return normalized;
+  const matched = normalized.match(BASE_URL_PATTERN);
+  if (!matched) {
+    return normalized;
+  }
+
+  const [, protocol, host, port, suffix = ''] = matched;
+  return `${protocol}${host}${port ?? `:${DEFAULT_WEB_PORT}`}${suffix}`;
 }
 
 function joinBaseUrl(baseUrl: string, path: string): string {
