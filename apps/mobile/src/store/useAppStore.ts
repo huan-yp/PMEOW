@@ -27,7 +27,7 @@ import {
 } from '../lib/native-notifications';
 import { persistState, loadOverview } from './overview';
 import { enableNotificationsIfPossible, persistNotificationSettings } from './notifications';
-import { connectRealtime, disconnectRealtime, primeRealtimeState } from './realtime';
+import { connectRealtime, disconnectRealtime, primeRealtimeState, reconnectRealtime } from './realtime';
 import {
   createEmptyOverviewSlice,
   UNAUTHENTICATED_SESSION,
@@ -478,6 +478,18 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
     };
     set({ notificationSettings: next });
     void persistNotificationSettings(next);
+  },
+
+  resumeRealtimeFromForeground: async () => {
+    const state = get();
+    if (!state.authToken || !state.session.authenticated || !state.baseUrl) {
+      return;
+    }
+
+    console.info(`[mobile][realtime] foreground resume start baseUrl="${state.baseUrl}"`);
+    reconnectRealtime(state.baseUrl, state.authToken, set, get);
+    await get().refreshOverview();
+    console.info(`[mobile][realtime] foreground resume complete baseUrl="${state.baseUrl}"`);
   },
 
   refreshAndroidBackgroundState: async () => {

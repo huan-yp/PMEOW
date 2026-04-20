@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, SafeAreaView, StatusBar, Text, View } from 'react-native';
 import { ADMIN_TABS, PERSON_TABS, type AdminTab, type PersonTab } from './app/constants';
 import { useServerGpuHistory } from './app/useServerGpuHistory';
@@ -48,6 +48,7 @@ export default function App() {
   const togglePersonTaskNotifications = useAppStore((state) => state.togglePersonTaskNotifications);
   const toggleIdleServerSubscription = useAppStore((state) => state.toggleIdleServerSubscription);
   const updateIdleServerRule = useAppStore((state) => state.updateIdleServerRule);
+  const resumeRealtimeFromForeground = useAppStore((state) => state.resumeRealtimeFromForeground);
   const refreshAndroidBackgroundState = useAppStore((state) => state.refreshAndroidBackgroundState);
   const openBatteryOptimizationSettings = useAppStore((state) => state.openBatteryOptimizationSettings);
   const markBatteryOptimizationPromptShown = useAppStore((state) => state.markBatteryOptimizationPromptShown);
@@ -56,6 +57,7 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
   const [personTab, setPersonTab] = useState<PersonTab>('home');
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  const foregroundResumeInFlightRef = useRef(false);
 
   useEffect(() => {
     void hydrate();
@@ -67,7 +69,19 @@ export default function App() {
       const active = nextState === 'active';
       void setNativeAppInForeground(active);
       if (active) {
-        void refreshAndroidBackgroundState();
+        void (async () => {
+          await refreshAndroidBackgroundState();
+          if (!session.authenticated || !authToken || !baseUrl || foregroundResumeInFlightRef.current) {
+            return;
+          }
+
+          foregroundResumeInFlightRef.current = true;
+          try {
+            await resumeRealtimeFromForeground();
+          } finally {
+            foregroundResumeInFlightRef.current = false;
+          }
+        })();
       }
     });
 
@@ -75,7 +89,7 @@ export default function App() {
       subscription.remove();
       void setNativeAppInForeground(false);
     };
-  }, [refreshAndroidBackgroundState]);
+  }, [authToken, baseUrl, refreshAndroidBackgroundState, resumeRealtimeFromForeground, session.authenticated]);
 
   useEffect(() => {
     setSelectedServerId(null);
