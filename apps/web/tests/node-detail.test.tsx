@@ -36,7 +36,7 @@ function createReport(timestamp = 1_713_312_000): UnifiedReport {
     command: 'python train.py',
     cwd: '/workspace',
     user: 'alice',
-    launchMode: 'attached_python',
+    launchMode: 'foreground',
     requireVramMb: 4096,
     requireGpuCount: 1,
     gpuIds: [0],

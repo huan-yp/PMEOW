@@ -10,17 +10,12 @@ import sys
 
 from pmeow import cli_runtime
 from pmeow import __version__
-from pmeow.cli_python import parse_vram_mb
+from pmeow.cli_foreground import parse_vram_mb
 
 
 def _resolve_default_socket() -> str:
     from pmeow.config import resolve_client_socket_path
     return resolve_client_socket_path()
-
-
-def _is_generic_python_command(token: str) -> bool:
-    name = os.path.basename(token).lower()
-    return name == "python" or name == "py" or name.startswith("python3")
 
 
 def _normalize_submit_command(command_args: list[str]) -> tuple[str, list[str] | None]:
@@ -175,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     logs_parser.add_argument("task_id", help="ID of the task")
     logs_parser.add_argument("--tail", type=int, default=100, help="Number of lines")
 
-    submit_parser = sub.add_parser("submit", help="Submit a task")
+    submit_parser = sub.add_parser("submit", help="Submit a task (background mode)")
     submit_parser.add_argument(
         "--vram",
         dest="vram",
@@ -218,10 +213,10 @@ _HANDLERS = {
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    from pmeow.cli_python import detect_python_invocation, run_python_invocation
-    invocation = detect_python_invocation(argv)
+    from pmeow.cli_foreground import detect_foreground_invocation, run_foreground_invocation
+    invocation = detect_foreground_invocation(argv)
     if invocation is not None:
-        raise SystemExit(run_python_invocation(invocation))
+        raise SystemExit(run_foreground_invocation(invocation))
 
     parser = build_parser()
     args = parser.parse_args(argv)

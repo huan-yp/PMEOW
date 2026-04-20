@@ -1,4 +1,4 @@
-"""Python sugar CLI — detect .py path in argv, submit attached task, wait, launch."""
+"""Foreground mode CLI — parse PMEOW flags, submit attached task, wait, launch."""
 
 from __future__ import annotations
 
@@ -7,18 +7,16 @@ import shlex
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import BinaryIO
 
 
 @dataclass
-class PythonInvocation:
+class ForegroundInvocation:
     socket_path: str | None
     require_vram_mb: int
     require_gpu_count: int
     priority: int
-    script_path: str
-    script_args: list[str]
+    argv: list[str]
 
 
 def parse_vram_mb(value: str) -> int:
@@ -31,20 +29,28 @@ def parse_vram_mb(value: str) -> int:
     return int(float(raw))
 
 
-def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
-    """Detect Python sugar in argv. Returns None if argv is a normal subcommand.
+_KNOWN_SUBCOMMANDS = frozenset({
+    "run", "daemon", "start", "stop", "restart", "is-running",
+    "install-service", "uninstall-service", "status", "cancel",
+    "logs", "submit", "tasks",
+})
+
+# PMEOW flags that consume a following value token.
+_VALUE_FLAGS = {"--vram", "--gpus", "--priority", "--socket"}
+
+
+def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None:
+    """Detect foreground mode in argv. Returns None if argv is a normal subcommand.
 
     Rules:
-    - If the first token is a known subcommand, return None
-    - Tokens before the first .py path are PMEOW flags
-    - Tokens after the script are passed to Python
+    - If the first token is a known subcommand or help/version flag, return None.
+    - Tokens before the first non-PMEOW token are PMEOW flags (only standard
+      ``--flag value`` form is accepted).
+    - The first token that is not a recognised PMEOW flag marks the start of
+      the user command; everything from that token onward is passed through
+      verbatim.
     """
-    known_subcommands = {
-        "run", "daemon", "start", "stop", "restart", "is-running",
-        "install-service", "uninstall-service", "status", "cancel",
-        "logs", "submit", "tasks",
-    }
-    if not argv or argv[0] in known_subcommands or argv[0] in {"-h", "--help", "--version"}:
+    if not argv or argv[0] in _KNOWN_SUBCOMMANDS or argv[0] in {"-h", "--help", "--version"}:
         return None
 
     socket_path: str | None = None
@@ -55,36 +61,59 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
     index = 0
     while index < len(argv):
         token = argv[index]
-        if token.endswith(".py") and not token.startswith("-"):
-            return PythonInvocation(
+
+        # As soon as we hit a token that is not a known PMEOW flag, the rest
+        # is the user command.
+        if token == "--vram":
+            index += 1
+            if index >= len(argv):
+                raise SystemExit("error: --vram requires a value")
+            require_vram_mb = parse_vram_mb(argv[index])
+        elif token.startswith("--vram="):
+            require_vram_mb = parse_vram_mb(token.split("=", 1)[1])
+        elif token == "--gpus":
+            index += 1
+            if index >= len(argv):
+                raise SystemExit("error: --gpus requires a value")
+            require_gpu_count = int(argv[index])
+        elif token.startswith("--gpus="):
+            require_gpu_count = int(token.split("=", 1)[1])
+        elif token == "--priority":
+            index += 1
+            if index >= len(argv):
+                raise SystemExit("error: --priority requires a value")
+            priority = int(argv[index])
+        elif token.startswith("--priority="):
+            priority = int(token.split("=", 1)[1])
+        elif token == "--socket":
+            index += 1
+            if index >= len(argv):
+                raise SystemExit("error: --socket requires a value")
+            socket_path = argv[index]
+        elif token.startswith("--socket="):
+            socket_path = token.split("=", 1)[1]
+        else:
+            # Reject single-dash long flags that look like old PMEOW syntax.
+            bare = token.split("=", 1)[0]
+            if bare in {"-vram", "-gpus", "-priority", "-socket"}:
+                raise SystemExit(
+                    f"error: {bare} is not supported; use -{bare} instead"
+                )
+            # First non-PMEOW token — everything from here is the command.
+            command_argv = argv[index:]
+            if not command_argv:
+                return None
+            return ForegroundInvocation(
                 socket_path=socket_path,
                 require_vram_mb=require_vram_mb,
                 require_gpu_count=require_gpu_count,
                 priority=priority,
-                script_path=str(Path(token).resolve()),
-                script_args=argv[index + 1:],
+                argv=command_argv,
             )
-        if token.startswith("-vram=") or token.startswith("--vram="):
-            require_vram_mb = parse_vram_mb(token.split("=", 1)[1])
-        elif token in {"-vram", "--vram"}:
-            index += 1
-            require_vram_mb = parse_vram_mb(argv[index])
-        elif token.startswith("-gpus=") or token.startswith("--gpus="):
-            require_gpu_count = int(token.split("=", 1)[1])
-        elif token in {"-gpus", "--gpus"}:
-            index += 1
-            require_gpu_count = int(argv[index])
-        elif token == "--priority":
-            index += 1
-            priority = int(argv[index])
-        elif token == "--socket":
-            index += 1
-            socket_path = argv[index]
-        else:
-            raise SystemExit(f"error: unsupported PMEOW flag before script path: {token}")
         index += 1
 
-    return None  # No .py found
+    # All tokens consumed by PMEOW flags, no command found.
+    return None
 
 
 def _resolve_default_socket() -> str:
@@ -92,19 +121,19 @@ def _resolve_default_socket() -> str:
     return resolve_client_socket_path()
 
 
-def run_python_invocation(
-    invocation: PythonInvocation,
+def run_foreground_invocation(
+    invocation: ForegroundInvocation,
     *,
     stdin_source: BinaryIO | None = None,
     stdout_target: BinaryIO | None = None,
     stderr_target: BinaryIO | None = None,
 ) -> int:
-    """Submit an attached task, poll until launched, then run locally."""
+    """Submit a foreground attached task, poll until launched, then run locally."""
     from pmeow.daemon.socket_server import send_request
-    from pmeow.executor.attached import run_attached_python
+    from pmeow.executor.attached import run_attached_command
 
     socket_path = invocation.socket_path or _resolve_default_socket()
-    argv = ["python", invocation.script_path, *invocation.script_args]
+    argv = invocation.argv
 
     submit = send_request(socket_path, "submit_task", {
         "command": shlex.join(argv),
@@ -114,7 +143,7 @@ def run_python_invocation(
         "require_gpu_count": invocation.require_gpu_count,
         "priority": invocation.priority,
         "argv": argv,
-        "launch_mode": "attached_python",
+        "launch_mode": "foreground",
     })
     if not submit.get("ok"):
         raise SystemExit(submit.get("error", "submit failed"))
@@ -134,12 +163,12 @@ def run_python_invocation(
                 env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in (task["assigned_gpus"] or task["gpu_ids"] or []))
 
                 def _on_started(pid: int) -> None:
-                    ack = send_request(socket_path, "confirm_attached_launch", {"task_id": task_id, "pid": pid})
+                    ack = send_request(socket_path, "confirm_foreground_launch", {"task_id": task_id, "pid": pid})
                     if not ack.get("ok") or ack.get("result") is not True:
-                        raise RuntimeError("failed to confirm attached launch")
+                        raise RuntimeError("failed to confirm foreground launch")
 
                 try:
-                    exit_code = run_attached_python(
+                    exit_code = run_attached_command(
                         argv=task["argv"],
                         cwd=task["cwd"],
                         env=env,
@@ -152,7 +181,7 @@ def run_python_invocation(
                 except KeyboardInterrupt:
                     exit_code = 130
                 try:
-                    send_request(socket_path, "finish_attached_task", {"task_id": task_id, "exit_code": exit_code})
+                    send_request(socket_path, "finish_foreground_task", {"task_id": task_id, "exit_code": exit_code})
                 except Exception:
                     print("warning: failed to notify daemon of task completion", file=sys.stderr)
                 print(f"task finished exit_code={exit_code}")

@@ -55,7 +55,7 @@ interface WireTaskInfo {
   command: string;
   cwd: string;
   user: string;
-  launchMode: 'daemon_shell' | 'attached_python';
+  launchMode: 'background' | 'foreground';
   requireVramMB: number;
   requireGpuCount: number;
   gpuIds: number[] | null;

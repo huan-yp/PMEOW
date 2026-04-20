@@ -46,11 +46,11 @@ export function ServerCard({ server, status, report }: Props) {
   return (
     <div
       onClick={() => navigate(`/nodes/${server.id}`, { state: { returnTo: '/', returnLabel: '返回控制台' } })}
-      className={`node-surface-shell node-card-shell ${connectionVisual.surfaceClassName} cursor-pointer rounded-[28px] p-5 sm:p-6`}
+      className={`node-surface-shell node-card-shell ${connectionVisual.surfaceClassName} cursor-pointer rounded-[26px] p-4 sm:p-5`}
     >
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-xl font-semibold tracking-tight text-slate-50">{server.name}</h3>
+          <h3 className="truncate text-lg font-semibold tracking-tight text-slate-50 sm:text-xl">{server.name}</h3>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className={`node-badge-base ${connectionVisual.badgeClassName}`}>
               <span className={`h-2 w-2 rounded-full ${connectionVisual.dotClassName}`} />
@@ -66,7 +66,7 @@ export function ServerCard({ server, status, report }: Props) {
       </div>
 
       {snap && (
-        <p className="mb-4 truncate text-sm text-slate-400">
+        <p className="mb-3 truncate text-sm text-slate-400">
           {[
             status?.version ? `v${status.version}` : null,
             isStale && status?.lastSeenAt ? `最后上报 ${formatLastSeen(status.lastSeenAt)}` : null,
@@ -76,14 +76,14 @@ export function ServerCard({ server, status, report }: Props) {
       {!snap && <p className="mb-4 truncate text-sm text-slate-400">等待节点指标上报</p>}
 
       {(queuedCount > 0 || runningCount > 0) && (
-        <div className="mb-4 rounded-2xl border border-cyan-400/10 bg-cyan-500/[0.07] px-3 py-2 text-xs text-cyan-50/90">
+        <div className="mb-3 rounded-2xl border border-cyan-400/10 bg-cyan-500/[0.07] px-3 py-2 text-xs text-cyan-50/90">
           排队 {queuedCount} / 运行中 {runningCount}
         </div>
       )}
 
       {snap ? (
-        <div className={`space-y-4 ${isStale ? 'opacity-50' : ''}`}>
-          <div className="grid gap-4 xl:grid-cols-2">
+        <div className={`space-y-3 ${isStale ? 'opacity-50' : ''}`}>
+          <div className="grid gap-3 xl:grid-cols-2">
             <SummaryMetricCard
               label="GPU 占用率"
               value={hasGpu ? `${avgGpuUtil.toFixed(1)}%` : 'N/A'}
@@ -105,7 +105,7 @@ export function ServerCard({ server, status, report }: Props) {
               size="featured"
             />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryMetricCard
               label="CPU"
               value={`${snap.cpu.usagePercent.toFixed(1)}%`}
@@ -139,7 +139,7 @@ export function ServerCard({ server, status, report }: Props) {
               sub={`${snap.network.interfaces.length} 个接口`}
               tone="network"
               icon={<MetricGlyph kind="network" tone="network" />}
-              valueClassName="text-[1.3rem] sm:text-[1.45rem]"
+              valueClassName="text-[1.15rem] sm:text-[1.3rem]"
             />
           </div>
         </div>
@@ -169,24 +169,26 @@ function SummaryMetricCard(props: {
 }) {
   const featured = props.size === 'featured';
   const cardClass = featured
-    ? 'rounded-[24px] border border-white/10 bg-slate-950/35 p-4 backdrop-blur-sm'
-    : 'rounded-[22px] border border-white/8 bg-slate-950/22 p-4';
-  const valueClass = props.valueClassName ?? (featured ? 'text-3xl sm:text-[2.2rem]' : 'text-[1.85rem]');
+    ? 'rounded-[22px] border border-white/10 bg-slate-950/35 p-4 backdrop-blur-sm'
+    : 'rounded-[20px] border border-white/8 bg-slate-950/22 p-3.5';
+  const valueClass = props.valueClassName ?? (featured ? 'text-[2rem] sm:text-[2.15rem]' : 'text-[1.55rem] sm:text-[1.7rem]');
 
   return (
     <div className={cardClass}>
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {props.icon}
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-400">{props.label}</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 sm:text-sm">{props.label}</p>
           </div>
-          <p className={`mt-4 font-mono font-semibold tracking-tight text-slate-50 ${valueClass}`}>{props.value}</p>
-          <p className="mt-2 text-sm leading-6 text-slate-300">{props.sub}</p>
-          {props.gaugeCaption && <p className="mt-2 text-xs text-slate-500">{props.gaugeCaption}</p>}
+          <p className={`mt-3 font-mono font-semibold tracking-tight text-slate-50 ${valueClass}`}>{props.value}</p>
+          <div className={`mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 ${featured ? 'text-sm' : 'text-[13px]'}`}>
+            <p className="leading-5 text-slate-300">{props.sub}</p>
+            {props.gaugeCaption ? <p className="leading-5 text-slate-500">{props.gaugeCaption}</p> : null}
+          </div>
         </div>
         {typeof props.gaugeValue === 'number' && (
-          <div className="shrink-0">
+          <div className="hidden shrink-0 md:block">
             <SemiGauge value={props.gaugeValue} tone={props.tone} />
           </div>
         )}
@@ -204,8 +206,8 @@ function UsageGradientBar({ value, caption }: { value: number; caption: string }
   const barPresentation = getBarPresentation(barTone);
 
   return (
-    <div className="mt-4 space-y-2">
-      <div className="relative h-3 overflow-hidden rounded-full bg-slate-900/80 ring-1 ring-white/6">
+    <div className="mt-3 space-y-1.5">
+      <div className="relative h-2.5 overflow-hidden rounded-full bg-slate-900/80 ring-1 ring-white/6">
         <div
           className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${barPresentation.fillClass}`}
           style={{ width: `${clamped}%` }}
@@ -213,8 +215,8 @@ function UsageGradientBar({ value, caption }: { value: number; caption: string }
         <div className="absolute inset-y-0 left-[60%] w-px bg-slate-950/80" />
         <div className="absolute inset-y-0 left-[90%] w-px bg-slate-950/80" />
       </div>
-      <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500">
-        <span>{caption}</span>
+      <div className="flex items-center justify-between gap-3 text-[10px] text-slate-500 sm:text-[11px]">
+        <span className="truncate">{caption}</span>
         <span>60% / 90%</span>
       </div>
     </div>
@@ -227,7 +229,7 @@ function SemiGauge({ value, tone }: { value: number; tone: SummaryTone }) {
 
   return (
     <div className="flex flex-col items-center justify-center">
-      <svg viewBox="0 0 100 60" className="h-24 w-32 overflow-visible">
+      <svg viewBox="0 0 100 60" className="h-20 w-28 overflow-visible xl:h-24 xl:w-32">
         <path d="M14 50 A36 36 0 0 1 86 50" fill="none" stroke="rgba(71,85,105,0.32)" strokeWidth="10" strokeLinecap="round" />
         <path
           d="M14 50 A36 36 0 0 1 86 50"
@@ -239,7 +241,7 @@ function SemiGauge({ value, tone }: { value: number; tone: SummaryTone }) {
           strokeDasharray={`${clamped} 100`}
         />
       </svg>
-      <span className={`-mt-4 text-xs font-semibold uppercase tracking-[0.22em] ${toneMap.textClass}`}>{toneMap.label}</span>
+      <span className={`-mt-4 text-[11px] font-semibold uppercase tracking-[0.22em] ${toneMap.textClass}`}>{toneMap.label}</span>
     </div>
   );
 }
@@ -248,7 +250,7 @@ function MetricGlyph({ kind, tone }: { kind: 'cpu' | 'memory' | 'disk' | 'networ
   const toneMap = getTonePresentation(tone);
 
   return (
-    <span className={`flex h-11 w-11 items-center justify-center rounded-2xl border ${toneMap.badgeClass}`}>
+    <span className={`flex h-10 w-10 items-center justify-center rounded-2xl border ${toneMap.badgeClass}`}>
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         {kind === 'cpu' && <path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M18 9h3M3 15h3M18 15h3M8 8h8v8H8z" />}
         {kind === 'memory' && <path d="M5 8h14v8H5zM8 12h.01M12 12h.01M16 12h.01M7 5v3M17 5v3M7 16v3M17 16v3" />}

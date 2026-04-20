@@ -200,7 +200,7 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         priority=params.get("priority", 10),
         argv=params.get("argv"),
         env_overrides=params.get("env_overrides"),
-        launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.daemon_shell,
+        launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.background,
         submit_uid=params.get("_peer_uid"),
         submit_gid=params.get("_peer_gid"),
     )
@@ -228,12 +228,12 @@ def _get_task(svc: DaemonService, params: dict) -> dict | None:
     return _to_task_dict(task, log_path=svc.get_task_log_path(task.id)) if task is not None else None
 
 
-def _confirm_attached_launch(svc: DaemonService, params: dict) -> bool:
-    return svc.confirm_attached_launch(params["task_id"], pid=params["pid"])
+def _confirm_foreground_launch(svc: DaemonService, params: dict) -> bool:
+    return svc.confirm_foreground_launch(params["task_id"], pid=params["pid"])
 
 
-def _finish_attached_task(svc: DaemonService, params: dict) -> bool:
-    return svc.finish_attached_task(params["task_id"], exit_code=params["exit_code"])
+def _finish_foreground_task(svc: DaemonService, params: dict) -> bool:
+    return svc.finish_foreground_task(params["task_id"], exit_code=params["exit_code"])
 
 
 def _set_priority(svc: DaemonService, params: dict) -> bool:
@@ -246,8 +246,8 @@ _METHODS: dict[str, Any] = {
     "get_task": _get_task,
     "cancel_task": _cancel_task,
     "get_logs": _get_logs,
-    "confirm_attached_launch": _confirm_attached_launch,
-    "finish_attached_task": _finish_attached_task,
+    "confirm_foreground_launch": _confirm_foreground_launch,
+    "finish_foreground_task": _finish_foreground_task,
     "set_priority": _set_priority,
 }
 

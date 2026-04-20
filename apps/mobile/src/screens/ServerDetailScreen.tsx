@@ -8,6 +8,16 @@ import { ExpandableList, QueueTaskRow, SectionCard, StatBlock } from '../compone
 import { DEFAULT_IDLE_GPU_NOTIFICATION_RULE, type IdleGpuNotificationRule } from '../lib/preferences';
 import { CpuMemoryTrendCard, DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
 
+type DetailTab = 'overview' | 'realtime' | 'disk' | 'vram' | 'tasks';
+
+const DETAIL_TABS: Array<{ id: DetailTab; label: string }> = [
+  { id: 'overview', label: '总览' },
+  { id: 'realtime', label: '资源实时走势' },
+  { id: 'disk', label: '磁盘占用' },
+  { id: 'vram', label: 'VRAM 分布' },
+  { id: 'tasks', label: '任务' },
+];
+
 function buildEditableRule(rule: IdleGpuNotificationRule | null): {
   minIdleGpuCount: string;
   idleWindowSeconds: string;
@@ -34,6 +44,31 @@ function parseRuleNumber(value: string, min: number, max: number): number | null
   }
 
   return Math.min(max, Math.max(min, Math.round(parsed * 10) / 10));
+}
+
+function TaskQueueSection(props: {
+  title: string;
+  emptyText: string;
+  tasks: Array<Parameters<typeof QueueTaskRow>[0]['task']>;
+}) {
+  return (
+    <View style={styles.detailPanel}>
+      <Text style={styles.detailPanelTitle}>{props.title}</Text>
+      {props.tasks.length === 0 ? (
+        <Text style={styles.emptyText}>{props.emptyText}</Text>
+      ) : (
+        <ExpandableList
+          totalCount={props.tasks.length}
+          initialVisibleCount={5}
+          renderItems={(expanded) => {
+            const visibleTasks = expanded ? props.tasks : props.tasks.slice(0, 5);
+
+            return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
+          }}
+        />
+      )}
+    </View>
+  );
 }
 
 export function ServerDetailScreen(props: {
@@ -63,11 +98,20 @@ export function ServerDetailScreen(props: {
   const vramPalette = getUsagePalette(gpuTotals.totalVramPercent);
   const [editableRule, setEditableRule] = useState(() => buildEditableRule(props.subscriptionRule));
   const [ruleError, setRuleError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const isOnline = props.status?.status === 'online';
+  const runningTasks = props.report?.taskQueue.running ?? [];
+  const queuedTasks = props.report?.taskQueue.queued ?? [];
+  const recentlyEndedTasks = props.report?.taskQueue.recentlyEnded ?? [];
 
   useEffect(() => {
     setEditableRule(buildEditableRule(props.subscriptionRule));
     setRuleError(null);
   }, [props.server.id, props.subscriptionRule]);
+
+  useEffect(() => {
+    setActiveTab('overview');
+  }, [props.server.id]);
 
   const currentRule = useMemo(() => {
     return props.subscriptionRule ?? DEFAULT_IDLE_GPU_NOTIFICATION_RULE;
@@ -107,185 +151,202 @@ export function ServerDetailScreen(props: {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
       <SectionCard title={props.server.name} description={`Agent ${props.server.agentId.slice(0, 8)} · 最近上报 ${formatTimestamp(props.status?.lastSeenAt ?? null)}`}>
-        <View style={styles.summaryGrid}>
-          <StatBlock label="状态" value={props.status?.status === 'online' ? '在线' : '离线'} />
-          <StatBlock label="运行任务" value={props.report?.taskQueue.running.length ?? 0} />
-        </View>
-        <View style={styles.summaryGridCompact}>
-          <StatBlock label="GPU 总利用率" value={gpuCards.length > 0 ? formatPercent(gpuTotals.averageUtilization) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.averageUtilization : undefined} />
-          <StatBlock label="VRAM 占用" value={gpuCards.length > 0 ? formatPercent(gpuTotals.totalVramPercent) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.totalVramPercent : undefined} />
-        </View>
-        <View style={styles.summaryGridCompact}>
-          <StatBlock label="CPU" value={formatPercent(cpuUsage)} usagePercent={cpuUsage} />
-          <StatBlock label="内存" value={formatPercent(memoryUsage)} usagePercent={memoryUsage} />
+        <View style={styles.detailStripeRow}>
+          <View style={[styles.detailStripe, isOnline ? styles.detailStripeOnline : styles.detailStripeOffline]}>
+            <Text style={styles.detailStripeLabel}>在线状态</Text>
+            <Text style={[styles.detailStripeValue, isOnline ? styles.detailStripeValueOnline : styles.detailStripeValueOffline]}>{isOnline ? '在线' : '离线'}</Text>
+          </View>
+          <View style={[styles.detailStripe, styles.detailStripeNeutral]}>
+            <Text style={styles.detailStripeLabel}>运行任务</Text>
+            <Text style={styles.detailStripeValue}>{runningTasks.length}</Text>
+            <Text style={styles.detailStripeMeta}>排队 {queuedTasks.length} · 最近结束 {recentlyEndedTasks.length}</Text>
+          </View>
         </View>
         {gpuCards.length > 0 ? (
           <Text style={styles.connectionMeta}>总显存 <Text style={{ color: vramPalette.textColor }}>{formatMemoryPairGb(gpuTotals.totalVramUsedMb, gpuTotals.totalVramMb)}</Text> · 总利用率 <Text style={{ color: gpuPalette.textColor }}>{formatPercent(gpuTotals.averageUtilization)}</Text></Text>
         ) : null}
-        {!props.isAdmin ? (
-          canConfigureGpuIdle ? (
-            <>
-              <Pressable style={styles.secondaryButtonWide} onPress={props.onToggleSubscription}>
-                <Text style={styles.secondaryButtonText}>{props.subscribed ? '取消 GPU 空闲订阅' : '订阅 GPU 空闲提醒'}</Text>
+        <View style={styles.segmentRow}>
+          {DETAIL_TABS.map((tab) => {
+            const active = tab.id === activeTab;
+
+            return (
+              <Pressable
+                key={tab.id}
+                style={[styles.segment, active ? styles.segmentActive : null]}
+                onPress={() => setActiveTab(tab.id)}
+              >
+                <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>{tab.label}</Text>
               </Pressable>
-              {props.subscribed ? (
-                <View style={styles.ruleEditorCard}>
-                  <Text style={styles.preferenceTitle}>订阅规则</Text>
-                  <Text style={styles.preferenceBody}>同机只在重新离开并再次满足规则后再提醒；全局 15 分钟内最多发 1 条。</Text>
-                  <Text style={styles.connectionMeta}>当前规则：至少 {currentRule.minIdleGpuCount} 张 GPU 在最近 {currentRule.idleWindowSeconds} 秒内利用率低于 {currentRule.maxGpuUtilizationPercent}% 且调度可用显存高于 {currentRule.minSchedulableFreePercent}%。</Text>
-                  <View style={styles.ruleInputRow}>
-                    <View style={styles.ruleInputCell}>
-                      <Text style={styles.fieldLabel}>最少空闲 GPU 数</Text>
-                      <TextInput
-                        keyboardType="numeric"
-                        placeholder="1"
-                        placeholderTextColor="#60758a"
-                        style={styles.input}
-                        value={editableRule.minIdleGpuCount}
-                        onChangeText={(value) => setEditableRule((current) => ({ ...current, minIdleGpuCount: value }))}
-                      />
-                    </View>
-                    <View style={styles.ruleInputCell}>
-                      <Text style={styles.fieldLabel}>观测窗口秒数</Text>
-                      <TextInput
-                        keyboardType="numeric"
-                        placeholder="60"
-                        placeholderTextColor="#60758a"
-                        style={styles.input}
-                        value={editableRule.idleWindowSeconds}
-                        onChangeText={(value) => setEditableRule((current) => ({ ...current, idleWindowSeconds: value }))}
-                      />
-                    </View>
-                  </View>
-                  <View style={styles.ruleInputRow}>
-                    <View style={styles.ruleInputCell}>
-                      <Text style={styles.fieldLabel}>GPU 利用率上限 %</Text>
-                      <TextInput
-                        keyboardType="numeric"
-                        placeholder="5"
-                        placeholderTextColor="#60758a"
-                        style={styles.input}
-                        value={editableRule.maxGpuUtilizationPercent}
-                        onChangeText={(value) => setEditableRule((current) => ({ ...current, maxGpuUtilizationPercent: value }))}
-                      />
-                    </View>
-                    <View style={styles.ruleInputCell}>
-                      <Text style={styles.fieldLabel}>调度可用显存下限 %</Text>
-                      <TextInput
-                        keyboardType="numeric"
-                        placeholder="80"
-                        placeholderTextColor="#60758a"
-                        style={styles.input}
-                        value={editableRule.minSchedulableFreePercent}
-                        onChangeText={(value) => setEditableRule((current) => ({ ...current, minSchedulableFreePercent: value }))}
-                      />
-                    </View>
-                  </View>
-                  {ruleError ? <Text style={styles.errorText}>{ruleError}</Text> : null}
-                  <Pressable style={styles.primaryButton} onPress={saveRule}>
-                    <Text style={styles.primaryButtonText}>保存订阅规则</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </>
-          ) : (
-            <Text style={styles.connectionMeta}>当前机器没有 GPU，无法配置 GPU 空闲提醒。</Text>
-          )
-        ) : null}
-        <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-          <Text style={styles.ghostButtonText}>返回</Text>
-        </Pressable>
+            );
+          })}
+        </View>
       </SectionCard>
 
-      <SectionCard
-        title="资源实时走势"
-        description={props.realtimeHistoryLoading ? '正在补齐最近 10 分钟的实时窗口。' : '先看 CPU / 内存总览；GPU 详情默认折叠，展开后查看每张卡的 GPU、VRAM 和显存带宽走势。'}
-      >
-        {props.report ? (
-          <>
-            <View style={styles.summaryGrid}>
+      {activeTab === 'overview' ? (
+        <SectionCard title="总览" description="先看核心利用率与订阅入口，避免详情页首屏被大卡片占满。">
+          <View style={styles.summaryGridCompact}>
+            <StatBlock label="GPU 总利用率" value={gpuCards.length > 0 ? formatPercent(gpuTotals.averageUtilization) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.averageUtilization : undefined} />
+            <StatBlock label="VRAM 占用" value={gpuCards.length > 0 ? formatPercent(gpuTotals.totalVramPercent) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.totalVramPercent : undefined} />
+          </View>
+          <View style={styles.summaryGridTight}>
+            <StatBlock label="CPU" value={formatPercent(cpuUsage)} usagePercent={cpuUsage} />
+            <StatBlock label="内存" value={formatPercent(memoryUsage)} usagePercent={memoryUsage} />
+          </View>
+          {props.report ? (
+            <View style={styles.summaryGridTight}>
               <StatBlock label="GPU 数量" value={gpuCards.length} />
               <StatBlock label="调度可用显存" value={formatMemoryGb(totalEffectiveFreeMb)} />
             </View>
-            <View style={styles.panelStack}>
-              <CpuMemoryTrendCard
-                report={props.report}
-                history={props.hostRealtimeHistory}
-                loading={props.realtimeHistoryLoading}
-              />
-              <GpuRealtimeSection
-                gpuCards={gpuCards}
-                gpuRealtimeHistory={props.gpuRealtimeHistory}
-                loading={props.realtimeHistoryLoading}
-              />
-            </View>
-          </>
-        ) : (
-          <Text style={styles.emptyText}>当前节点没有可展示的实时资源指标。</Text>
-        )}
-      </SectionCard>
+          ) : (
+            <Text style={styles.emptyText}>当前节点还没有可展示的资源快照。</Text>
+          )}
+          {!props.isAdmin ? (
+            canConfigureGpuIdle ? (
+              <>
+                <Pressable style={styles.secondaryButtonWide} onPress={props.onToggleSubscription}>
+                  <Text style={styles.secondaryButtonText}>{props.subscribed ? '取消 GPU 空闲订阅' : '订阅 GPU 空闲提醒'}</Text>
+                </Pressable>
+                {props.subscribed ? (
+                  <View style={styles.ruleEditorCard}>
+                    <Text style={styles.preferenceTitle}>订阅规则</Text>
+                    <Text style={styles.preferenceBody}>同机只在重新离开并再次满足规则后再提醒；全局 15 分钟内最多发 1 条。</Text>
+                    <Text style={styles.connectionMeta}>当前规则：至少 {currentRule.minIdleGpuCount} 张 GPU 在最近 {currentRule.idleWindowSeconds} 秒内利用率低于 {currentRule.maxGpuUtilizationPercent}% 且调度可用显存高于 {currentRule.minSchedulableFreePercent}%。</Text>
+                    <View style={styles.ruleInputRow}>
+                      <View style={styles.ruleInputCell}>
+                        <Text style={styles.fieldLabel}>最少空闲 GPU 数</Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          placeholder="1"
+                          placeholderTextColor="#60758a"
+                          style={styles.input}
+                          value={editableRule.minIdleGpuCount}
+                          onChangeText={(value) => setEditableRule((current) => ({ ...current, minIdleGpuCount: value }))}
+                        />
+                      </View>
+                      <View style={styles.ruleInputCell}>
+                        <Text style={styles.fieldLabel}>观测窗口秒数</Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          placeholder="60"
+                          placeholderTextColor="#60758a"
+                          style={styles.input}
+                          value={editableRule.idleWindowSeconds}
+                          onChangeText={(value) => setEditableRule((current) => ({ ...current, idleWindowSeconds: value }))}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.ruleInputRow}>
+                      <View style={styles.ruleInputCell}>
+                        <Text style={styles.fieldLabel}>GPU 利用率上限 %</Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          placeholder="5"
+                          placeholderTextColor="#60758a"
+                          style={styles.input}
+                          value={editableRule.maxGpuUtilizationPercent}
+                          onChangeText={(value) => setEditableRule((current) => ({ ...current, maxGpuUtilizationPercent: value }))}
+                        />
+                      </View>
+                      <View style={styles.ruleInputCell}>
+                        <Text style={styles.fieldLabel}>调度可用显存下限 %</Text>
+                        <TextInput
+                          keyboardType="numeric"
+                          placeholder="80"
+                          placeholderTextColor="#60758a"
+                          style={styles.input}
+                          value={editableRule.minSchedulableFreePercent}
+                          onChangeText={(value) => setEditableRule((current) => ({ ...current, minSchedulableFreePercent: value }))}
+                        />
+                      </View>
+                    </View>
+                    {ruleError ? <Text style={styles.errorText}>{ruleError}</Text> : null}
+                    <Pressable style={styles.primaryButton} onPress={saveRule}>
+                      <Text style={styles.primaryButtonText}>保存订阅规则</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <Text style={styles.connectionMeta}>当前机器没有 GPU，无法配置 GPU 空闲提醒。</Text>
+            )
+          ) : null}
+          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
+            <Text style={styles.ghostButtonText}>返回</Text>
+          </Pressable>
+        </SectionCard>
+      ) : null}
 
-      <SectionCard title="磁盘占用" description="低于 60% 绿色，超过 60% 黄色，超过 90% 红色。">
-        <DiskUsageSection report={props.report} />
-      </SectionCard>
+      {activeTab === 'realtime' ? (
+        <SectionCard
+          title="资源实时走势"
+          description={props.realtimeHistoryLoading ? '正在补齐最近 10 分钟的实时窗口。' : 'CPU / 内存 / GPU'}
+        >
+          {props.report ? (
+            <>
+              <View style={styles.summaryGridCompact}>
+                <StatBlock label="GPU 数量" value={gpuCards.length} />
+                <StatBlock label="调度可用显存" value={formatMemoryGb(totalEffectiveFreeMb)} />
+              </View>
+              <View style={styles.panelStack}>
+                <CpuMemoryTrendCard
+                  report={props.report}
+                  history={props.hostRealtimeHistory}
+                  loading={props.realtimeHistoryLoading}
+                />
+                <GpuRealtimeSection
+                  gpuCards={gpuCards}
+                  gpuRealtimeHistory={props.gpuRealtimeHistory}
+                  loading={props.realtimeHistoryLoading}
+                />
+              </View>
+            </>
+          ) : (
+            <Text style={styles.emptyText}>当前节点没有可展示的实时资源指标。</Text>
+          )}
+          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
+            <Text style={styles.ghostButtonText}>返回</Text>
+          </Pressable>
+        </SectionCard>
+      ) : null}
 
-      <SectionCard title="VRAM 分布" description="按托管任务、用户进程、未归属进程和可用显存拆分。">
-        <VramDistributionSection gpuCards={gpuCards} tasks={allocationTasks} />
-      </SectionCard>
+      {activeTab === 'disk' ? (
+        <SectionCard title="磁盘占用" description="低于 60% 绿色，超过 60% 黄色，超过 90% 红色。">
+          <DiskUsageSection report={props.report} />
+          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
+            <Text style={styles.ghostButtonText}>返回</Text>
+          </Pressable>
+        </SectionCard>
+      ) : null}
 
-      <SectionCard title="运行中任务">
-        {(props.report?.taskQueue.running.length ?? 0) === 0 ? (
-          <Text style={styles.emptyText}>当前没有运行中的任务。</Text>
-        ) : (
-          <ExpandableList
-            totalCount={props.report?.taskQueue.running.length ?? 0}
-            initialVisibleCount={5}
-            renderItems={(expanded) => {
-              const visibleTasks = expanded
-                ? props.report?.taskQueue.running ?? []
-                : props.report?.taskQueue.running.slice(0, 5) ?? [];
+      {activeTab === 'vram' ? (
+        <SectionCard title="VRAM 分布" description="按托管任务、用户进程、未归属进程和可用显存拆分。">
+          <VramDistributionSection gpuCards={gpuCards} tasks={allocationTasks} />
+          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
+            <Text style={styles.ghostButtonText}>返回</Text>
+          </Pressable>
+        </SectionCard>
+      ) : null}
 
-              return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
-            }}
-          />
-        )}
-      </SectionCard>
-
-      <SectionCard title="排队任务">
-        {(props.report?.taskQueue.queued.length ?? 0) === 0 ? (
-          <Text style={styles.emptyText}>当前没有排队任务。</Text>
-        ) : (
-          <ExpandableList
-            totalCount={props.report?.taskQueue.queued.length ?? 0}
-            initialVisibleCount={5}
-            renderItems={(expanded) => {
-              const visibleTasks = expanded
-                ? props.report?.taskQueue.queued ?? []
-                : props.report?.taskQueue.queued.slice(0, 5) ?? [];
-
-              return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
-            }}
-          />
-        )}
-      </SectionCard>
-
-      <SectionCard title="最近结束任务">
-        {(props.report?.taskQueue.recentlyEnded.length ?? 0) === 0 ? (
-          <Text style={styles.emptyText}>当前没有最近结束的任务。</Text>
-        ) : (
-          <ExpandableList
-            totalCount={props.report?.taskQueue.recentlyEnded.length ?? 0}
-            initialVisibleCount={5}
-            renderItems={(expanded) => {
-              const visibleTasks = expanded
-                ? props.report?.taskQueue.recentlyEnded ?? []
-                : props.report?.taskQueue.recentlyEnded.slice(0, 5) ?? [];
-
-              return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
-            }}
-          />
-        )}
-      </SectionCard>
+      {activeTab === 'tasks' ? (
+        <SectionCard title="任务" description="把运行中、排队和最近结束的任务收拢到一个页签中查看。">
+          <View style={styles.summaryGridCompact}>
+            <StatBlock label="运行中" value={runningTasks.length} />
+            <StatBlock label="排队中" value={queuedTasks.length} />
+          </View>
+          <View style={styles.summaryGridTight}>
+            <StatBlock label="最近结束" value={recentlyEndedTasks.length} />
+            <StatBlock label="总任务数" value={runningTasks.length + queuedTasks.length + recentlyEndedTasks.length} />
+          </View>
+          <View style={styles.panelStack}>
+            <TaskQueueSection title="运行中任务" emptyText="当前没有运行中的任务。" tasks={runningTasks} />
+            <TaskQueueSection title="排队任务" emptyText="当前没有排队任务。" tasks={queuedTasks} />
+            <TaskQueueSection title="最近结束任务" emptyText="当前没有最近结束的任务。" tasks={recentlyEndedTasks} />
+          </View>
+          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
+            <Text style={styles.ghostButtonText}>返回</Text>
+          </Pressable>
+        </SectionCard>
+      ) : null}
     </ScrollView>
   );
 }

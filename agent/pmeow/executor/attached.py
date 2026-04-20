@@ -1,4 +1,4 @@
-"""Attached Python executor — runs a child process with terminal I/O and log tee."""
+"""Foreground attached executor — runs a child process with terminal I/O and log tee."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def _normalize_attached_exit_code(exit_code: int) -> int:
     return 130 if exit_code == -signal.SIGINT else exit_code
 
 
-def run_attached_python(
+def run_attached_command(
     *,
     argv: list[str],
     cwd: str,

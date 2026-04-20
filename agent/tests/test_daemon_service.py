@@ -58,7 +58,7 @@ def test_collect_cycle_records_blocked_schedule_history_and_log(monkeypatch, tmp
             user="alice",
             require_vram_mb=4096,
             require_gpu_count=1,
-            launch_mode=TaskLaunchMode.attached_python,
+            launch_mode=TaskLaunchMode.foreground,
         )
     )
 

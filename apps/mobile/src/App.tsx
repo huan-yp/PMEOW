@@ -12,6 +12,7 @@ import { useServerGpuHistory } from './app/useServerGpuHistory';
 import { styles } from './app/styles';
 import { AuthenticatedShell, BottomTabs } from './components/common';
 import { setNativeAppInForeground } from './lib/native-notifications';
+import type { MobileHomeView } from './lib/preferences';
 import { AdminAlertsScreen, AdminDashboardScreen } from './screens/AdminScreens';
 import { ConnectionScreen } from './screens/ConnectionScreen';
 import { PersonHomeScreen, PersonTasksScreen } from './screens/PersonScreens';
@@ -56,6 +57,8 @@ export default function App() {
   const togglePersonTaskNotifications = useAppStore((state) => state.togglePersonTaskNotifications);
   const toggleIdleServerSubscription = useAppStore((state) => state.toggleIdleServerSubscription);
   const updateIdleServerRule = useAppStore((state) => state.updateIdleServerRule);
+  const setHomeView = useAppStore((state) => state.setHomeView);
+  const toggleAdminHiddenServer = useAppStore((state) => state.toggleAdminHiddenServer);
   const resumeRealtimeFromForeground = useAppStore((state) => state.resumeRealtimeFromForeground);
   const refreshAndroidBackgroundState = useAppStore((state) => state.refreshAndroidBackgroundState);
   const openBatteryOptimizationSettings = useAppStore((state) => state.openBatteryOptimizationSettings);
@@ -173,6 +176,18 @@ export default function App() {
     () => servers.filter((server) => (latestMetrics[server.id]?.resourceSnapshot.gpuCards.length ?? 0) > 0),
     [latestMetrics, servers],
   );
+  const adminHomeView = notificationSettings.home.adminView;
+  const personHomeView = notificationSettings.home.personView;
+  const adminHiddenServerIds = notificationSettings.home.adminHiddenServerIds;
+  const adminHomeServers = useMemo(
+    () => servers.filter((server) => !adminHiddenServerIds.includes(server.id)),
+    [adminHiddenServerIds, servers],
+  );
+
+  const handleHomeViewChange = (role: 'admin' | 'person') => (view: MobileHomeView) => {
+    setHomeView(role, view);
+  };
+
   const taskDetailVisible = isPersonTaskDetailVisible(personTab, selectedTaskId);
 
   const handleRefreshPersonShell = async () => {
@@ -265,10 +280,12 @@ export default function App() {
               onlineCount={onlineCount}
               alertCount={alerts.length}
               securityCount={securityEvents.length}
-              servers={servers}
+              servers={adminHomeServers}
               statuses={statuses}
               latestMetrics={latestMetrics}
               recentTaskEvents={recentTaskEvents}
+              homeView={adminHomeView}
+              onChangeHomeView={handleHomeViewChange('admin')}
               onSelectServer={setSelectedServerId}
             />
           ) : adminTab === 'alerts' ? (
@@ -284,6 +301,7 @@ export default function App() {
               adminCategorySettings={notificationSettings.adminCategories}
               personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
               idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
+              adminHiddenServerIds={adminHiddenServerIds}
               servers={servers}
               notificationInbox={notificationInbox}
               onOpenBatteryOptimizationSettings={() => {
@@ -293,6 +311,7 @@ export default function App() {
               onToggleAdminCategory={toggleAdminCategory}
               onTogglePersonTaskNotifications={togglePersonTaskNotifications}
               onToggleIdleServerSubscription={toggleIdleServerSubscription}
+              onToggleAdminHiddenServer={toggleAdminHiddenServer}
               onSignOut={signOut}
             />
           )}
@@ -317,6 +336,8 @@ export default function App() {
               personTasks={personTasks}
               recentTaskEvents={recentTaskEvents}
               notificationInbox={notificationInbox}
+              homeView={personHomeView}
+              onChangeHomeView={handleHomeViewChange('person')}
               onSelectServer={(serverId) => {
                 setSelectedTaskId(null);
                 setSelectedServerId(serverId);
@@ -354,6 +375,7 @@ export default function App() {
               adminCategorySettings={notificationSettings.adminCategories}
               personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
               idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
+              adminHiddenServerIds={adminHiddenServerIds}
               servers={personNotificationServers}
               notificationInbox={notificationInbox}
               onOpenBatteryOptimizationSettings={() => {
@@ -363,6 +385,7 @@ export default function App() {
               onToggleAdminCategory={toggleAdminCategory}
               onTogglePersonTaskNotifications={togglePersonTaskNotifications}
               onToggleIdleServerSubscription={toggleIdleServerSubscription}
+              onToggleAdminHiddenServer={toggleAdminHiddenServer}
               onSignOut={signOut}
             />
           )}

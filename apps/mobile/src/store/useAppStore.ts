@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_IDLE_GPU_NOTIFICATION_RULE,
+  type MobileHomeView,
   loadBatteryOptimizationPromptShown,
   loadNotificationSettings,
   saveBatteryOptimizationPromptShown,
@@ -474,6 +475,40 @@ export const useAppStore = create<MobileAppState>((set, get) => ({
           ...current.person.idleServerRules,
           [serverId]: rule,
         },
+      },
+    };
+    set({ notificationSettings: next });
+    void persistNotificationSettings(next);
+  },
+
+  setHomeView: (role, view) => {
+    const current = get().notificationSettings;
+    const key: keyof typeof current.home = role === 'admin' ? 'adminView' : 'personView';
+    if (current.home[key] === view) {
+      return;
+    }
+
+    const next = {
+      ...current,
+      home: {
+        ...current.home,
+        [key]: view,
+      },
+    };
+    set({ notificationSettings: next });
+    void persistNotificationSettings(next);
+  },
+
+  toggleAdminHiddenServer: (serverId) => {
+    const current = get().notificationSettings;
+    const exists = current.home.adminHiddenServerIds.includes(serverId);
+    const next = {
+      ...current,
+      home: {
+        ...current.home,
+        adminHiddenServerIds: exists
+          ? current.home.adminHiddenServerIds.filter((value) => value !== serverId)
+          : [...current.home.adminHiddenServerIds, serverId],
       },
     };
     set({ notificationSettings: next });

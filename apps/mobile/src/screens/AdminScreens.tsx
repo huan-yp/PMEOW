@@ -1,4 +1,4 @@
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import type {
   Alert,
   SecurityEvent,
@@ -15,7 +15,8 @@ import {
   formatTimestamp,
 } from '../app/formatters';
 import { styles } from '../app/styles';
-import { ExpandableList, SectionCard, ServerCard, StatBlock } from '../components/common';
+import { ExpandableList, GpuIdleBar, SectionCard, ServerCard, StatBlock } from '../components/common';
+import type { MobileHomeView } from '../lib/preferences';
 
 export function AdminDashboardScreen(props: {
   realtimeConnected: boolean;
@@ -27,34 +28,63 @@ export function AdminDashboardScreen(props: {
   statuses: Record<string, ServerStatus>;
   latestMetrics: Record<string, UnifiedReport>;
   recentTaskEvents: TaskEvent[];
+  homeView: MobileHomeView;
+  onChangeHomeView: (view: MobileHomeView) => void;
   onSelectServer: (serverId: string) => void;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
       <SectionCard title="当前概览" description={props.realtimeConnected ? '实时连接已建立。' : '实时连接未建立，建议手动刷新。'}>
-        <View style={styles.summaryGrid}>
+        <View style={styles.summaryGridCompact}>
           <StatBlock label="可见机器" value={props.serverCount} />
           <StatBlock label="在线节点" value={props.onlineCount} />
         </View>
-        <View style={styles.summaryGridCompact}>
+        <View style={styles.summaryGridTight}>
           <StatBlock label="活动告警" value={props.alertCount} />
           <StatBlock label="安全事件" value={props.securityCount} />
         </View>
       </SectionCard>
 
-      <SectionCard title="机器摘要" description="点击机器进入详情。">
+      <SectionCard title="机器视图" description="首页在机器摘要和 GPU 空闲情况之间切换，点击机器可进入详情。">
+        <View style={styles.segmentRow}>
+          <Pressable
+            style={[styles.segment, props.homeView === 'summary' ? styles.segmentActive : null]}
+            onPress={() => props.onChangeHomeView('summary')}
+          >
+            <Text style={[styles.segmentText, props.homeView === 'summary' ? styles.segmentTextActive : null]}>机器摘要</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.segment, props.homeView === 'gpuIdle' ? styles.segmentActive : null]}
+            onPress={() => props.onChangeHomeView('gpuIdle')}
+          >
+            <Text style={[styles.segmentText, props.homeView === 'gpuIdle' ? styles.segmentTextActive : null]}>GPU 空闲情况</Text>
+          </Pressable>
+        </View>
         {props.servers.length === 0 ? (
-          <Text style={styles.emptyText}>当前没有可见节点。</Text>
+          <Text style={styles.emptyText}>当前没有可展示的机器，或已被你在本机首页隐藏。</Text>
         ) : (
-          props.servers.map((server) => (
-            <ServerCard
-              key={server.id}
-              server={server}
-              status={props.statuses[server.id]}
-              report={props.latestMetrics[server.id]}
-              onPress={() => props.onSelectServer(server.id)}
-            />
-          ))
+          props.homeView === 'summary' ? (
+            props.servers.map((server) => (
+              <ServerCard
+                key={server.id}
+                server={server}
+                status={props.statuses[server.id]}
+                report={props.latestMetrics[server.id]}
+                onPress={() => props.onSelectServer(server.id)}
+              />
+            ))
+          ) : (
+            <View style={styles.gpuIdleSection}>
+              {props.servers.map((server) => (
+                <GpuIdleBar
+                  key={server.id}
+                  server={server}
+                  report={props.latestMetrics[server.id]}
+                  onPress={() => props.onSelectServer(server.id)}
+                />
+              ))}
+            </View>
+          )
         )}
       </SectionCard>
 
