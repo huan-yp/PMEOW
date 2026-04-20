@@ -84,16 +84,16 @@ systemd 会以前台模式托管进程，运行日志进入 journal。
 ### 提交任务
 
 ```bash
-pmeow-agent submit --pvram 4000 --gpu 1 -- python train.py
+pmeow-agent submit --pvram 4000 --gpus 1 -- python train.py
 
 # 如果不需要 GPU
-pmeow-agent submit --pvram 0 --gpu 0 -- bash run_preprocessing.sh
+pmeow-agent submit --pvram 0 --gpus 0 -- bash run_preprocessing.sh
 ```
 
 常用参数：
 
 - `--pvram`：每张 GPU 需要的显存，单位 MB，默认 `0`
-- `--gpu`：需要的 GPU 数量，默认 `1`
+- `--gpus`：需要的 GPU 数量，默认 `1`
 - `--priority`：优先级，数字越小越先调度，默认 `10`
 
 `submit` 模式的执行语义有两点需要注意：

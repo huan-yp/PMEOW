@@ -87,7 +87,7 @@ def _cmd_submit(args: argparse.Namespace) -> None:
         "cwd": os.getcwd(),
         "user": os.environ.get("USER") or os.environ.get("USERNAME", "unknown"),
         "require_vram_mb": args.pvram,
-        "require_gpu_count": args.gpu,
+        "require_gpu_count": args.gpus,
         "priority": args.priority,
         "argv": argv,
         "env_overrides": dict(os.environ),
@@ -170,7 +170,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     submit_parser = sub.add_parser("submit", help="Submit a task")
     submit_parser.add_argument("--pvram", type=int, default=0, help="VRAM in MB")
-    submit_parser.add_argument("--gpu", type=int, default=1, help="GPU count")
+    submit_parser.add_argument("--gpus", dest="gpus", type=int, default=1, help="GPU count")
+    submit_parser.add_argument("--gpu", dest="gpus", type=int, help=argparse.SUPPRESS)
     submit_parser.add_argument("--priority", type=int, default=10, help="Priority")
     submit_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Command to run")
 
