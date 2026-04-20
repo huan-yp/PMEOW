@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import pwd
 import signal
 import socket
 import threading
@@ -60,6 +61,7 @@ class DaemonService:
         self.task_queue = TaskQueue()
         self.runner = TaskRunner()
         self._submit_credentials: dict[str, tuple[int | None, int | None]] = {}
+        self._task_log_dirs: dict[str, str] = {}
         self.runtime_monitor = RuntimeMonitorLoop(
             self.task_queue,
             poll_interval=1.0,
@@ -213,6 +215,10 @@ class DaemonService:
 
             # Tick the state machine — consumes observations, reclaims reported terminals
             self.task_queue.tick()
+            live_task_ids = {task.id for task in self.task_queue.list_all()}
+            for task_id in list(self._task_log_dirs):
+                if task_id not in live_task_ids:
+                    self._task_log_dirs.pop(task_id, None)
 
             # Schedule queued tasks
             queued_tasks = self.task_queue.list_queued()
@@ -261,7 +267,7 @@ class DaemonService:
                     )
                     cred = self._submit_credentials.get(task.id, (None, None))
                     proc = self.runner.start(
-                        task, dec.gpu_ids, self.config.log_dir,
+                        task, dec.gpu_ids, self.get_task_log_dir(task.id),
                         submit_uid=cred[0], submit_gid=cred[1],
                     )
                     self.task_queue.start(task.id, proc.pid)
@@ -305,20 +311,16 @@ class DaemonService:
                 if err is not None:
                     raise ValueError(err)
             rec = self.task_queue.submit(spec)
+            rec.task_log_dir = self._resolve_task_log_dir(spec.submit_uid)
             self._submit_credentials[rec.id] = (spec.submit_uid, spec.submit_gid)
-            log_path = ensure_task_log(rec.id, self.config.log_dir)
-            if (
-                rec.launch_mode == TaskLaunchMode.attached_python
-                and spec.submit_uid is not None
-            ):
-                try:
-                    os.chown(
-                        log_path,
-                        spec.submit_uid,
-                        spec.submit_gid if spec.submit_gid is not None else -1,
-                    )
-                except OSError:
-                    log.exception("failed to hand over attached log file %s", log_path)
+            self._task_log_dirs[rec.id] = rec.task_log_dir
+            log_path = ensure_task_log(rec.id, rec.task_log_dir)
+            self._handover_task_log_ownership(
+                log_path,
+                log_dir=rec.task_log_dir,
+                submit_uid=spec.submit_uid,
+                submit_gid=spec.submit_gid,
+            )
             self._append_task_message(rec.id, self._format_submitted_message(rec))
             log.info(
                 "submitted task %s user=%s mode=%s cwd=%s",
@@ -356,9 +358,20 @@ class DaemonService:
 
     def get_logs(self, task_id: str, tail: int = 100) -> str:
         try:
-            return read_task_log(task_id, self.config.log_dir, tail=tail)
+            return read_task_log(task_id, self.get_task_log_dir(task_id), tail=tail)
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"log file not found for task {task_id}") from exc
+
+    def get_task_log_dir(self, task_id: str) -> str:
+        task = self.task_queue.get(task_id)
+        if task is not None and task.task_log_dir:
+            return task.task_log_dir
+        return self._task_log_dirs.get(task_id, self.config.log_dir)
+
+    def get_task_log_path(self, task_id: str) -> str:
+        from pmeow.executor.logs import get_task_log_path
+
+        return get_task_log_path(task_id, self.get_task_log_dir(task_id))
 
     def set_task_priority(self, task_id: str, priority: int) -> bool:
         with self._lock:
@@ -400,7 +413,36 @@ class DaemonService:
     # ------------------------------------------------------------------
 
     def _append_task_message(self, task_id: str, message: str) -> None:
-        append_task_log_line(task_id, self.config.log_dir, message)
+        append_task_log_line(task_id, self.get_task_log_dir(task_id), message)
+
+    def _resolve_task_log_dir(self, submit_uid: int | None) -> str:
+        if os.getuid() != 0 or submit_uid is None or submit_uid == 0:
+            return self.config.log_dir
+        try:
+            home_dir = pwd.getpwuid(submit_uid).pw_dir
+        except KeyError:
+            log.warning("submit_uid=%d has no passwd entry, falling back to daemon log dir", submit_uid)
+            return self.config.log_dir
+        return os.path.join(home_dir, ".pmeow", "logs")
+
+    def _handover_task_log_ownership(
+        self,
+        log_path: str,
+        *,
+        log_dir: str,
+        submit_uid: int | None,
+        submit_gid: int | None,
+    ) -> None:
+        if os.getuid() != 0 or submit_uid is None or submit_uid == 0:
+            return
+
+        target_gid = submit_gid if submit_gid is not None else -1
+        home_pmeow_dir = os.path.dirname(log_dir)
+        for path in (home_pmeow_dir, log_dir, log_path):
+            try:
+                os.chown(path, submit_uid, target_gid)
+            except OSError:
+                log.exception("failed to hand over task log path %s", path)
 
     def _record_schedule_evaluation(
         self,

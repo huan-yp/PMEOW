@@ -57,6 +57,12 @@ pip install -e ".[dev]"
 
 如果你只打算运行 Agent 而不是开发它，也可以把源码放到固定目录后再用虚拟环境安装。
 
+安装完成后，可以先确认 CLI 版本：
+
+```bash
+pmeow --version
+```
+
 ## 关键环境变量
 
 Agent 通过环境变量配置，未设置时会使用默认值。
@@ -226,7 +232,7 @@ pmeow-agent submit --vram 0 --gpus 0 bash run_preprocessing.sh
 
 资源参数写法：
 
-- `--vram`：每张 GPU 需要的显存，单位固定为 MB，只接受整数，例如 `4096`
+- `--vram`：每张 GPU 需要的显存，支持 MB 整数或带单位写法，例如 `4096`、`512m`、`7g`
 - `--gpus`：需要的 GPU 数量，默认 `1`
 - `--gpu`：`--gpus` 的兼容别名
 - `--priority`：优先级，数字越小越先调度，默认 `10`

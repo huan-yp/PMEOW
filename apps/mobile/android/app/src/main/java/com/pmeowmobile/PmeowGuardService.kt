@@ -4,6 +4,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import io.socket.client.IO
 import io.socket.client.Socket
 import io.socket.emitter.Emitter
@@ -14,6 +15,8 @@ import java.net.URI
 class PmeowGuardService : Service() {
 
   companion object {
+    private const val LOG_TAG = "PmeowGuardService"
+
     private const val ACTION_START_OR_UPDATE = "com.pmeowmobile.action.START_GUARD_SERVICE"
     private const val ACTION_STOP = "com.pmeowmobile.action.STOP_GUARD_SERVICE"
 
@@ -53,6 +56,7 @@ class PmeowGuardService : Service() {
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     if (intent?.action == ACTION_STOP) {
+      Log.i(LOG_TAG, "received stop request")
       stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
       return START_NOT_STICKY
@@ -60,10 +64,16 @@ class PmeowGuardService : Service() {
 
     val config = extractConfig(intent) ?: PmeowGuardConfigStore.loadConfig(this)
     if (config == null || !config.isValid()) {
+      Log.w(LOG_TAG, "guard service missing valid config, stopping")
       stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
       return START_NOT_STICKY
     }
+
+    Log.i(
+      LOG_TAG,
+      "startOrUpdate config principal=${config.principalKind} alerts=${config.adminAlertsEnabled} security=${config.adminSecurityEnabled} taskEvents=${config.taskEventsEnabled}",
+    )
 
     PmeowGuardConfigStore.saveConfig(this, config)
     startForeground(
@@ -81,6 +91,7 @@ class PmeowGuardService : Service() {
   }
 
   override fun onDestroy() {
+    Log.i(LOG_TAG, "service destroyed")
     disconnectSocket()
     activeConfig = null
     super.onDestroy()
@@ -107,6 +118,7 @@ class PmeowGuardService : Service() {
     disconnectSocket()
     activeConfig = config
     PmeowNotificationHelper.updateGuardNotification(this, "正在连接 PMEOW 实时通道...")
+    Log.i(LOG_TAG, "connecting realtime socket baseUrl=${config.baseUrl}")
 
     try {
       val options = IO.Options().apply {
@@ -128,6 +140,7 @@ class PmeowGuardService : Service() {
       createdSocket.connect()
       socket = createdSocket
     } catch (error: Throwable) {
+      Log.w(LOG_TAG, "socket bootstrap failed: ${error.message}", error)
       PmeowNotificationHelper.updateGuardNotification(this, "实时连接启动失败，稍后将重试")
     }
   }
@@ -142,17 +155,23 @@ class PmeowGuardService : Service() {
     socket?.disconnect()
     socket?.close()
     socket = null
+    Log.i(LOG_TAG, "socket disconnected and cleared")
   }
 
   private val onConnect = Emitter.Listener {
+    Log.i(LOG_TAG, "socket connected socketId=${socket?.id() ?: "unknown"}")
     PmeowNotificationHelper.updateGuardNotification(this, "保障实时通知，后台值守中")
   }
 
-  private val onDisconnect = Emitter.Listener {
+  private val onDisconnect = Emitter.Listener { args ->
+    val reason = args.firstOrNull()?.toString() ?: "unknown"
+    Log.i(LOG_TAG, "socket disconnected reason=$reason")
     PmeowNotificationHelper.updateGuardNotification(this, "实时连接已断开，正在尝试重连")
   }
 
-  private val onConnectError = Emitter.Listener {
+  private val onConnectError = Emitter.Listener { args ->
+    val message = args.firstOrNull()?.toString() ?: "unknown"
+    Log.w(LOG_TAG, "socket connect error=$message")
     PmeowNotificationHelper.updateGuardNotification(this, "实时连接失败，正在重试")
   }
 
@@ -163,6 +182,7 @@ class PmeowGuardService : Service() {
     }
 
     val payload = toJsonObject(args.firstOrNull()) ?: return@Listener
+  Log.i(LOG_TAG, "received taskEvent payloadKeys=${payload.keys().asSequence().toList()}")
     val task = payload.optJSONObject("task") ?: return@Listener
     val serverId = payload.optString("serverId").ifBlank { task.optString("serverId") }
     val eventType = payload.optString("eventType")
@@ -184,6 +204,7 @@ class PmeowGuardService : Service() {
     }
 
     val payload = toJsonObject(args.firstOrNull()) ?: return@Listener
+    Log.i(LOG_TAG, "received alertStateChange toStatus=${payload.optString("toStatus")}")
     if (payload.optString("toStatus") != "active") {
       return@Listener
     }
@@ -202,6 +223,7 @@ class PmeowGuardService : Service() {
     }
 
     val payload = toJsonObject(args.firstOrNull()) ?: return@Listener
+    Log.i(LOG_TAG, "received securityEvent type=${payload.optString("eventType")}")
     if (payload.optBoolean("resolved", false)) {
       return@Listener
     }
@@ -212,11 +234,24 @@ class PmeowGuardService : Service() {
   }
 
   private fun showRealtimeNotification(title: String, body: String, subText: String?) {
-    if (PmeowGuardConfigStore.isAppInForeground(this)) {
+    val foregroundState = PmeowGuardConfigStore.getAppForegroundState(this)
+    if (foregroundState.isFresh && foregroundState.inForeground) {
+      Log.i(
+        LOG_TAG,
+        "suppress notification while app foreground title=$title updatedAt=${foregroundState.updatedAt}",
+      )
       return
     }
 
+    if (foregroundState.inForeground && !foregroundState.isFresh) {
+      Log.w(
+        LOG_TAG,
+        "foreground marker stale, allowing background notification title=$title updatedAt=${foregroundState.updatedAt}",
+      )
+    }
+
     PmeowNotificationHelper.showEventNotification(this, title, body, subText)
+    Log.i(LOG_TAG, "posted realtime notification title=$title subText=${subText ?: ""}")
   }
 
   private fun toJsonObject(value: Any?): JSONObject? {

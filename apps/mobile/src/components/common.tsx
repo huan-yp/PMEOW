@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import type { Server, ServerStatus, Task, TaskInfo, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
@@ -9,7 +9,7 @@ import {
   formatTaskStatus,
   formatTimestamp,
 } from '../app/formatters';
-import { getUsagePalette } from '../app/metrics';
+import { computeGpuIdleStatus, getGpuIdlePalette, getUsagePalette } from '../app/metrics';
 import { styles } from '../app/styles';
 import { ServerCardVisuals } from './monitoring';
 
@@ -113,18 +113,53 @@ export function QueueTaskRow(props: { task: TaskInfo }) {
   );
 }
 
-export function NotificationInboxSection(props: { items: NotificationInboxItem[] }) {
+export function ExpandableList(props: {
+  totalCount: number;
+  initialVisibleCount: number;
+  renderItems: (expanded: boolean) => ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hiddenCount = Math.max(0, props.totalCount - props.initialVisibleCount);
+
+  return (
+    <>
+      {props.renderItems(expanded)}
+      {hiddenCount > 0 ? (
+        <View style={styles.listFooter}>
+          <Text style={styles.listFooterMeta}>
+            {expanded ? `已显示全部 ${props.totalCount} 条` : `已显示 ${props.initialVisibleCount} / ${props.totalCount} 条`}
+          </Text>
+          <Pressable style={styles.inlineActionButton} onPress={() => setExpanded((current) => !current)}>
+            <Text style={styles.inlineActionButtonText}>{expanded ? '收起' : `查看更多 ${hiddenCount} 条`}</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+export function NotificationInboxSection(props: { items: NotificationInboxItem[]; initialVisibleCount?: number }) {
+  const initialVisibleCount = props.initialVisibleCount ?? 8;
+
   return (
     <SectionCard title="通知记录" description="仅展示本机真正发送过的系统通知。">
       {props.items.length === 0 ? (
         <Text style={styles.emptyText}>当前还没有本地通知记录。</Text>
       ) : (
-        props.items.map((item) => (
-          <View key={item.id} style={styles.eventRow}>
-            <Text style={styles.eventTitle}>{formatNotificationKind(item.kind)} · {item.title}</Text>
-            <Text style={styles.eventMeta}>{item.body} · {formatTimestamp(item.timestamp)}</Text>
-          </View>
-        ))
+        <ExpandableList
+          totalCount={props.items.length}
+          initialVisibleCount={initialVisibleCount}
+          renderItems={(expanded) => {
+            const visibleItems = expanded ? props.items : props.items.slice(0, initialVisibleCount);
+
+            return visibleItems.map((item) => (
+              <View key={item.id} style={styles.eventRow}>
+                <Text style={styles.eventTitle}>{formatNotificationKind(item.kind)} · {item.title}</Text>
+                <Text style={styles.eventMeta}>{item.body} · {formatTimestamp(item.timestamp)}</Text>
+              </View>
+            ));
+          }}
+        />
       )}
     </SectionCard>
   );
@@ -153,9 +188,35 @@ export function BottomTabs<T extends string>(props: {
   );
 }
 
+export function GpuIdleBar(props: {
+  server: Server;
+  report?: UnifiedReport;
+  onPress?: () => void;
+}) {
+  const gpuCards = props.report?.resourceSnapshot.gpuCards ?? [];
+  if (gpuCards.length === 0) {
+    return null;
+  }
+
+  const status = computeGpuIdleStatus(gpuCards);
+  const palette = getGpuIdlePalette(status.idlePercent);
+
+  return (
+    <Pressable
+      style={[styles.gpuIdleBar, { borderColor: palette.borderColor, backgroundColor: palette.backgroundColor }]}
+      onPress={props.onPress}
+    >
+      <Text style={styles.gpuIdleBarName}>{props.server.name}</Text>
+      <Text style={[styles.gpuIdleBarValue, { color: palette.textColor }]}>[{status.idleCount}/{status.totalCount}] 空闲</Text>
+    </Pressable>
+  );
+}
+
 export function AuthenticatedShell(props: {
   title: string;
   subtitle: string;
+  identityLabel?: string;
+  compact?: boolean;
   error: string | null;
   refreshing: boolean;
   onRefresh: () => Promise<void>;
@@ -164,17 +225,33 @@ export function AuthenticatedShell(props: {
 }) {
   return (
     <View style={styles.shell}>
-      <View style={styles.shellHeader}>
-        <View style={styles.heroCompact}>
-          <Text style={styles.kicker}>PMEOW MOBILE</Text>
-          <Text style={styles.shellTitle}>{props.title}</Text>
-          <Text style={styles.shellSubtitle}>{props.subtitle}</Text>
-          {props.error ? <Text style={styles.errorText}>{props.error}</Text> : null}
+      {props.compact ? (
+        <>
+          <View style={styles.compactHeaderRow}>
+            <Text style={styles.compactHeaderLabel}>{props.identityLabel ?? props.subtitle}</Text>
+            <Pressable style={styles.compactRefreshButton} onPress={() => void props.onRefresh()}>
+              <Text style={styles.compactRefreshText}>{props.refreshing ? '刷新中...' : '刷新'}</Text>
+            </Pressable>
+          </View>
+          {props.error ? (
+            <View style={styles.compactHeaderRow}>
+              <Text style={styles.errorText}>{props.error}</Text>
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <View style={styles.shellHeader}>
+          <View style={styles.heroCompact}>
+            <Text style={styles.kicker}>PMEOW MOBILE</Text>
+            <Text style={styles.shellTitle}>{props.title}</Text>
+            <Text style={styles.shellSubtitle}>{props.subtitle}</Text>
+            {props.error ? <Text style={styles.errorText}>{props.error}</Text> : null}
+          </View>
+          <Pressable style={styles.refreshButton} onPress={() => void props.onRefresh()}>
+            <Text style={styles.refreshButtonText}>{props.refreshing ? '刷新中...' : '刷新'}</Text>
+          </Pressable>
         </View>
-        <Pressable style={styles.refreshButton} onPress={() => void props.onRefresh()}>
-          <Text style={styles.refreshButtonText}>{props.refreshing ? '刷新中...' : '刷新'}</Text>
-        </Pressable>
-      </View>
+      )}
       <View style={styles.screenWrap}>{props.children}</View>
       {props.tabs}
     </View>

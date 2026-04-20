@@ -15,7 +15,7 @@ import {
   formatTimestamp,
 } from '../app/formatters';
 import { styles } from '../app/styles';
-import { SectionCard, ServerCard, StatBlock } from '../components/common';
+import { ExpandableList, SectionCard, ServerCard, StatBlock } from '../components/common';
 
 export function AdminDashboardScreen(props: {
   realtimeConnected: boolean;
@@ -62,12 +62,20 @@ export function AdminDashboardScreen(props: {
         {props.recentTaskEvents.length === 0 ? (
           <Text style={styles.emptyText}>尚未收到实时任务事件。</Text>
         ) : (
-          props.recentTaskEvents.map((event) => (
-            <View key={`${event.serverId}-${event.task.taskId}-${event.eventType}-${event.task.createdAt}`} style={styles.eventRow}>
-              <Text style={styles.eventTitle}>{formatTaskEventLabel(event)} · {event.task.command}</Text>
-              <Text style={styles.eventMeta}>{event.serverId} · {event.task.user} · {formatTimestamp(event.task.createdAt)}</Text>
-            </View>
-          ))
+          <ExpandableList
+            totalCount={props.recentTaskEvents.length}
+            initialVisibleCount={5}
+            renderItems={(expanded) => {
+              const visibleEvents = expanded ? props.recentTaskEvents : props.recentTaskEvents.slice(0, 5);
+
+              return visibleEvents.map((event) => (
+                <View key={`${event.serverId}-${event.task.taskId}-${event.eventType}-${event.task.createdAt}`} style={styles.eventRow}>
+                  <Text style={styles.eventTitle}>{formatTaskEventLabel(event)} · {event.task.command}</Text>
+                  <Text style={styles.eventMeta}>{event.serverId} · {event.task.user} · {formatTimestamp(event.task.createdAt)}</Text>
+                </View>
+              ));
+            }}
+          />
         )}
       </SectionCard>
     </ScrollView>
@@ -84,12 +92,20 @@ export function AdminAlertsScreen(props: {
         {props.alerts.length === 0 ? (
           <Text style={styles.emptyText}>当前没有活动告警。</Text>
         ) : (
-          props.alerts.map((alert) => (
-            <View key={alert.id} style={styles.eventRow}>
-              <Text style={styles.eventTitle}>{formatAlertType(alert.alertType)} · {alert.serverId}</Text>
-              <Text style={styles.eventMeta}>{formatAlertValue(alert)} · 状态 {alert.status} · {formatTimestamp(alert.updatedAt)}</Text>
-            </View>
-          ))
+          <ExpandableList
+            totalCount={props.alerts.length}
+            initialVisibleCount={5}
+            renderItems={(expanded) => {
+              const visibleAlerts = expanded ? props.alerts : props.alerts.slice(0, 5);
+
+              return visibleAlerts.map((alert) => (
+                <View key={alert.id} style={styles.eventRow}>
+                  <Text style={styles.eventTitle}>{formatAlertType(alert.alertType)} · {alert.serverId}</Text>
+                  <Text style={styles.eventMeta}>{formatAlertValue(alert)} · 状态 {alert.status} · {formatTimestamp(alert.updatedAt)}</Text>
+                </View>
+              ));
+            }}
+          />
         )}
       </SectionCard>
 
@@ -97,12 +113,20 @@ export function AdminAlertsScreen(props: {
         {props.securityEvents.length === 0 ? (
           <Text style={styles.emptyText}>当前没有未解决安全事件。</Text>
         ) : (
-          props.securityEvents.map((event) => (
-            <View key={event.id} style={styles.eventRow}>
-              <Text style={styles.eventTitle}>{formatSecurityEventType(event.eventType)} · {event.serverId}</Text>
-              <Text style={styles.eventMeta}>{formatTimestamp(event.createdAt)}</Text>
-            </View>
-          ))
+          <ExpandableList
+            totalCount={props.securityEvents.length}
+            initialVisibleCount={5}
+            renderItems={(expanded) => {
+              const visibleEvents = expanded ? props.securityEvents : props.securityEvents.slice(0, 5);
+
+              return visibleEvents.map((event) => (
+                <View key={event.id} style={styles.eventRow}>
+                  <Text style={styles.eventTitle}>{formatSecurityEventType(event.eventType)} · {event.serverId}</Text>
+                  <Text style={styles.eventMeta}>{formatTimestamp(event.createdAt)}</Text>
+                </View>
+              ));
+            }}
+          />
         )}
       </SectionCard>
     </ScrollView>

@@ -9,6 +9,8 @@ import shlex
 import sys
 
 from pmeow import cli_runtime
+from pmeow import __version__
+from pmeow.cli_python import parse_vram_mb
 
 
 def _resolve_default_socket() -> str:
@@ -134,6 +136,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="PMEOW agent — GPU cluster monitoring and task scheduling",
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
         "--socket", default=None, help="Path to daemon Unix socket"
     )
     sub = parser.add_subparsers(dest="command")
@@ -169,7 +176,13 @@ def build_parser() -> argparse.ArgumentParser:
     logs_parser.add_argument("--tail", type=int, default=100, help="Number of lines")
 
     submit_parser = sub.add_parser("submit", help="Submit a task")
-    submit_parser.add_argument("--vram", dest="vram", type=int, default=0, help="VRAM in MB")
+    submit_parser.add_argument(
+        "--vram",
+        dest="vram",
+        type=parse_vram_mb,
+        default=0,
+        help="VRAM per GPU; accepts MB integers or g/m suffixes",
+    )
     submit_parser.add_argument("--gpus", dest="gpus", type=int, default=1, help="GPU count")
     submit_parser.add_argument("--gpu", dest="gpus", type=int, help=argparse.SUPPRESS)
     submit_parser.add_argument("--priority", type=int, default=10, help="Priority")

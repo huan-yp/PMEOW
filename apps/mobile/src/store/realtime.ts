@@ -149,6 +149,7 @@ export function primeRealtimeState(
 }
 
 export function connectRealtime(baseUrl: string, token: string, set: StateSetter, get: StateGetter): void {
+  set({ realtimeConnected: false });
   realtimeClient.connect({
     baseUrl,
     token,
@@ -285,6 +286,11 @@ export function connectRealtime(baseUrl: string, token: string, set: StateSetter
       },
     },
   });
+}
+
+export function reconnectRealtime(baseUrl: string, token: string, set: StateSetter, get: StateGetter): void {
+  disconnectRealtime();
+  connectRealtime(baseUrl, token, set, get);
 }
 
 export function disconnectRealtime(): void {

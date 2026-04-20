@@ -2,6 +2,12 @@ package com.pmeowmobile
 
 import android.content.Context
 
+data class PmeowForegroundState(
+  val inForeground: Boolean,
+  val updatedAt: Long,
+  val isFresh: Boolean,
+)
+
 data class PmeowGuardServiceConfig(
   val baseUrl: String,
   val token: String,
@@ -26,6 +32,8 @@ object PmeowGuardConfigStore {
   private const val KEY_ADMIN_SECURITY_ENABLED = "admin_security_enabled"
   private const val KEY_TASK_EVENTS_ENABLED = "task_events_enabled"
   private const val KEY_APP_IN_FOREGROUND = "app_in_foreground"
+  private const val KEY_APP_STATE_UPDATED_AT = "app_state_updated_at"
+  private const val FOREGROUND_STATE_MAX_AGE_MS = 15_000L
 
   fun saveConfig(context: Context, config: PmeowGuardServiceConfig) {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -69,11 +77,24 @@ object PmeowGuardConfigStore {
     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
       .edit()
       .putBoolean(KEY_APP_IN_FOREGROUND, inForeground)
+      .putLong(KEY_APP_STATE_UPDATED_AT, System.currentTimeMillis())
       .apply()
   }
 
+  fun getAppForegroundState(context: Context): PmeowForegroundState {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val updatedAt = prefs.getLong(KEY_APP_STATE_UPDATED_AT, 0L)
+    val inForeground = prefs.getBoolean(KEY_APP_IN_FOREGROUND, false)
+    val isFresh = updatedAt > 0L && System.currentTimeMillis() - updatedAt <= FOREGROUND_STATE_MAX_AGE_MS
+    return PmeowForegroundState(
+      inForeground = inForeground,
+      updatedAt = updatedAt,
+      isFresh = isFresh,
+    )
+  }
+
   fun isAppInForeground(context: Context): Boolean {
-    return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      .getBoolean(KEY_APP_IN_FOREGROUND, true)
+    val state = getAppForegroundState(context)
+    return state.isFresh && state.inForeground
   }
 }

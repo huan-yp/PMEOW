@@ -68,6 +68,7 @@ export interface MobileAppState {
   togglePersonTaskNotifications: () => void;
   toggleIdleServerSubscription: (serverId: string) => void;
   updateIdleServerRule: (serverId: string, rule: IdleGpuNotificationRule) => void;
+  resumeRealtimeFromForeground: () => Promise<void>;
   refreshAndroidBackgroundState: () => Promise<void>;
   openBatteryOptimizationSettings: () => Promise<void>;
   markBatteryOptimizationPromptShown: () => void;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, SafeAreaView, StatusBar, Text, View } from 'react-native';
 import {
   ADMIN_TABS,
@@ -56,6 +56,7 @@ export default function App() {
   const togglePersonTaskNotifications = useAppStore((state) => state.togglePersonTaskNotifications);
   const toggleIdleServerSubscription = useAppStore((state) => state.toggleIdleServerSubscription);
   const updateIdleServerRule = useAppStore((state) => state.updateIdleServerRule);
+  const resumeRealtimeFromForeground = useAppStore((state) => state.resumeRealtimeFromForeground);
   const refreshAndroidBackgroundState = useAppStore((state) => state.refreshAndroidBackgroundState);
   const openBatteryOptimizationSettings = useAppStore((state) => state.openBatteryOptimizationSettings);
   const markBatteryOptimizationPromptShown = useAppStore((state) => state.markBatteryOptimizationPromptShown);
@@ -66,6 +67,7 @@ export default function App() {
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskDetailRefreshNonce, setTaskDetailRefreshNonce] = useState(0);
+  const foregroundResumeInFlightRef = useRef(false);
 
   useEffect(() => {
     void hydrate();
@@ -77,7 +79,19 @@ export default function App() {
       const active = nextState === 'active';
       void setNativeAppInForeground(active);
       if (active) {
-        void refreshAndroidBackgroundState();
+        void (async () => {
+          await refreshAndroidBackgroundState();
+          if (!session.authenticated || !authToken || !baseUrl || foregroundResumeInFlightRef.current) {
+            return;
+          }
+
+          foregroundResumeInFlightRef.current = true;
+          try {
+            await resumeRealtimeFromForeground();
+          } finally {
+            foregroundResumeInFlightRef.current = false;
+          }
+        })();
       }
     });
 
@@ -85,7 +99,7 @@ export default function App() {
       subscription.remove();
       void setNativeAppInForeground(false);
     };
-  }, [refreshAndroidBackgroundState]);
+  }, [authToken, baseUrl, refreshAndroidBackgroundState, resumeRealtimeFromForeground, session.authenticated]);
 
   useEffect(() => {
     setSelectedServerId(null);
@@ -237,6 +251,8 @@ export default function App() {
         <AuthenticatedShell
           title="管理员值班台"
           subtitle={subtitle}
+          identityLabel={`管理员`}
+          compact
           error={error}
           refreshing={refreshing}
           onRefresh={refreshOverview}
@@ -285,6 +301,8 @@ export default function App() {
         <AuthenticatedShell
           title={taskDetailVisible ? '任务详情' : '普通用户移动端'}
           subtitle={subtitle}
+          identityLabel={`普通用户: ${personName}`}
+          compact
           error={error}
           refreshing={refreshing}
           onRefresh={handleRefreshPersonShell}
