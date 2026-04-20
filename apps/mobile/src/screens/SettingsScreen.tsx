@@ -122,7 +122,7 @@ export function SettingsScreen(props: {
         )}
       </SectionCard>
 
-      <NotificationInboxSection items={props.notificationInbox} />
+      <NotificationInboxSection items={props.notificationInbox} initialVisibleCount={8} />
 
       <SectionCard title="当前连接" description="连接地址仅用于当前 PMEOW 后端。">
         <Text style={styles.connectionMeta}>当前后端：{props.baseUrl}</Text>

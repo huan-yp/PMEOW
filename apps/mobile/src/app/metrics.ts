@@ -172,6 +172,67 @@ export function getUsageTone(usagePercent: number | undefined): UsageTone {
   return 'normal';
 }
 
+export interface GpuIdleStatus {
+  idleCount: number;
+  totalCount: number;
+  idlePercent: number;
+}
+
+const GPU_IDLE_VRAM_THRESHOLD = 20;
+const GPU_IDLE_UTIL_THRESHOLD = 20;
+
+export function computeGpuIdleStatus(gpuCards: GpuCardReport[]): GpuIdleStatus {
+  if (gpuCards.length === 0) {
+    return { idleCount: 0, totalCount: 0, idlePercent: 0 };
+  }
+
+  const idleCount = gpuCards.filter((gpu) => {
+    const vramPercent = computeGpuMemoryUsagePercent(gpu);
+    return vramPercent < GPU_IDLE_VRAM_THRESHOLD && gpu.utilizationGpu < GPU_IDLE_UTIL_THRESHOLD;
+  }).length;
+
+  return {
+    idleCount,
+    totalCount: gpuCards.length,
+    idlePercent: (idleCount / gpuCards.length) * 100,
+  };
+}
+
+export function getGpuIdleTone(idlePercent: number): UsageTone {
+  if (idlePercent <= 25) return 'critical';
+  if (idlePercent <= 50) return 'warning';
+  return 'normal';
+}
+
+export function getGpuIdlePalette(idlePercent: number): UsagePalette {
+  const tone = getGpuIdleTone(idlePercent);
+  if (tone === 'critical') {
+    return {
+      tone,
+      textColor: '#ff878d',
+      accentColor: '#ff6c71',
+      borderColor: '#5a2630',
+      backgroundColor: '#221119',
+    };
+  }
+  if (tone === 'warning') {
+    return {
+      tone,
+      textColor: '#ffd57f',
+      accentColor: '#f3b24c',
+      borderColor: '#5b4520',
+      backgroundColor: '#241b10',
+    };
+  }
+  return {
+    tone,
+    textColor: '#70e0a6',
+    accentColor: '#2bc38a',
+    borderColor: '#1e4a35',
+    backgroundColor: '#101f18',
+  };
+}
+
 export function getUsagePalette(usagePercent: number | undefined): UsagePalette {
   const tone = getUsageTone(usagePercent);
   if (tone === 'critical') {

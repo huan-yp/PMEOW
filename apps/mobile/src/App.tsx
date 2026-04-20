@@ -227,6 +227,8 @@ export default function App() {
         <AuthenticatedShell
           title="管理员值班台"
           subtitle={subtitle}
+          identityLabel={`管理员`}
+          compact
           error={error}
           refreshing={refreshing}
           onRefresh={refreshOverview}
@@ -275,6 +277,8 @@ export default function App() {
         <AuthenticatedShell
           title="普通用户移动端"
           subtitle={subtitle}
+          identityLabel={`普通用户: ${personName}`}
+          compact
           error={error}
           refreshing={refreshing}
           onRefresh={refreshOverview}

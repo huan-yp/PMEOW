@@ -4,7 +4,7 @@ import type { Server, ServerStatus, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
 import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type HostRealtimeHistory, type PerGpuRealtimeHistory } from '../app/metrics';
 import { styles } from '../app/styles';
-import { QueueTaskRow, SectionCard, StatBlock } from '../components/common';
+import { ExpandableList, QueueTaskRow, SectionCard, StatBlock } from '../components/common';
 import { DEFAULT_IDLE_GPU_NOTIFICATION_RULE, type IdleGpuNotificationRule } from '../lib/preferences';
 import { CpuMemoryTrendCard, DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
 
@@ -237,7 +237,17 @@ export function ServerDetailScreen(props: {
         {(props.report?.taskQueue.running.length ?? 0) === 0 ? (
           <Text style={styles.emptyText}>当前没有运行中的任务。</Text>
         ) : (
-          props.report?.taskQueue.running.map((task) => <QueueTaskRow key={task.taskId} task={task} />)
+          <ExpandableList
+            totalCount={props.report?.taskQueue.running.length ?? 0}
+            initialVisibleCount={5}
+            renderItems={(expanded) => {
+              const visibleTasks = expanded
+                ? props.report?.taskQueue.running ?? []
+                : props.report?.taskQueue.running.slice(0, 5) ?? [];
+
+              return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
+            }}
+          />
         )}
       </SectionCard>
 
@@ -245,7 +255,17 @@ export function ServerDetailScreen(props: {
         {(props.report?.taskQueue.queued.length ?? 0) === 0 ? (
           <Text style={styles.emptyText}>当前没有排队任务。</Text>
         ) : (
-          props.report?.taskQueue.queued.map((task) => <QueueTaskRow key={task.taskId} task={task} />)
+          <ExpandableList
+            totalCount={props.report?.taskQueue.queued.length ?? 0}
+            initialVisibleCount={5}
+            renderItems={(expanded) => {
+              const visibleTasks = expanded
+                ? props.report?.taskQueue.queued ?? []
+                : props.report?.taskQueue.queued.slice(0, 5) ?? [];
+
+              return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
+            }}
+          />
         )}
       </SectionCard>
 
@@ -253,7 +273,17 @@ export function ServerDetailScreen(props: {
         {(props.report?.taskQueue.recentlyEnded.length ?? 0) === 0 ? (
           <Text style={styles.emptyText}>当前没有最近结束的任务。</Text>
         ) : (
-          props.report?.taskQueue.recentlyEnded.map((task) => <QueueTaskRow key={task.taskId} task={task} />)
+          <ExpandableList
+            totalCount={props.report?.taskQueue.recentlyEnded.length ?? 0}
+            initialVisibleCount={5}
+            renderItems={(expanded) => {
+              const visibleTasks = expanded
+                ? props.report?.taskQueue.recentlyEnded ?? []
+                : props.report?.taskQueue.recentlyEnded.slice(0, 5) ?? [];
+
+              return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
+            }}
+          />
         )}
       </SectionCard>
     </ScrollView>
