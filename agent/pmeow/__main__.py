@@ -11,7 +11,9 @@ import sys
 from pmeow import cli_runtime
 
 
-_DEFAULT_SOCKET = os.path.expanduser("~/.pmeow/pmeow.sock")
+def _resolve_default_socket() -> str:
+    from pmeow.config import resolve_client_socket_path
+    return resolve_client_socket_path()
 
 
 def _is_generic_python_command(token: str) -> bool:
@@ -41,7 +43,7 @@ def _normalize_submit_command(command_args: list[str]) -> tuple[str, list[str] |
 
 
 def _socket_path(args: argparse.Namespace) -> str:
-    return getattr(args, "socket", None) or _DEFAULT_SOCKET
+    return getattr(args, "socket", None) or _resolve_default_socket()
 
 
 def _cmd_status(args: argparse.Namespace) -> None:

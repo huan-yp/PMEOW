@@ -124,6 +124,8 @@ class TaskSpec:
     argv: Optional[list[str]] = None
     env_overrides: Optional[dict[str, str]] = None
     launch_mode: TaskLaunchMode = TaskLaunchMode.daemon_shell
+    submit_uid: Optional[int] = None
+    submit_gid: Optional[int] = None
 
 
 @dataclass

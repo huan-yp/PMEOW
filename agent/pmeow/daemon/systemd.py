@@ -5,7 +5,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from pmeow.config import AgentConfig
+from pmeow.config import AgentConfig, SYSTEMD_SOCKET_PATH
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,13 @@ class SystemdServicePaths:
     environment_path: Path
 
 
-def render_unit_file(*, executable_path: str, working_directory: str, environment_file: str, service_name: str) -> str:
+def render_unit_file(*, executable_path: str, working_directory: str, environment_file: str, service_name: str, socket_group: str = "") -> str:
+    supplementary = f"SupplementaryGroups={socket_group}\n" if socket_group else ""
+    chmod_cmd = (
+        f"ExecStartPost=/bin/chmod 0770 /run/{service_name}/pmeow.sock\n"
+        if socket_group
+        else f"ExecStartPost=/bin/chmod 0666 /run/{service_name}/pmeow.sock\n"
+    )
     return f"""[Unit]
 Description=PMEOW Agent Daemon
 After=network.target
@@ -24,9 +30,12 @@ After=network.target
 Type=simple
 WorkingDirectory={working_directory}
 EnvironmentFile={environment_file}
-ExecStart={executable_path} run
-Restart=on-failure
+RuntimeDirectory={service_name}
+RuntimeDirectoryMode=0755
+{supplementary}ExecStart={executable_path} run
+{chmod_cmd}Restart=on-failure
 RestartSec=10
+UMask=0002
 
 [Install]
 WantedBy=multi-user.target
@@ -45,9 +54,11 @@ def render_environment_file(config: AgentConfig) -> str:
         f"PMEOW_HISTORY_WINDOW={config.history_window_seconds}",
         f"PMEOW_VRAM_REDUNDANCY={config.vram_redundancy_coefficient}",
         f"PMEOW_STATE_DIR={config.state_dir}",
-        f"PMEOW_SOCKET_PATH={config.socket_path}",
+        f"PMEOW_SOCKET_PATH={SYSTEMD_SOCKET_PATH}",
         f"PMEOW_LOG_DIR={config.log_dir}",
     ]
+    if config.socket_group:
+        lines.append(f"PMEOW_SOCKET_GROUP={config.socket_group}")
     return "\n".join(lines) + "\n"
 
 
@@ -68,6 +79,7 @@ def install_systemd_service(*, config: AgentConfig, executable_path: str, workin
             working_directory=working_directory,
             environment_file=str(paths.environment_path),
             service_name=paths.service_name,
+            socket_group=config.socket_group,
         )
     )
     paths.environment_path.write_text(render_environment_file(config))

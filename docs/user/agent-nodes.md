@@ -75,6 +75,7 @@ Agent 通过环境变量配置，未设置时会使用默认值。
 | `PMEOW_LOG_LEVEL` | `INFO` | Agent runtime log 级别，可设为 `DEBUG` |
 | `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | 后台模式 pid 文件 |
 | `PMEOW_AGENT_LOG_FILE` | 空 | 后台模式 runtime log 文件 |
+| `PMEOW_SOCKET_GROUP` | 空 | systemd 模式下 socket 文件的 Unix group，为空则 chmod 0666 |
 
 关于 `PMEOW_SERVER_URL` 有两个重要约束：
 
@@ -108,13 +109,62 @@ pmeow-agent stop
 ### systemd
 
 ```bash
-sudo pmeow-agent install-service --enable --start
+export PMEOW_SERVER_URL=http://your-server:17200
+sudo -E pmeow-agent install-service --enable --start
 sudo journalctl -u pmeow-agent -f
 ```
 
 适合长期托管。systemd 负责进程生命周期，journal 负责 runtime log。
 
-按独立虚拟环境部署时，systemd 的 `ExecStart` 会直接指向系统级 `pmeow-agent`，而 `WorkingDirectory` 会落在 `PMEOW_STATE_DIR`，不会依赖你执行安装命令时所在的目录。
+#### 运行模型
+
+systemd 模式下，daemon 以 root 身份常驻运行，但会按提交用户的真实身份降权执行后台任务：
+
+- CLI 通过 Unix socket 提交任务时，daemon 从 `SO_PEERCRED` 获取调用者的 uid/gid。
+- 后台任务启动前，daemon 会 `setuid`/`setgid` 到提交者身份，并设置 `HOME`、`USER`、`LOGNAME`。
+- 任务日志归属和文件权限都跟随提交者而非 daemon 用户。
+
+#### 共享 Socket
+
+systemd 模式下，socket 默认放在 `/run/pmeow-agent/pmeow.sock`，由 systemd `RuntimeDirectory` 管理，服务停止后自动清理。CLI 客户端会自动发现这个路径（优先级：`PMEOW_SOCKET_PATH` > `/run/pmeow-agent/pmeow.sock` > `~/.pmeow/pmeow.sock`）。
+
+默认情况下，socket 权限为 `0666`（所有本地用户均可连接）。如果需要限制访问，可以指定 `PMEOW_SOCKET_GROUP`：
+
+```bash
+export PMEOW_SERVER_URL=http://your-server:17200
+export PMEOW_SOCKET_GROUP=gpu-users
+sudo -E pmeow-agent install-service --enable --start
+```
+
+此时 socket 权限为 `0770`，只有 `gpu-users` 组的成员才能提交任务。
+
+#### 环境文件
+
+`install-service` 会把当前 shell 里的 `PMEOW_SERVER_URL` 和其他配置写入 `/etc/pmeow-agent/pmeow-agent.env`，systemd 通过 `EnvironmentFile` 读取。
+
+后续要改上报地址，直接编辑环境文件并重启服务：
+
+```bash
+sudoedit /etc/pmeow-agent/pmeow-agent.env
+# 改成 PMEOW_SERVER_URL=http://your-server:17200
+
+sudo systemctl restart pmeow-agent
+sudo journalctl -u pmeow-agent -f
+```
+
+也可以先在当前 shell 里更新环境变量，再重新执行一次 `sudo -E pmeow-agent install-service`，它会覆盖环境文件内容。
+
+#### 卸载
+
+```bash
+sudo pmeow-agent uninstall-service
+```
+
+这会停止并禁用服务、删除 unit 文件、重新加载 systemd。环境文件 `/etc/pmeow-agent/pmeow-agent.env` 不会被自动删除，如果需要彻底清理：
+
+```bash
+sudo rm -rf /etc/pmeow-agent
+```
 
 ## 节点绑定是怎么发生的
 

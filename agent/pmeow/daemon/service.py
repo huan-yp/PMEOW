@@ -58,6 +58,7 @@ class DaemonService:
 
         self.task_queue = TaskQueue()
         self.runner = TaskRunner()
+        self._submit_credentials: dict[str, tuple[int | None, int | None]] = {}
         self.runtime_monitor = RuntimeMonitorLoop(
             self.task_queue,
             poll_interval=1.0,
@@ -92,7 +93,7 @@ class DaemonService:
 
         from pmeow.daemon.socket_server import SocketServer
 
-        srv = SocketServer(self.config.socket_path, self)
+        srv = SocketServer(self.config.socket_path, self, socket_group=self.config.socket_group)
         srv_thread = threading.Thread(target=srv.serve_forever, daemon=True)
         srv_thread.start()
         monitor_thread = threading.Thread(target=self.runtime_monitor.run_forever, daemon=True)
@@ -198,6 +199,7 @@ class DaemonService:
             # Push completion observations from runner
             now = time.time()
             for task_id, exit_code in self.runner.check_completed():
+                self._submit_credentials.pop(task_id, None)
                 self.task_queue.push_completion(CompletionObservation(
                     task_id=task_id,
                     exit_code=exit_code,
@@ -256,7 +258,11 @@ class DaemonService:
                         task.id,
                         self._format_launch_reserved_message(dec.gpu_ids),
                     )
-                    proc = self.runner.start(task, dec.gpu_ids, self.config.log_dir)
+                    cred = self._submit_credentials.get(task.id, (None, None))
+                    proc = self.runner.start(
+                        task, dec.gpu_ids, self.config.log_dir,
+                        submit_uid=cred[0], submit_gid=cred[1],
+                    )
                     self.task_queue.start(task.id, proc.pid)
                     self._append_task_message(
                         task.id,
@@ -298,6 +304,7 @@ class DaemonService:
                 if err is not None:
                     raise ValueError(err)
             rec = self.task_queue.submit(spec)
+            self._submit_credentials[rec.id] = (spec.submit_uid, spec.submit_gid)
             ensure_task_log(rec.id, self.config.log_dir)
             self._append_task_message(rec.id, self._format_submitted_message(rec))
             log.info(
@@ -311,6 +318,7 @@ class DaemonService:
             task = self.task_queue.get(task_id)
             if task is None:
                 return False
+            self._submit_credentials.pop(task_id, None)
             if task.status == TaskStatus.running:
                 self.runner.cancel(task_id)
             self.task_queue.cancel(task_id)

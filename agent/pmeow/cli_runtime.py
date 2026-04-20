@@ -88,7 +88,13 @@ def install_service(args) -> None:
         enable=args.enable,
         start=args.start,
     )
-    print("installed service")
+    print(f"installed service (socket will be at /run/pmeow-agent/pmeow.sock)")
+    if not config.socket_group:
+        print(
+            "hint: socket will be world-accessible (0666). "
+            "Set PMEOW_SOCKET_GROUP to restrict access to a unix group.",
+            file=sys.stderr,
+        )
 
 
 def uninstall_service(args) -> None:

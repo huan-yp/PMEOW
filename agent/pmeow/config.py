@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+SYSTEMD_SOCKET_PATH = "/run/pmeow-agent/pmeow.sock"
+
+
 def _default_state_dir() -> str:
     return os.path.expanduser("~/.pmeow/")
 
@@ -31,6 +34,7 @@ class AgentConfig:
     log_dir: str = field(default_factory=lambda: os.path.expanduser("~/.pmeow/logs/"))
     pid_file: str = field(default_factory=lambda: os.path.expanduser("~/.pmeow/pmeow-agent.pid"))
     agent_log_file: str | None = None
+    socket_group: str = ""
 
 
 def validate_interval(value: int, name: str) -> int:
@@ -138,6 +142,7 @@ def load_config() -> AgentConfig:
     log_dir = validate_path(env.get("PMEOW_LOG_DIR", str(Path(state_dir) / "logs")))
     pid_file = validate_path(env.get("PMEOW_PID_FILE", str(Path(state_dir) / "pmeow-agent.pid")))
     agent_log_file = validate_optional_path(env.get("PMEOW_AGENT_LOG_FILE"))
+    socket_group = env.get("PMEOW_SOCKET_GROUP", "")
 
     return AgentConfig(
         server_url=env.get("PMEOW_SERVER_URL", ""),
@@ -155,7 +160,31 @@ def load_config() -> AgentConfig:
         log_dir=log_dir,
         pid_file=pid_file,
         agent_log_file=agent_log_file,
+        socket_group=socket_group,
     )
+
+
+def resolve_client_socket_path() -> str:
+    """Resolve the daemon socket path for CLI clients.
+
+    Priority:
+    1. PMEOW_SOCKET_PATH environment variable
+    2. Shared systemd socket at /run/pmeow-agent/pmeow.sock
+    3. User-local socket at ~/.pmeow/pmeow.sock
+    """
+    explicit = os.environ.get("PMEOW_SOCKET_PATH")
+    if explicit:
+        return validate_path(explicit)
+
+    if os.path.exists(SYSTEMD_SOCKET_PATH):
+        return SYSTEMD_SOCKET_PATH
+
+    user_socket = os.path.expanduser("~/.pmeow/pmeow.sock")
+    if os.path.exists(user_socket):
+        return user_socket
+
+    # Neither exists — prefer systemd path so the error message is clear
+    return SYSTEMD_SOCKET_PATH
 
 
 def warn_missing_server_url(config: AgentConfig) -> None:

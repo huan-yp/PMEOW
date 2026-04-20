@@ -129,7 +129,9 @@ def detect_python_invocation(argv: list[str]) -> PythonInvocation | None:
     return None  # No .py found
 
 
-_DEFAULT_SOCKET = os.path.expanduser("~/.pmeow/pmeow.sock")
+def _resolve_default_socket() -> str:
+    from pmeow.config import resolve_client_socket_path
+    return resolve_client_socket_path()
 
 
 def run_python_invocation(
@@ -143,7 +145,7 @@ def run_python_invocation(
     from pmeow.daemon.socket_server import send_request
     from pmeow.executor.attached import run_attached_python
 
-    socket_path = invocation.socket_path or _DEFAULT_SOCKET
+    socket_path = invocation.socket_path or _resolve_default_socket()
     argv = [resolve_submission_python(), invocation.script_path, *invocation.script_args]
 
     submit = send_request(socket_path, "submit_task", {

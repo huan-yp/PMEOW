@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import socket
+import struct
 import threading
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -33,9 +34,10 @@ class SocketServer:
     Response: ``{"ok": true, "result": ...}`` or ``{"ok": false, "error": "..."}``
     """
 
-    def __init__(self, socket_path: str, service: DaemonService) -> None:
+    def __init__(self, socket_path: str, service: DaemonService, *, socket_group: str = "") -> None:
         self.socket_path = socket_path
         self.service = service
+        self.socket_group = socket_group
         self._sock: socket.socket | None = None
         self._shutdown = threading.Event()
 
@@ -50,6 +52,17 @@ class SocketServer:
         if _HAS_AF_UNIX:
             self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             self._sock.bind(self.socket_path)
+            # Set socket permissions for multi-user access
+            if self.socket_group:
+                import grp as _grp
+                try:
+                    gid = _grp.getgrnam(self.socket_group).gr_gid
+                    os.chown(self.socket_path, -1, gid)
+                    os.chmod(self.socket_path, 0o0770)
+                except (KeyError, OSError) as exc:
+                    log.warning("failed to set socket group %s: %s", self.socket_group, exc)
+            elif os.getuid() == 0:
+                os.chmod(self.socket_path, 0o0666)
         else:
             # Fallback: TCP on loopback; write the port to socket_path file
             self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -84,14 +97,24 @@ class SocketServer:
     # ------------------------------------------------------------------
 
     def _handle(self, conn: socket.socket) -> None:
+        resp = json.dumps({"ok": False, "error": "internal server error"})
+        peer_uid: int | None = None
+        peer_gid: int | None = None
         try:
+            # Extract peer credentials on Linux
+            if _HAS_AF_UNIX and hasattr(socket, "SO_PEERCRED"):
+                try:
+                    cred = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("iII"))
+                    _pid, peer_uid, peer_gid = struct.unpack("iII", cred)
+                except (OSError, struct.error):
+                    pass
             data = conn.recv(_BUF_SIZE)
             if not data:
                 return
             request = json.loads(data.decode())
             method = request.get("method", "")
             params = request.get("params", {})
-            result = self._dispatch(method, params)
+            result = self._dispatch(method, params, peer_uid=peer_uid, peer_gid=peer_gid)
             resp = json.dumps({"ok": True, "result": result})
         except Exception as exc:
             resp = json.dumps({"ok": False, "error": str(exc)})
@@ -106,10 +129,13 @@ class SocketServer:
     # Method dispatch
     # ------------------------------------------------------------------
 
-    def _dispatch(self, method: str, params: dict[str, Any]) -> Any:
+    def _dispatch(self, method: str, params: dict[str, Any], *, peer_uid: int | None = None, peer_gid: int | None = None) -> Any:
         handler = _METHODS.get(method)
         if handler is None:
             raise ValueError(f"unknown method: {method}")
+        if method == "submit_task" and peer_uid is not None:
+            params["_peer_uid"] = peer_uid
+            params["_peer_gid"] = peer_gid
         return handler(self.service, params)
 
     # ------------------------------------------------------------------
@@ -176,6 +202,8 @@ def _submit_task(svc: DaemonService, params: dict) -> dict:
         argv=params.get("argv"),
         env_overrides=params.get("env_overrides"),
         launch_mode=TaskLaunchMode(params["launch_mode"]) if "launch_mode" in params else TaskLaunchMode.daemon_shell,
+        submit_uid=params.get("_peer_uid"),
+        submit_gid=params.get("_peer_gid"),
     )
     rec = svc.submit_task(spec)
     return _to_task_dict(rec, log_dir=svc.config.log_dir)
@@ -240,7 +268,28 @@ def send_request(socket_path: str, method: str, params: dict | None = None) -> d
         target = ("127.0.0.1", port)
 
     try:
-        sock.connect(target)  # type: ignore[arg-type]
+        try:
+            sock.connect(target)  # type: ignore[arg-type]
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"permission denied while connecting to daemon socket {socket_path}. "
+                "The daemon may be running under a different Unix user or using a "
+                "socket path that your current user cannot access. Set PMEOW_SOCKET_PATH "
+                "or use --socket to point at the active daemon socket, and ensure the "
+                "socket directory permissions allow access."
+            ) from exc
+        except ConnectionRefusedError as exc:
+            raise RuntimeError(
+                f"connection refused for daemon socket {socket_path}. "
+                "The socket file may be stale, or the daemon may be listening on a "
+                "different path. Check pmeow-agent service status and PMEOW_SOCKET_PATH."
+            ) from exc
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                f"daemon socket {socket_path} does not exist. "
+                "Start pmeow-agent first, or set PMEOW_SOCKET_PATH / --socket to the "
+                "active daemon socket path."
+            ) from exc
         payload = json.dumps({"method": method, "params": params or {}})
         sock.sendall(payload.encode())
         sock.shutdown(socket.SHUT_WR)

@@ -2,13 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import pwd
 import signal
 import subprocess
 from typing import IO, Optional
 
 from pmeow.executor.logs import open_task_log
 from pmeow.models import TaskRecord
+
+log = logging.getLogger(__name__)
+
+
+def _make_demote_fn(uid: int, gid: int):
+    """Return a preexec_fn that drops privileges to the given uid/gid."""
+
+    def _demote():
+        os.setgid(gid)
+        try:
+            supplementary = os.getgrouplist(pwd.getpwuid(uid).pw_name, gid)
+            os.setgroups(supplementary)
+        except (KeyError, OSError):
+            os.setgroups([gid])
+        os.setuid(uid)
+
+    return _demote
 
 
 class TaskRunner:
@@ -27,7 +46,13 @@ class TaskRunner:
     # ------------------------------------------------------------------
 
     def start(
-        self, task: TaskRecord, gpu_ids: list[int], log_dir: str
+        self,
+        task: TaskRecord,
+        gpu_ids: list[int],
+        log_dir: str,
+        *,
+        submit_uid: int | None = None,
+        submit_gid: int | None = None,
     ) -> subprocess.Popen:
         """Launch *task* as a subprocess and begin tracking it.
 
@@ -37,6 +62,20 @@ class TaskRunner:
         log_fh = open_task_log(task.id, log_dir, append=True)
         env = task.env_overrides.copy() if task.env_overrides is not None else os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in gpu_ids)
+
+        # Privilege dropping: if daemon is root and submitter identity known, run as submitter
+        preexec_fn = None
+        if os.getuid() == 0 and submit_uid is not None and submit_uid != 0:
+            uid = submit_uid
+            gid = submit_gid if submit_gid is not None else uid
+            preexec_fn = _make_demote_fn(uid, gid)
+            try:
+                pw = pwd.getpwuid(uid)
+                env.setdefault("HOME", pw.pw_dir)
+                env.setdefault("USER", pw.pw_name)
+                env.setdefault("LOGNAME", pw.pw_name)
+            except KeyError:
+                log.warning("submit_uid=%d has no passwd entry, HOME/USER not set", uid)
 
         popen_args: str | list[str]
         use_shell: bool
@@ -54,6 +93,7 @@ class TaskRunner:
             env=env,
             stdout=log_fh,
             stderr=subprocess.STDOUT,
+            preexec_fn=preexec_fn,
         )
 
         self._procs[task.id] = proc
