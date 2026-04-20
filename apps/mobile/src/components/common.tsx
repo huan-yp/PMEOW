@@ -78,6 +78,7 @@ export function ServerCard(props: {
 export function TaskRow(props: {
   task: Task;
   pending: boolean;
+  onPress?: () => void;
   onCancel?: () => void;
 }) {
   const cancellable = props.task.status === 'queued' || props.task.status === 'running';
@@ -85,7 +86,10 @@ export function TaskRow(props: {
   return (
     <View style={styles.eventRow}>
       <View style={styles.rowHeader}>
-        <Text style={styles.eventTitle}>{formatTaskStatus(props.task.status)} · {props.task.command}</Text>
+        <Pressable style={{ flex: 1 }} onPress={props.onPress} disabled={!props.onPress}>
+          <Text style={styles.eventTitle}>{formatTaskStatus(props.task.status)} · {props.task.command}</Text>
+          <Text style={styles.eventMeta}>{props.task.serverId} · {props.task.user} · {formatTimestamp(props.task.createdAt)}</Text>
+        </Pressable>
         {cancellable && props.onCancel ? (
           <Pressable
             style={[styles.inlineActionButton, props.pending ? styles.buttonDisabled : null]}
@@ -96,7 +100,6 @@ export function TaskRow(props: {
           </Pressable>
         ) : null}
       </View>
-      <Text style={styles.eventMeta}>{props.task.serverId} · {props.task.user} · {formatTimestamp(props.task.createdAt)}</Text>
     </View>
   );
 }

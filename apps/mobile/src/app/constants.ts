@@ -12,3 +12,11 @@ export const PERSON_TABS: Array<{ id: PersonTab; label: string }> = [
   { id: 'tasks', label: '我的任务' },
   { id: 'settings', label: '设置' },
 ];
+
+export function isPersonTaskDetailVisible(tab: PersonTab, selectedTaskId: string | null): boolean {
+  return tab === 'tasks' && selectedTaskId != null;
+}
+
+export function normalizeSelectedTaskIdForTab(tab: PersonTab, selectedTaskId: string | null): string | null {
+  return tab === 'tasks' ? selectedTaskId : null;
+}

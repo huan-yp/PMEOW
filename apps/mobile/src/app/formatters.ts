@@ -79,6 +79,19 @@ export function formatTaskStatus(status: Task['status']): string {
   return labels[status];
 }
 
+export function formatTaskDetailValue(value: string | number | null | undefined): string {
+  if (value == null) {
+    return '—';
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : '—';
+  }
+
+  return String(value);
+}
+
 export function formatQueueTaskStatus(status: TaskInfo['status']): string {
   return formatTaskStatus(status);
 }
