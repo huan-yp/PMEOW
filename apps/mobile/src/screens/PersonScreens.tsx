@@ -97,11 +97,12 @@ export function PersonHomeScreen(props: {
 export function PersonTasksScreen(props: {
   personTasks: Task[];
   pendingTaskId: string | null;
+  onSelectTask: (task: Task) => void;
   onCancelTask: (task: Task) => Promise<void>;
 }) {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
-      <SectionCard title="我的任务" description="可取消自己当前仍在排队或运行中的任务。">
+      <SectionCard title="我的任务" description="点击任务可查看详情，仍可直接取消自己当前排队或运行中的任务。">
         {props.personTasks.length === 0 ? (
           <Text style={styles.emptyText}>当前没有与你绑定账号相关的任务。</Text>
         ) : (
@@ -110,12 +111,12 @@ export function PersonTasksScreen(props: {
             initialVisibleCount={6}
             renderItems={(expanded) => {
               const visibleTasks = expanded ? props.personTasks : props.personTasks.slice(0, 6);
-
               return visibleTasks.map((task) => (
                 <TaskRow
                   key={task.id}
                   task={task}
                   pending={props.pendingTaskId === task.id}
+                  onPress={() => props.onSelectTask(task)}
                   onCancel={() => props.onCancelTask(task)}
                 />
               ));

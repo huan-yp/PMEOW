@@ -261,6 +261,10 @@ export class MobileApiClient {
     return this.request<{ tasks: Task[]; total: number }>(`${API_PATHS.tasks}${suffix}`);
   }
 
+  async getTask(taskId: string): Promise<Task> {
+    return this.request<Task>(API_PATHS.task(taskId));
+  }
+
   async getAlerts(query: AlertQuery = {}): Promise<Alert[]> {
     const suffix = buildQueryString([
       ['serverId', query.serverId],

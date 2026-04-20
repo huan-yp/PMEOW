@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, SafeAreaView, StatusBar, Text, View } from 'react-native';
-import { ADMIN_TABS, PERSON_TABS, type AdminTab, type PersonTab } from './app/constants';
+import {
+  ADMIN_TABS,
+  PERSON_TABS,
+  isPersonTaskDetailVisible,
+  normalizeSelectedTaskIdForTab,
+  type AdminTab,
+  type PersonTab,
+} from './app/constants';
 import { useServerGpuHistory } from './app/useServerGpuHistory';
 import { styles } from './app/styles';
 import { AuthenticatedShell, BottomTabs } from './components/common';
@@ -9,6 +16,7 @@ import type { MobileHomeView } from './lib/preferences';
 import { AdminAlertsScreen, AdminDashboardScreen } from './screens/AdminScreens';
 import { ConnectionScreen } from './screens/ConnectionScreen';
 import { PersonHomeScreen, PersonTasksScreen } from './screens/PersonScreens';
+import { PersonTaskDetailScreen } from './screens/PersonTaskDetailScreen';
 import { ServerDetailScreen } from './screens/ServerDetailScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { useAppStore } from './store/useAppStore';
@@ -60,6 +68,8 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<AdminTab>('dashboard');
   const [personTab, setPersonTab] = useState<PersonTab>('home');
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [taskDetailRefreshNonce, setTaskDetailRefreshNonce] = useState(0);
   const foregroundResumeInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -96,6 +106,7 @@ export default function App() {
 
   useEffect(() => {
     setSelectedServerId(null);
+    setSelectedTaskId(null);
     if (session.principal?.kind === 'admin') {
       setAdminTab('dashboard');
     }
@@ -175,6 +186,20 @@ export default function App() {
 
   const handleHomeViewChange = (role: 'admin' | 'person') => (view: MobileHomeView) => {
     setHomeView(role, view);
+  };
+
+  const taskDetailVisible = isPersonTaskDetailVisible(personTab, selectedTaskId);
+
+  const handleRefreshPersonShell = async () => {
+    await refreshOverview();
+    if (taskDetailVisible) {
+      setTaskDetailRefreshNonce((current) => current + 1);
+    }
+  };
+
+  const handleChangePersonTab = (tab: PersonTab) => {
+    setPersonTab(tab);
+    setSelectedTaskId((current) => normalizeSelectedTaskIdForTab(tab, current));
   };
 
   if (!hydrated) {
@@ -293,14 +318,14 @@ export default function App() {
         </AuthenticatedShell>
       ) : (
         <AuthenticatedShell
-          title="普通用户移动端"
+          title={taskDetailVisible ? '任务详情' : '普通用户移动端'}
           subtitle={subtitle}
           identityLabel={`普通用户: ${personName}`}
           compact
           error={error}
           refreshing={refreshing}
-          onRefresh={refreshOverview}
-          tabs={<BottomTabs tabs={PERSON_TABS} activeTab={personTab} onChangeTab={setPersonTab} />}
+          onRefresh={handleRefreshPersonShell}
+          tabs={<BottomTabs tabs={PERSON_TABS} activeTab={personTab} onChangeTab={handleChangePersonTab} />}
         >
           {personTab === 'home' ? (
             <PersonHomeScreen
@@ -313,14 +338,32 @@ export default function App() {
               notificationInbox={notificationInbox}
               homeView={personHomeView}
               onChangeHomeView={handleHomeViewChange('person')}
-              onSelectServer={setSelectedServerId}
+              onSelectServer={(serverId) => {
+                setSelectedTaskId(null);
+                setSelectedServerId(serverId);
+              }}
             />
           ) : personTab === 'tasks' ? (
-            <PersonTasksScreen
-              personTasks={personTasks}
-              pendingTaskId={pendingTaskId}
-              onCancelTask={cancelTask}
-            />
+            taskDetailVisible && selectedTaskId ? (
+              <PersonTaskDetailScreen
+                taskId={selectedTaskId}
+                baseUrl={baseUrl}
+                authToken={authToken}
+                refreshNonce={taskDetailRefreshNonce}
+                onBack={() => setSelectedTaskId(null)}
+                onRefreshOverview={refreshOverview}
+              />
+            ) : (
+              <PersonTasksScreen
+                personTasks={personTasks}
+                pendingTaskId={pendingTaskId}
+                onSelectTask={(task) => {
+                  setSelectedServerId(null);
+                  setSelectedTaskId(task.id);
+                }}
+                onCancelTask={cancelTask}
+              />
+            )
           ) : (
             <SettingsScreen
               baseUrl={baseUrl}
