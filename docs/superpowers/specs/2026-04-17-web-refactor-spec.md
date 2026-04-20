@@ -141,7 +141,7 @@ CREATE TABLE tasks (
     command TEXT NOT NULL,
     cwd TEXT NOT NULL,
     user TEXT NOT NULL,
-    launch_mode TEXT NOT NULL,           -- 'daemon_shell' | 'attached_python'
+    launch_mode TEXT NOT NULL,           -- 'background' | 'foreground'
     require_vram_mb INTEGER NOT NULL,
     require_gpu_count INTEGER NOT NULL,
     gpu_ids TEXT,                         -- JSON: [int] | null
@@ -379,7 +379,7 @@ interface TaskInfo {
     command: string;
     cwd: string;
     user: string;
-    launchMode: 'daemon_shell' | 'attached_python';
+    launchMode: 'background' | 'foreground';
     requireVramMb: number;
     requireGpuCount: number;
     gpuIds: number[] | null;

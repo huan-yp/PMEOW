@@ -10,14 +10,14 @@
 
 1. **死任务**：web 端镜像与 agent 端真实状态不同步。agent 重启、网络断开、离线缓冲区溢出（上限 100 条）均可导致 web 端任务永久显示为 queued 或 running。
 2. **双源不一致**：任务列表从 web 本地 SQLite 读取（`getAgentTaskQueueGroups()`），但审计详情和事件从 agent 实时拉取（`server:getTaskAuditDetail`），两者可能矛盾。
-3. **Ctrl+C 可靠性**：当 attached_python 模式的 CLI 在排队阶段被 Ctrl+C 中断时，任务在 web 端永久显示为排队中。虽然上一轮修复了 CLI 侧发送 `cancel_task` 的问题，但根本原因是 web 端依赖推送而非查询 agent 真实状态。
+3. **Ctrl+C 可靠性**：当 foreground 模式的 CLI 在排队阶段被 Ctrl+C 中断时，任务在 web 端永久显示为排队中。虽然上一轮修复了 CLI 侧发送 `cancel_task` 的问题，但根本原因是 web 端依赖推送而非查询 agent 真实状态。
 
 ## 目标
 
 1. 确立 agent 为任务状态的唯一真相源（single source of truth）。
 2. web 端不再持久化任务状态镜像，改为按需向 agent 拉取。
 3. agent 推送仅作为变化通知信号（"有变化，请刷新"），不携带任务完整快照。
-4. 保留 attached_python 模式。CLI 启动子进程后注册 PID，daemon 通过 psutil 持续监控进程存活。
+4. 保留 foreground 模式。CLI 启动子进程后注册 PID，daemon 通过 psutil 持续监控进程存活。
 5. CLI Ctrl+C 时直接 SIGTERM 子进程，然后通知 daemon exit_code=130（当前行为，不变）。
 
 ## 非目标
