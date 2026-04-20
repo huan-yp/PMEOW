@@ -64,17 +64,21 @@ def enableProguardInReleaseBuilds = false
 def localDebugKeystore = file('debug.keystore')
 def releaseSigningPropertiesFile = rootProject.file('signing.properties')
 def releaseSigningProperties = new Properties()
+def requestedTaskNames = gradle.startParameter.taskNames.collect { it.toLowerCase() }
+def requiresReleaseSigning = requestedTaskNames.any { taskName -> taskName.contains('release') }
 
 if (!localDebugKeystore.exists()) {
-    throw new GradleException("Missing required Android debug keystore: ${localDebugKeystore}. Create apps/mobile/android/app/debug.keystore before building release artifacts.")
+    throw new GradleException("Missing required Android debug keystore: ${localDebugKeystore}. Create apps/mobile/android/app/debug.keystore before building Android artifacts.")
 }
 
-if (!releaseSigningPropertiesFile.exists()) {
+if (requiresReleaseSigning && !releaseSigningPropertiesFile.exists()) {
     throw new GradleException("Missing required Android release signing config: ${releaseSigningPropertiesFile}. Create apps/mobile/android/signing.properties before building release artifacts.")
 }
 
-releaseSigningPropertiesFile.withInputStream { stream ->
-    releaseSigningProperties.load(stream)
+if (releaseSigningPropertiesFile.exists()) {
+    releaseSigningPropertiesFile.withInputStream { stream ->
+        releaseSigningProperties.load(stream)
+    }
 }
 
 def releaseKeystorePath = releaseSigningProperties.getProperty('storeFile')
@@ -82,13 +86,16 @@ def releaseStorePassword = releaseSigningProperties.getProperty('storePassword')
 def releaseKeyAlias = releaseSigningProperties.getProperty('keyAlias')
 def releaseKeyPassword = releaseSigningProperties.getProperty('keyPassword')
 
-if (!releaseKeystorePath || !releaseStorePassword || !releaseKeyAlias || !releaseKeyPassword) {
+if (requiresReleaseSigning && (!releaseKeystorePath || !releaseStorePassword || !releaseKeyAlias || !releaseKeyPassword)) {
     throw new GradleException("Android release signing config is incomplete in ${releaseSigningPropertiesFile}. Required keys: storeFile, storePassword, keyAlias, keyPassword.")
 }
 
-def releaseKeystoreFile = rootProject.file(releaseKeystorePath)
+def releaseKeystoreFile = releaseKeystorePath ? rootProject.file(releaseKeystorePath) : localDebugKeystore
+def resolvedReleaseStorePassword = releaseStorePassword ?: 'android'
+def resolvedReleaseKeyAlias = releaseKeyAlias ?: 'androiddebugkey'
+def resolvedReleaseKeyPassword = releaseKeyPassword ?: 'android'
 
-if (!releaseKeystoreFile.exists()) {
+if (requiresReleaseSigning && !releaseKeystoreFile.exists()) {
     throw new GradleException("Missing required Android release keystore: ${releaseKeystoreFile}. Update apps/mobile/android/signing.properties or create the keystore before building release artifacts.")
 }
 
@@ -127,9 +134,9 @@ android {
         }
         release {
             storeFile releaseKeystoreFile
-            storePassword releaseStorePassword
-            keyAlias releaseKeyAlias
-            keyPassword releaseKeyPassword
+            storePassword resolvedReleaseStorePassword
+            keyAlias resolvedReleaseKeyAlias
+            keyPassword resolvedReleaseKeyPassword
         }
     }
     buildTypes {
