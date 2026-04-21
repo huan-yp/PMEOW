@@ -21,7 +21,7 @@ export class AlertEngine {
   processReport(serverId: string, report: UnifiedReport, settings: AppSettings): AlertEngineResult {
     // 1. 状态表 + 异常表
     const anomalies: AlertAnomaly[] = [
-      ...detectThresholds(report, settings),
+      ...detectThresholds(serverId, report, settings, this.store),
       ...detectGpuIdle(serverId, report, settings, this.store),
     ];
 

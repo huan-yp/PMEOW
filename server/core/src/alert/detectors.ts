@@ -3,21 +3,65 @@ import type { AgentSessionRegistry } from '../node/registry.js';
 import type { AlertStateStore } from './state-store.js';
 
 // ---------------------------------------------------------------------------
-// Threshold detectors (stateless — no StateStore needed)
+// Threshold detectors
 // ---------------------------------------------------------------------------
 
-export function detectThresholds(report: UnifiedReport, settings: AppSettings): AlertAnomaly[] {
+const CPU_ALERT_RECOVERY_DELTA_PERCENT = 5;
+
+interface ThresholdAlertState {
+  isActive: boolean;
+  lastValue: number;
+}
+
+function cpuAlertStateKey(serverId: string): string {
+  return `threshold:cpu:${serverId}`;
+}
+
+function detectCpuThreshold(
+  serverId: string,
+  usagePercent: number,
+  settings: AppSettings,
+  store: AlertStateStore,
+): AlertAnomaly | null {
+  const key = cpuAlertStateKey(serverId);
+  const state = store.get<ThresholdAlertState>(key) ?? { isActive: false, lastValue: usagePercent };
+  const activationThreshold = settings.alertCpuThreshold;
+  const recoveryThreshold = Math.max(0, activationThreshold - CPU_ALERT_RECOVERY_DELTA_PERCENT);
+
+  if (state.isActive) {
+    state.isActive = usagePercent > recoveryThreshold;
+  } else if (usagePercent >= activationThreshold) {
+    state.isActive = true;
+  }
+
+  state.lastValue = usagePercent;
+  store.set(key, state);
+
+  if (!state.isActive) {
+    return null;
+  }
+
+  return {
+    alertType: 'cpu',
+    value: usagePercent,
+    threshold: activationThreshold,
+    fingerprint: '',
+    details: null,
+  };
+}
+
+export function detectThresholds(
+  serverId: string,
+  report: UnifiedReport,
+  settings: AppSettings,
+  store: AlertStateStore,
+): AlertAnomaly[] {
   const anomalies: AlertAnomaly[] = [];
   const { resourceSnapshot } = report;
 
-  if (resourceSnapshot.cpu.usagePercent >= settings.alertCpuThreshold) {
-    anomalies.push({
-      alertType: 'cpu',
-      value: resourceSnapshot.cpu.usagePercent,
-      threshold: settings.alertCpuThreshold,
-      fingerprint: '',
-      details: null,
-    });
+  const cpuAnomaly = detectCpuThreshold(serverId, resourceSnapshot.cpu.usagePercent, settings, store);
+  if (cpuAnomaly) {
+    anomalies.push(cpuAnomaly);
   }
 
   if (resourceSnapshot.memory.usagePercent >= settings.alertMemoryThreshold) {
