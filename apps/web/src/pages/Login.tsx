@@ -54,13 +54,13 @@ export default function Login({ onLogin }: Props) {
   ] as const;
 
   return (
-    <div className="brand-shell min-h-screen p-4 md:p-8">
+    <div className="brand-shell min-h-screen p-3 sm:p-4 md:p-8">
       <div className="mx-auto flex min-h-screen max-w-6xl items-center">
-        <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1.2fr)_420px]">
-          <section className="brand-card-strong relative overflow-hidden rounded-3xl p-6 md:p-10">
+        <div className="grid w-full gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1.2fr)_420px]">
+          <section className="brand-card-strong relative overflow-hidden rounded-3xl p-5 sm:p-6 md:p-10">
             <div className="pointer-events-none absolute right-8 top-8 h-28 w-28 rounded-full bg-accent-cyan/10 blur-3xl" />
             <p className="brand-kicker">PMEOW control panel</p>
-            <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-50 md:text-5xl">PALM 负载编排管理引擎</h1>
+            <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl md:text-5xl">PALM 负载编排管理引擎</h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
               面向高校实验室的轻量 GPU 集群统一调度管理平台。
             </p>
@@ -81,9 +81,9 @@ export default function Login({ onLogin }: Props) {
             </div>
           </section>
 
-          <section className="brand-card rounded-3xl p-6 md:p-7">
+          <section className="brand-card rounded-3xl p-5 sm:p-6 md:p-7">
             <div className="mb-6 flex flex-col items-center">
-              <div className="mb-4 h-72 w-72 overflow-hidden rounded-full border-2 border-accent-cyan/30 shadow-lg shadow-accent-cyan/10">
+              <div className="mb-4 h-48 w-48 overflow-hidden rounded-full border-2 border-accent-cyan/30 shadow-lg shadow-accent-cyan/10 sm:h-56 sm:w-56 md:h-64 md:w-64 lg:h-72 lg:w-72">
                 <img src="/icon.jpg" alt="PMEOW" className="h-full w-full object-cover" />
               </div>
               <p className="brand-kicker">ACCESS</p>
@@ -146,7 +146,7 @@ export default function Login({ onLogin }: Props) {
                 {loading ? '登录中...' : mode === 'password' ? '进入控制台' : '进入个人工作台'}
               </button>
 
-              <p className="text-xs leading-5 text-slate-500">
+              <p className="text-xs leading-5 text-slate-500 max-w-full break-words [overflow-wrap:anywhere]">
                 {mode === 'password'
                   ? '登录后可直接进入 PMEOW 总览页，查看节点在线情况、任务队列镜像和 GPU 归属审计结果。'
                   : '使用个人访问令牌后，只会进入自己的机器、任务与资料视图。'}
@@ -158,7 +158,7 @@ export default function Login({ onLogin }: Props) {
                 href={PROJECT_REPO_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-full border border-accent-cyan/20 bg-accent-cyan/5 px-4 py-2 text-sm font-medium text-accent-cyan transition-colors hover:border-accent-cyan/40 hover:text-slate-100"
+                className="flex w-full items-center justify-center rounded-full border border-accent-cyan/20 bg-accent-cyan/5 px-4 py-2 text-sm font-medium text-accent-cyan transition-colors hover:border-accent-cyan/40 hover:text-slate-100 sm:inline-flex sm:w-auto"
               >
                 GitHub Repo · 本项目开源
               </a>

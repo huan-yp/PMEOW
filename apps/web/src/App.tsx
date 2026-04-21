@@ -39,7 +39,7 @@ function SidebarNav({ collapsed, onToggle, isPerson }: { collapsed: boolean; onT
       ];
 
   return (
-    <aside className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-dark-border bg-dark-card/85 backdrop-blur-xl transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`}>
+    <aside className={`fixed left-0 top-0 z-30 flex h-screen flex-col border-r border-dark-border bg-dark-card/85 backdrop-blur-xl transition-all duration-200 ${collapsed ? 'w-14 sm:w-16' : 'w-56 lg:w-64'}`}>
       <div className="shrink-0 border-b border-dark-border px-3 py-4">
         <div className={`rounded-2xl border border-white/10 bg-white/[0.03] ${collapsed ? 'flex items-center justify-center p-2.5' : 'flex items-start gap-3 p-3'}`}>
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-accent-cyan/20 to-accent-blue/25 text-accent-blue">
@@ -52,13 +52,13 @@ function SidebarNav({ collapsed, onToggle, isPerson }: { collapsed: boolean; onT
             <div className="min-w-0">
               <p className="brand-kicker">PMEOW Console</p>
               <p className="mt-1 text-sm font-semibold text-slate-100">PMEOW</p>
-              <p className="mt-1 text-xs text-slate-500">节点 / 任务 / GPU 观测</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">节点 / 任务 / GPU 观测</p>
             </div>
           )}
         </div>
       </div>
 
-      <nav className="flex-1 py-3 space-y-1 px-2">
+      <nav className="flex-1 space-y-1 px-2 py-2.5 sm:py-3">
         {links.map(l => (
           <NavLink key={l.to} to={l.to} end={l.to === '/'}
             className={({ isActive }) =>
@@ -107,8 +107,8 @@ function AppContent() {
   return (
     <div className="brand-shell min-h-screen bg-dark-bg text-slate-200">
       <SidebarNav collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((value) => !value)} isPerson={Boolean(isPerson)} />
-      <main className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
-        <div className="p-6">
+      <main className={`min-h-screen transition-all duration-200 ${sidebarCollapsed ? 'ml-14 sm:ml-16' : 'ml-56 lg:ml-64'}`}>
+        <div className="px-3 py-4 sm:px-4 sm:py-5 lg:p-6">
           <Suspense fallback={<div className="flex h-64 items-center justify-center text-sm text-slate-500">加载中...</div>}>
             <Routes>
               <Route path="/" element={<Overview />} />

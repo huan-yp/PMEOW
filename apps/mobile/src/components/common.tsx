@@ -88,7 +88,7 @@ export function TaskRow(props: {
   return (
     <View style={styles.eventRow}>
       <View style={styles.rowHeader}>
-        <Pressable style={{ flex: 1 }} onPress={props.onPress} disabled={!props.onPress}>
+        <Pressable style={styles.taskRowMain} onPress={props.onPress} disabled={!props.onPress}>
           <Text style={styles.eventTitle}>{formatTaskStatus(props.task.status)} · {props.task.command}</Text>
           <Text style={styles.eventMeta}>{props.task.serverId} · {props.task.user} · {formatTimestamp(props.task.createdAt)}</Text>
         </Pressable>

@@ -20,7 +20,7 @@ export function ProcessTable({ processes }: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-xs text-slate-400">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
         <span>排序</span>
         <select
           value={sortField}
@@ -40,8 +40,8 @@ export function ProcessTable({ processes }: Props) {
         <span className="ml-auto text-slate-500">共 {processes.length} 条</span>
       </div>
 
-      <div className="overflow-auto">
-        <table className="w-full text-xs">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-sm">
           <thead>
             <tr className="text-slate-500 border-b border-dark-border">
               <th className="text-left py-2 px-3">PID</th>
@@ -55,14 +55,14 @@ export function ProcessTable({ processes }: Props) {
           <tbody>
             {sorted.map((p, i) => (
               <tr key={`${p.pid}-${i}`} className="border-b border-dark-border/50 hover:bg-dark-hover">
-                <td className="py-1.5 px-3 font-mono text-slate-400">{p.pid}</td>
-                <td className="py-1.5 px-3 text-slate-300">{p.user}</td>
-                <td className={`py-1.5 px-3 text-right font-mono ${p.cpuPercent > 50 ? 'text-accent-red' : p.cpuPercent > 20 ? 'text-accent-yellow' : 'text-slate-300'}`}>
+                <td className="py-2 px-3 font-mono text-slate-400">{p.pid}</td>
+                <td className="py-2 px-3 text-slate-300">{p.user}</td>
+                <td className={`py-2 px-3 text-right font-mono ${p.cpuPercent > 50 ? 'text-accent-red' : p.cpuPercent > 20 ? 'text-accent-yellow' : 'text-slate-300'}`}>
                   {p.cpuPercent.toFixed(1)}
                 </td>
-                <td className="py-1.5 px-3 text-right font-mono text-slate-300">{(p.rss / (1024 * 1024)).toFixed(0)}</td>
-                <td className="py-1.5 px-3 text-right font-mono text-slate-300">{p.gpuMemoryMb.toFixed(0)}</td>
-                <td className="py-1.5 px-3 text-slate-400 truncate max-w-[300px]" title={p.command}>{p.command}</td>
+                <td className="py-2 px-3 text-right font-mono text-slate-300">{(p.rss / (1024 * 1024)).toFixed(0)}</td>
+                <td className="py-2 px-3 text-right font-mono text-slate-300">{p.gpuMemoryMb.toFixed(0)}</td>
+                <td className="py-2 px-3 text-slate-400 max-w-[360px] whitespace-normal break-words leading-5" title={p.command}>{p.command}</td>
               </tr>
             ))}
             {sorted.length === 0 && (

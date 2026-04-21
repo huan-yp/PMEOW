@@ -84,8 +84,8 @@ export function TaskBrowser({
         )}
       </div>
 
-      <div className="overflow-auto">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[880px] text-sm">
           <thead>
             <tr className="text-slate-500 border-b border-dark-border">
               <th className="text-left py-3 px-3">ID</th>
@@ -113,17 +113,17 @@ export function TaskBrowser({
                   {!hideServerColumn && (
                     <td className="py-2.5 px-3">
                       <div className="text-slate-200">{serverName}</div>
-                      <div className="font-mono text-[11px] text-slate-500">{task.serverId}</div>
+                      <div className="font-mono text-xs leading-5 text-slate-500 break-all">{task.serverId}</div>
                     </td>
                   )}
-                  <td className="py-2.5 px-3 text-slate-200 truncate max-w-[200px]" title={task.command}>{task.command}</td>
+                  <td className="py-2.5 px-3 text-slate-200 max-w-[280px] whitespace-normal break-words leading-5" title={task.command}>{task.command}</td>
                   <td className="py-2.5 px-3 text-slate-300">{task.user}</td>
                   <td className="py-2.5 px-3">
                     <StatusBadge status={task.status} />
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.priority}</td>
                   <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.requireVramMb} MB</td>
-                  <td className="py-2.5 px-3 text-xs text-slate-500">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
+                  <td className="py-2.5 px-3 text-xs leading-5 text-slate-500 whitespace-nowrap">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
                 </tr>
               );
             })}

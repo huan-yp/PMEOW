@@ -66,16 +66,16 @@ export default function Nodes() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5 sm:space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="brand-kicker">{isPerson ? '我的机器' : '节点管理'}</p>
-          <h2 className="text-xl font-bold text-slate-100">{isPerson ? '机器列表' : '节点列表'}</h2>
+          <h2 className="text-lg font-bold text-slate-100 sm:text-xl">{isPerson ? '机器列表' : '节点列表'}</h2>
         </div>
         {!isPerson && (
           <button
             onClick={() => setShowAdd(!showAdd)}
-            className="rounded-xl bg-accent-blue px-4 py-2 text-sm text-white hover:bg-accent-blue/80"
+            className="rounded-xl bg-accent-blue px-3 py-2 text-sm text-white hover:bg-accent-blue/80 sm:px-4"
           >
             {showAdd ? '取消' : '添加节点'}
           </button>
@@ -98,8 +98,8 @@ export default function Nodes() {
         </div>
       )}
 
-      <div className="overflow-auto">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[680px] text-sm">
           <thead>
             <tr className="text-slate-500 border-b border-dark-border">
               <th className="text-left py-3 px-4">名称</th>
@@ -133,7 +133,7 @@ export default function Nodes() {
                       srv.name
                     )}
                   </td>
-                  <td className="py-3 px-4 font-mono text-xs text-slate-400">{srv.agentId}</td>
+                  <td className="py-3 px-4 font-mono text-xs leading-5 text-slate-400 break-all">{srv.agentId}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center gap-1.5 text-xs ${st?.status === 'online' ? 'text-accent-green' : 'text-slate-500'}`}>
                       <span className={`h-2 w-2 rounded-full ${st?.status === 'online' ? 'bg-accent-green' : 'bg-slate-600'}`} />
@@ -151,12 +151,12 @@ export default function Nodes() {
                           >
                             {savingId === srv.id ? '保存中...' : '保存'}
                           </button>
-                          <button onClick={handleCancelRename} className="text-xs text-slate-400 hover:underline">取消</button>
+                          <button onClick={handleCancelRename} className="text-xs leading-5 text-slate-400 hover:underline">取消</button>
                         </div>
                       ) : (
                         <div className="flex items-center justify-end gap-3">
-                          <button onClick={() => handleStartRename(srv.id, srv.name)} className="text-xs text-accent-blue hover:underline">改名</button>
-                          <button onClick={() => handleDelete(srv.id)} className="text-xs text-accent-red hover:underline">删除</button>
+                          <button onClick={() => handleStartRename(srv.id, srv.name)} className="text-xs leading-5 text-accent-blue hover:underline">改名</button>
+                          <button onClick={() => handleDelete(srv.id)} className="text-xs leading-5 text-accent-red hover:underline">删除</button>
                         </div>
                       )}
                     </td>
