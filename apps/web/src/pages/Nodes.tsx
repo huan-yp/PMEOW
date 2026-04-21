@@ -7,6 +7,7 @@ export default function Nodes() {
   const servers = useStore((s) => s.servers);
   const isPerson = useStore((s) => s.principal?.kind === 'person');
   const addServer = useStore((s) => s.addServer);
+  const updateServer = useStore((s) => s.updateServer);
   const removeServer = useStore((s) => s.removeServer);
   const statuses = useStore((s) => s.statuses);
 
@@ -14,6 +15,9 @@ export default function Nodes() {
   const [newName, setNewName] = useState('');
   const [newAgentId, setNewAgentId] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const handleAdd = async () => {
     if (!newName.trim() || !newAgentId.trim()) return;
@@ -34,6 +38,31 @@ export default function Nodes() {
       await transport.deleteServer(id);
       removeServer(id);
     } catch { /* ignore */ }
+  };
+
+  const handleStartRename = (id: string, name: string) => {
+    setEditingId(id);
+    setEditingName(name);
+  };
+
+  const handleCancelRename = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
+
+  const handleRename = async (id: string) => {
+    const name = editingName.trim();
+    if (!name) return;
+
+    setSavingId(id);
+    try {
+      const server = await transport.updateServer(id, { name });
+      updateServer(server);
+      handleCancelRename();
+    } catch {
+      // ignore
+    }
+    setSavingId(null);
   };
 
   return (
@@ -84,7 +113,26 @@ export default function Nodes() {
               const st = statuses.get(srv.id);
               return (
                 <tr key={srv.id} className="border-b border-dark-border/50 hover:bg-dark-hover">
-                  <td className="py-3 px-4 text-slate-200">{srv.name}</td>
+                  <td className="py-3 px-4 text-slate-200">
+                    {editingId === srv.id ? (
+                      <input
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void handleRename(srv.id);
+                          }
+                          if (e.key === 'Escape') {
+                            handleCancelRename();
+                          }
+                        }}
+                        className="w-full rounded-lg border border-dark-border bg-dark-bg px-3 py-2 text-sm text-slate-200 outline-none"
+                        autoFocus
+                      />
+                    ) : (
+                      srv.name
+                    )}
+                  </td>
                   <td className="py-3 px-4 font-mono text-xs text-slate-400">{srv.agentId}</td>
                   <td className="py-3 px-4">
                     <span className={`inline-flex items-center gap-1.5 text-xs ${st?.status === 'online' ? 'text-accent-green' : 'text-slate-500'}`}>
@@ -94,7 +142,23 @@ export default function Nodes() {
                   </td>
                   {!isPerson && (
                     <td className="py-3 px-4 text-right">
-                      <button onClick={() => handleDelete(srv.id)} className="text-xs text-accent-red hover:underline">删除</button>
+                      {editingId === srv.id ? (
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            onClick={() => handleRename(srv.id)}
+                            disabled={savingId === srv.id || !editingName.trim()}
+                            className="text-xs text-accent-blue hover:underline disabled:opacity-50"
+                          >
+                            {savingId === srv.id ? '保存中...' : '保存'}
+                          </button>
+                          <button onClick={handleCancelRename} className="text-xs text-slate-400 hover:underline">取消</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-3">
+                          <button onClick={() => handleStartRename(srv.id, srv.name)} className="text-xs text-accent-blue hover:underline">改名</button>
+                          <button onClick={() => handleDelete(srv.id)} className="text-xs text-accent-red hover:underline">删除</button>
+                        </div>
+                      )}
                     </td>
                   )}
                 </tr>

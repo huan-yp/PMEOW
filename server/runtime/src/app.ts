@@ -99,7 +99,7 @@ export function createWebRuntime(): WebRuntime {
   app.use("/api", authMiddleware);
   
   app.use("/api", sessionRoutes());
-  app.use("/api", serverRoutes(registry));
+  app.use("/api", serverRoutes(registry, broadcast));
   app.use("/api", metricsRoutes(pipeline));
   app.use("/api", taskRoutes(registry));
   app.use("/api", personRoutes());

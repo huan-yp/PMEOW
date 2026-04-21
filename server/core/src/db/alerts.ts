@@ -9,10 +9,15 @@ export function getAlerts(options: { serverId?: string; status?: AlertStatus } =
   const db = getDatabase();
   const clauses: string[] = [];
   const params: unknown[] = [];
-  if (options.serverId) { clauses.push('server_id = ?'); params.push(options.serverId); }
-  if (options.status) { clauses.push('status = ?'); params.push(options.status); }
+  if (options.serverId) { clauses.push('a.server_id = ?'); params.push(options.serverId); }
+  if (options.status) { clauses.push('a.status = ?'); params.push(options.status); }
   const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
-  const rows = db.prepare(`SELECT * FROM alerts${where} ORDER BY updated_at DESC`).all(...params) as Record<string, unknown>[];
+  const rows = db.prepare(
+    `SELECT a.*, s.name AS server_name
+     FROM alerts a
+     LEFT JOIN servers s ON s.id = a.server_id${where}
+     ORDER BY a.updated_at DESC`
+  ).all(...params) as Record<string, unknown>[];
   return rows.map(mapAlertRow);
 }
 
@@ -21,9 +26,21 @@ export function getActiveAlerts(serverId: string): AlertRecord[] {
 }
 
 export function getAlertByKey(serverId: string, alertType: AlertType, fingerprint: string): AlertRecord | null {
+  return selectAlertByWhere('a.server_id = ? AND a.alert_type = ? AND a.fingerprint = ?', [serverId, alertType, fingerprint]);
+}
+
+function getAlertById(id: number): AlertRecord | null {
+  return selectAlertByWhere('a.id = ?', [id]);
+}
+
+function selectAlertByWhere(whereClause: string, params: unknown[]): AlertRecord | null {
   const db = getDatabase();
-  const row = db.prepare('SELECT * FROM alerts WHERE server_id = ? AND alert_type = ? AND fingerprint = ?')
-    .get(serverId, alertType, fingerprint) as Record<string, unknown> | undefined;
+  const row = db.prepare(
+    `SELECT a.*, s.name AS server_name
+     FROM alerts a
+     LEFT JOIN servers s ON s.id = a.server_id
+     WHERE ${whereClause}`,
+  ).get(...params) as Record<string, unknown> | undefined;
   return row ? mapAlertRow(row) : null;
 }
 
@@ -104,11 +121,10 @@ export function reconcileAlerts(
 // ---------------------------------------------------------------------------
 
 export function silenceAlert(id: number): AlertStateChange | null {
-  const db = getDatabase();
   const now = Date.now();
-  const row = db.prepare('SELECT * FROM alerts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-  if (!row) return null;
-  const alert = mapAlertRow(row);
+  const db = getDatabase();
+  const alert = getAlertById(id);
+  if (!alert) return null;
   if (alert.status === 'silenced') return null;
   const from = alert.status;
   setStatus(db, id, from, 'silenced', 'user_action', now);
@@ -116,11 +132,10 @@ export function silenceAlert(id: number): AlertStateChange | null {
 }
 
 export function unsilenceAlert(id: number): AlertStateChange | null {
-  const db = getDatabase();
   const now = Date.now();
-  const row = db.prepare('SELECT * FROM alerts WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-  if (!row) return null;
-  const alert = mapAlertRow(row);
+  const db = getDatabase();
+  const alert = getAlertById(id);
+  if (!alert) return null;
   if (alert.status !== 'silenced') return null;
   setStatus(db, id, 'silenced', 'resolved', 'user_action', now);
   return { alert: { ...alert, status: 'resolved', updatedAt: now }, fromStatus: 'silenced', toStatus: 'resolved' };
@@ -173,9 +188,11 @@ function insertAlert(db: Database.Database, serverId: string, c: AlertAnomaly, n
     `INSERT INTO alerts (server_id, alert_type, value, threshold, fingerprint, details, status, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`
   ).run(serverId, c.alertType, c.value, c.threshold, c.fingerprint, detailsJson, now, now);
-  const row = db.prepare('SELECT * FROM alerts WHERE server_id = ? AND alert_type = ? AND fingerprint = ?')
-    .get(serverId, c.alertType, c.fingerprint) as Record<string, unknown>;
-  return mapAlertRow(row);
+  const alert = getAlertByKey(serverId, c.alertType, c.fingerprint);
+  if (!alert) {
+    throw new Error(`failed to reload alert for ${serverId}:${c.alertType}:${c.fingerprint}`);
+  }
+  return alert;
 }
 
 function updateAlertValue(db: Database.Database, id: number, c: AlertAnomaly, now: number): void {
@@ -202,6 +219,7 @@ function mapAlertRow(r: Record<string, unknown>): AlertRecord {
   return {
     id: r.id as number,
     serverId: r.server_id as string,
+    serverName: typeof r.server_name === 'string' ? r.server_name : (r.server_id as string),
     alertType: r.alert_type as string,
     value: r.value as number | null,
     threshold: r.threshold as number | null,

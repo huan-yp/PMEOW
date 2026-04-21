@@ -14,6 +14,7 @@ interface AppState {
   servers: Server[];
   setServers: (servers: Server[]) => void;
   addServer: (server: Server) => void;
+  updateServer: (server: Server) => void;
   removeServer: (id: string) => void;
 
   // Statuses
@@ -66,6 +67,9 @@ export const useStore = create<AppState>((set) => ({
   servers: [],
   setServers: (servers) => set({ servers }),
   addServer: (server) => set((s) => ({ servers: [...s.servers, server] })),
+  updateServer: (server) => set((s) => ({
+    servers: s.servers.map((current) => current.id === server.id ? server : current),
+  })),
   removeServer: (id) => set((s) => ({ servers: s.servers.filter(srv => srv.id !== id) })),
 
   // Statuses

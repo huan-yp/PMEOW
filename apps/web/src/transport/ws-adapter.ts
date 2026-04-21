@@ -142,6 +142,9 @@ export class WebSocketAdapter implements TransportAdapter {
   async addServer(input: { name: string; agentId: string }): Promise<Server> {
     return this.fetch('/api/servers', { method: 'POST', body: JSON.stringify(input) });
   }
+  async updateServer(id: string, input: Partial<{ name: string; agentId: string }>): Promise<Server> {
+    return this.fetch(`/api/servers/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) });
+  }
   async deleteServer(id: string): Promise<void> {
     await this.fetch(`/api/servers/${encodeURIComponent(id)}`, { method: 'DELETE' });
   }

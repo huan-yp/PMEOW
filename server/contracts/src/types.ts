@@ -15,6 +15,8 @@ export type ServerInput = {
   agentId: string;
 };
 
+export type ServerUpdateInput = Partial<ServerInput>;
+
 // ========================
 // Unified Report (from agent)
 // ========================
@@ -206,6 +208,7 @@ export interface GpuSnapshotRecord {
 export interface TaskRecord {
   id: string;
   serverId: string;
+  serverName: string;
   status: string;
   command: string;
   cwd: string;
@@ -231,6 +234,7 @@ export type AlertStatus = 'active' | 'resolved' | 'silenced';
 export interface AlertRecord {
   id: number;
   serverId: string;
+  serverName: string;
   alertType: string;
   value: number | null;
   threshold: number | null;

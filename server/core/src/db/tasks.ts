@@ -50,23 +50,23 @@ export function getTasks(filter: { serverId?: string; status?: string; user?: st
   const params: unknown[] = [];
 
   if (filter.serverId) {
-    conditions.push('server_id = ?');
+    conditions.push('t.server_id = ?');
     params.push(filter.serverId);
   }
   if (filter.status) {
-    conditions.push('status = ?');
+    conditions.push('t.status = ?');
     params.push(filter.status);
   }
   if (filter.user) {
-    conditions.push('user = ?');
+    conditions.push('t.user = ?');
     params.push(filter.user);
   }
 
-  let sql = 'SELECT * FROM tasks';
+  let sql = 'SELECT t.*, s.name AS server_name FROM tasks t LEFT JOIN servers s ON s.id = t.server_id';
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }
-  sql += ' ORDER BY created_at DESC';
+  sql += ' ORDER BY t.created_at DESC';
 
   if (filter.limit) {
     sql += ' LIMIT ?';
@@ -83,7 +83,9 @@ export function getTasks(filter: { serverId?: string; status?: string; user?: st
 
 export function getTaskById(taskId: string): TaskRecord | undefined {
   const db = getDatabase();
-  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as Record<string, unknown> | undefined;
+  const row = db.prepare(
+    'SELECT t.*, s.name AS server_name FROM tasks t LEFT JOIN servers s ON s.id = t.server_id WHERE t.id = ?',
+  ).get(taskId) as Record<string, unknown> | undefined;
   return row ? mapTaskRow(row) : undefined;
 }
 
@@ -114,6 +116,7 @@ function mapTaskRow(r: Record<string, unknown>): TaskRecord {
   return {
     id: r.id as string,
     serverId: r.server_id as string,
+    serverName: typeof r.server_name === 'string' ? r.server_name : (r.server_id as string),
     status: r.status as string,
     command: r.command as string,
     cwd: r.cwd as string,

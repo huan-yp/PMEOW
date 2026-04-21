@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { Task } from '../transport/types.js';
+import { useStore } from '../store/useStore.js';
 
 export default function Tasks() {
   const transport = useTransport();
   const navigate = useNavigate();
+  const servers = useStore((state) => state.servers);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -52,6 +54,7 @@ export default function Tasks() {
           <thead>
             <tr className="text-slate-500 border-b border-dark-border">
               <th className="text-left py-3 px-3">ID</th>
+              <th className="text-left py-3 px-3">机器</th>
               <th className="text-left py-3 px-3">命令</th>
               <th className="text-left py-3 px-3">用户</th>
               <th className="text-left py-3 px-3">状态</th>
@@ -62,22 +65,31 @@ export default function Tasks() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">加载中...</td></tr>
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-500">加载中...</td></tr>
             ) : tasks.length === 0 ? (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-500">无任务记录</td></tr>
-            ) : tasks.map((task) => (
-              <tr key={task.id} className="border-b border-dark-border/50 hover:bg-dark-hover cursor-pointer" onClick={() => navigate(`/tasks/${task.id}`)}>
-                <td className="py-2.5 px-3 font-mono text-xs text-slate-400">{task.id.slice(0, 8)}</td>
-                <td className="py-2.5 px-3 text-slate-200 truncate max-w-[200px]" title={task.command}>{task.command}</td>
-                <td className="py-2.5 px-3 text-slate-300">{task.user}</td>
-                <td className="py-2.5 px-3">
-                  <StatusBadge status={task.status} />
-                </td>
-                <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.priority}</td>
-                <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.requireVramMb} MB</td>
-                <td className="py-2.5 px-3 text-xs text-slate-500">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
-              </tr>
-            ))}
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-slate-500">无任务记录</td></tr>
+            ) : tasks.map((task) => {
+              const server = servers.find((item) => item.id === task.serverId);
+              const serverName = server?.name ?? task.serverName ?? task.serverId;
+
+              return (
+                <tr key={task.id} className="border-b border-dark-border/50 hover:bg-dark-hover cursor-pointer" onClick={() => navigate(`/tasks/${task.id}`)}>
+                  <td className="py-2.5 px-3 font-mono text-xs text-slate-400">{task.id.slice(0, 8)}</td>
+                  <td className="py-2.5 px-3">
+                    <div className="text-slate-200">{serverName}</div>
+                    <div className="font-mono text-[11px] text-slate-500">{task.serverId}</div>
+                  </td>
+                  <td className="py-2.5 px-3 text-slate-200 truncate max-w-[200px]" title={task.command}>{task.command}</td>
+                  <td className="py-2.5 px-3 text-slate-300">{task.user}</td>
+                  <td className="py-2.5 px-3">
+                    <StatusBadge status={task.status} />
+                  </td>
+                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.priority}</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.requireVramMb} MB</td>
+                  <td className="py-2.5 px-3 text-xs text-slate-500">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

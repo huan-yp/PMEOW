@@ -55,6 +55,7 @@ export interface TransportAdapter {
   // Servers (spec §8.2)
   getServers(): Promise<Server[]>;
   addServer(input: { name: string; agentId: string }): Promise<Server>;
+  updateServer(id: string, input: Partial<{ name: string; agentId: string }>): Promise<Server>;
   deleteServer(id: string): Promise<void>;
   getStatuses(): Promise<Record<string, ServerStatus>>;
 

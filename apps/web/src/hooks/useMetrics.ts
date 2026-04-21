@@ -94,7 +94,7 @@ export function useMetricsSubscription() {
       transport.onAlertStateChange((event) => {
         if (event.toStatus === 'active') {
           const srv = useStore.getState().servers.find((s) => s.id === event.alert.serverId);
-          const nodeName = srv?.name ?? event.alert.serverId;
+          const nodeName = event.alert.serverName ?? srv?.name ?? event.alert.serverId;
           addToast(
             `告警: ${ALERT_TYPE_LABELS[event.alert.alertType] ?? event.alert.alertType}`,
             `节点 ${nodeName} - ${formatAlertToast(event.alert.alertType, event.alert.value, event.alert.threshold)}`,
@@ -102,7 +102,7 @@ export function useMetricsSubscription() {
           );
         } else if (event.fromStatus === 'active' && event.toStatus === 'resolved') {
           const srv = useStore.getState().servers.find((s) => s.id === event.alert.serverId);
-          const nodeName = srv?.name ?? event.alert.serverId;
+          const nodeName = event.alert.serverName ?? srv?.name ?? event.alert.serverId;
           addToast(
             `恢复: ${ALERT_TYPE_LABELS[event.alert.alertType] ?? event.alert.alertType}`,
             `节点 ${nodeName} 告警已恢复`,
@@ -128,9 +128,12 @@ export function useMetricsSubscription() {
 }
 
 function toTaskRecord(task: TaskInfo, serverId: string): Task {
+  const serverName = useStore.getState().servers.find((item) => item.id === serverId)?.name ?? serverId;
+
   return {
     id: task.taskId,
     serverId,
+    serverName,
     status: task.status,
     command: task.command,
     cwd: task.cwd,

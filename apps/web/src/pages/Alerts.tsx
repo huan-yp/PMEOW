@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { Alert, AlertQuery, AlertStatus } from '../transport/types.js';
+import { useStore } from '../store/useStore.js';
 
 const PAGE_SIZE = 50;
 
 type Tab = 'all' | 'active' | 'resolved' | 'silenced';
-type SortCol = 'updatedAt' | 'serverId' | 'alertType' | 'value';
+type SortCol = 'updatedAt' | 'serverName' | 'alertType' | 'value';
 
 const TAB_LABELS: Record<Tab, string> = { all: '全部', active: '活跃', resolved: '已恢复', silenced: '已静默' };
 const EMPTY_LABELS: Record<Tab, string> = {
@@ -80,15 +81,20 @@ function sortAlerts(alerts: Alert[], col: SortCol, dir: 'asc' | 'desc'): Alert[]
   return [...alerts].sort((a, b) => {
     let cmp = 0;
     if (col === 'updatedAt') cmp = a.updatedAt - b.updatedAt;
-    else if (col === 'serverId') cmp = a.serverId.localeCompare(b.serverId);
+    else if (col === 'serverName') cmp = (a.serverName ?? a.serverId).localeCompare(b.serverName ?? b.serverId, 'zh-CN');
     else if (col === 'alertType') cmp = a.alertType.localeCompare(b.alertType);
     else if (col === 'value') cmp = (a.value ?? 0) - (b.value ?? 0);
     return dir === 'asc' ? cmp : -cmp;
   });
 }
 
+function getAlertServerName(alert: Alert, serverNames: Map<string, string>): string {
+  return serverNames.get(alert.serverId) ?? alert.serverName ?? alert.serverId;
+}
+
 export default function Alerts() {
   const transport = useTransport();
+  const servers = useStore((state) => state.servers);
 
   const [tab, setTab] = useState<Tab>('all');
   const [offset, setOffset] = useState(0);
@@ -106,6 +112,7 @@ export default function Alerts() {
   const [batchUnsilencing, setBatchUnsilencing] = useState(false);
 
   const loadRef = useRef<(() => Promise<void>) | null>(null);
+  const serverNames = new Map(servers.map((server) => [server.id, server.name]));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -200,11 +207,26 @@ export default function Alerts() {
   const q = searchQuery.trim().toLowerCase();
   const filtered = q
     ? alerts.filter(
-        (a) => a.serverId.toLowerCase().includes(q) || a.alertType.toLowerCase().includes(q) || (TYPE_LABELS[a.alertType] ?? '').includes(q),
+        (a) => {
+          const serverName = getAlertServerName(a, serverNames);
+          return (
+          a.serverId.toLowerCase().includes(q)
+          || serverName.toLowerCase().includes(q)
+          || a.alertType.toLowerCase().includes(q)
+          || (TYPE_LABELS[a.alertType] ?? '').includes(q)
+          );
+        },
       )
     : alerts;
 
-  const sorted = sortAlerts(filtered, sortCol, sortDir);
+  const sorted = sortAlerts(
+    filtered.map((alert) => ({
+      ...alert,
+      serverName: getAlertServerName(alert, serverNames),
+    })),
+    sortCol,
+    sortDir,
+  );
 
   // Multi-select helpers
   const allVisibleIds = sorted.map((a) => a.id);
@@ -324,9 +346,9 @@ export default function Alerts() {
                   时间
                   <SortIndicator col="updatedAt" />
                 </th>
-                <th className={`p-3 ${thClass}`} onClick={() => handleSort('serverId')}>
+                <th className={`p-3 ${thClass}`} onClick={() => handleSort('serverName')}>
                   节点
-                  <SortIndicator col="serverId" />
+                  <SortIndicator col="serverName" />
                 </th>
                 <th className={`p-3 ${thClass}`} onClick={() => handleSort('alertType')}>
                   指标
@@ -363,7 +385,10 @@ export default function Alerts() {
                     <td className="p-3 pr-4 text-slate-400 whitespace-nowrap">
                       {formatTime(a.updatedAt)}
                     </td>
-                    <td className="p-3 pr-4 text-slate-200 font-mono">{a.serverId.slice(0, 8)}</td>
+                    <td className="p-3 pr-4">
+                      <div className="text-slate-200">{a.serverName}</div>
+                      <div className="font-mono text-[11px] text-slate-500">{a.serverId}</div>
+                    </td>
                     <td className="p-3 pr-4 text-slate-300">{TYPE_LABELS[a.alertType] ?? a.alertType}</td>
                     <td className="p-3 pr-4 font-mono text-accent-red">
                       {a.alertType === 'gpu_idle_memory' && a.details
