@@ -3,11 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { ScheduleEvaluation, Task } from '../transport/types.js';
 import { formatVramGB } from '../utils/vram.js';
+import { useStore } from '../store/useStore.js';
 
 export default function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const transport = useTransport();
+  const servers = useStore((state) => state.servers);
   const [task, setTask] = useState<Task | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -24,6 +26,8 @@ export default function TaskDetail() {
   if (!task) return <div className="p-8 text-center text-slate-500">任务不存在。<button onClick={() => navigate('/tasks')} className="ml-2 text-accent-blue hover:underline">返回列表</button></div>;
 
   const statusLabels: Record<string, string> = { queued: '排队中', running: '运行中', succeeded: '已完成', failed: '失败', cancelled: '已取消', abnormal: '异常结束' };
+  const server = servers.find((item) => item.id === task.serverId);
+  const serverName = server?.name ?? task.serverName;
 
   return (
     <div className="space-y-6">
@@ -37,6 +41,16 @@ export default function TaskDetail() {
         <InfoCard label="命令" value={task.command} />
         <InfoCard label="工作目录" value={task.cwd} />
         <InfoCard label="用户" value={task.user} />
+        <MachineInfoCard
+          serverId={task.serverId}
+          serverName={serverName}
+          onOpen={() => navigate(`/nodes/${task.serverId}`, {
+            state: {
+              returnTo: `/tasks/${task.id}`,
+              returnLabel: '返回任务详情',
+            },
+          })}
+        />
         <InfoCard label="状态" value={statusLabels[task.status] ?? task.status} />
         <InfoCard label="启动模式" value={task.launchMode} />
         <InfoCard label="优先级" value={String(task.priority)} />
@@ -94,6 +108,26 @@ function InfoCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-dark-border bg-dark-card p-3">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-sm font-mono text-slate-200 break-all">{value}</p>
+    </div>
+  );
+}
+
+function MachineInfoCard({
+  serverId,
+  serverName,
+  onOpen,
+}: {
+  serverId: string;
+  serverName?: string;
+  onOpen: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-dark-border bg-dark-card p-3">
+      <p className="text-xs text-slate-500">来源机器</p>
+      <button onClick={onOpen} className="mt-1 text-left text-sm font-medium text-accent-blue hover:underline">
+        {serverName ?? serverId}
+      </button>
+      {serverName && <p className="mt-1 text-xs font-mono text-slate-500 break-all">{serverId}</p>}
     </div>
   );
 }

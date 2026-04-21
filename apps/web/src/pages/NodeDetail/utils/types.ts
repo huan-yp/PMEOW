@@ -1,4 +1,4 @@
-export type Tab = 'realtime' | 'processes' | 'history' | 'snapshot';
+export type Tab = 'realtime' | 'processes' | 'tasks' | 'history' | 'snapshot';
 export type ChartPoint = { time: number; value: number };
 export type HistoryPreset = '24h' | '3d' | '7d' | '30d' | 'custom';
 

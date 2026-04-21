@@ -11,6 +11,7 @@ import { RealtimeTab } from './tabs/RealtimeTab.js';
 import { ProcessesTab } from './tabs/ProcessesTab.js';
 import { HistoryTab } from './tabs/HistoryTab.js';
 import { SnapshotTab } from './tabs/SnapshotTab.js';
+import { TaskBrowser } from '../../components/TaskBrowser.js';
 
 export default function NodeDetail() {
   const { id } = useParams<{ id: string }>();
@@ -88,6 +89,7 @@ export default function NodeDetail() {
       <div className="flex gap-1 border-b border-dark-border">
         <button className={tabClass('realtime')} onClick={() => setTab('realtime')}>实时概览</button>
         <button className={tabClass('processes')} onClick={() => setTab('processes')}>进程</button>
+        <button className={tabClass('tasks')} onClick={() => setTab('tasks')}>任务</button>
         <button className={tabClass('history')} onClick={() => setTab('history')}>历史</button>
         <button className={tabClass('snapshot')} onClick={() => setTab('snapshot')}>快照</button>
       </div>
@@ -104,6 +106,16 @@ export default function NodeDetail() {
 
       {tab === 'processes' && (
         <ProcessesTab processes={snap?.processes ?? []} />
+      )}
+
+      {tab === 'tasks' && (
+        <div className="space-y-4 rounded-2xl border border-dark-border bg-dark-card p-4">
+          <div>
+            <h3 className="text-sm font-medium text-slate-300">机器任务</h3>
+            <p className="mt-1 text-sm text-slate-500">仅展示当前机器上的任务，可直接跳转查看任务详情。</p>
+          </div>
+          <TaskBrowser serverId={server.id} hideServerColumn emptyText="该机器暂无任务记录" />
+        </div>
       )}
 
       {tab === 'history' && (
