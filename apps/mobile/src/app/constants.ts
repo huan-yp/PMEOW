@@ -13,6 +13,15 @@ export const PERSON_TABS: Array<{ id: PersonTab; label: string }> = [
   { id: 'settings', label: '设置' },
 ];
 
+export function tabToIndex<T extends string>(tabs: Array<{ id: T }>, tabId: T): number {
+  const idx = tabs.findIndex((t) => t.id === tabId);
+  return idx === -1 ? 0 : idx;
+}
+
+export function indexToTab<T extends string>(tabs: Array<{ id: T }>, index: number): T {
+  return tabs[index]?.id ?? tabs[0].id;
+}
+
 export function isPersonTaskDetailVisible(tab: PersonTab, selectedTaskId: string | null): boolean {
   return tab === 'tasks' && selectedTaskId != null;
 }
