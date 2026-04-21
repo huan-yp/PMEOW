@@ -1,6 +1,6 @@
 import type { GpuAllocationLegendModel } from '../utils/gpu.js';
 import { formatVramGB } from '../../../utils/vram.js';
-import { UNKNOWN_COLOR } from '../../../utils/ownerColor.js';
+import { UNKNOWN_COLOR } from '@pmeow/app-common';
 
 export function GpuAllocationLegend({ model }: { model: GpuAllocationLegendModel }) {
   if (model.owners.length === 0 && model.unknownTotalMb <= 0 && !model.note) {

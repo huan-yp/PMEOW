@@ -1,4 +1,7 @@
 import type { GpuCardReport, TaskInfo } from '@pmeow/app-common';
+import { FREE_COLOR, UNKNOWN_COLOR, UNATTRIBUTED_COLOR, getOwnerColor } from '@pmeow/app-common';
+
+export { FREE_COLOR, UNKNOWN_COLOR };
 
 export interface OwnerGroup {
   key: string;
@@ -25,48 +28,11 @@ interface ManagedEstimate {
   remainder: number;
 }
 
-const OWNER_PALETTE = [
-  '#3b82f6',
-  '#10b981',
-  '#8b5cf6',
-  '#f97316',
-  '#06b6d4',
-  '#ec4899',
-  '#14b8a6',
-  '#a855f7',
-  '#f59e0b',
-  '#6366f1',
-  '#84cc16',
-  '#ef4444',
-  '#22d3ee',
-  '#e879f9',
-  '#34d399',
-  '#fb923c',
-];
-
-export const FREE_COLOR = '#334155';
-export const UNKNOWN_COLOR = '#ff4d4f';
-const UNATTRIBUTED_COLOR = '#94a3b8';
-
-function djb2Hash(value: string): number {
-  let hash = 5381;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = ((hash << 5) + hash + value.charCodeAt(index)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-function getOwnerColor(ownerKey: string, ownerKind: string): string {
-  if (ownerKey === 'unattributed') return UNATTRIBUTED_COLOR;
-  if (ownerKind === 'unknown') return UNKNOWN_COLOR;
-  return OWNER_PALETTE[djb2Hash(ownerKey) % OWNER_PALETTE.length];
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function ensureOwnerGroup(groups: Map<string, OwnerGroup>, key: string, label: string, baseColor: string): OwnerGroup {
+function ensureOwnerGroup(groups: Map<string, OwnerGroup>, key: string, label: string): OwnerGroup {
   const existing = groups.get(key);
   if (existing) {
     return existing;
@@ -75,7 +41,7 @@ function ensureOwnerGroup(groups: Map<string, OwnerGroup>, key: string, label: s
   const next: OwnerGroup = {
     key,
     label,
-    baseColor,
+    baseColor: '', // assigned in post-processing
     managedReservedMb: 0,
     managedActualMb: 0,
     unmanagedMb: 0,
@@ -127,6 +93,26 @@ function distributeManagedActual(groups: OwnerGroup[], totalActualManagedMb: num
   }
 }
 
+/**
+ * Assign baseColor to every group using the collision-aware algorithm.
+ *
+ * Owners are sorted alphabetically by key before assignment so that each
+ * owner deterministically "claims" its preferred hash color ahead of any
+ * other owner that might hash to the same slot.
+ */
+function assignGroupColors(groups: Map<string, OwnerGroup>): void {
+  const usedColors = new Set<string>();
+  for (const key of [...groups.keys()].sort()) {
+    const group = groups.get(key)!;
+    const ownerKind = key.startsWith('managed:') ? 'managed' : 'user';
+    const color = getOwnerColor(key, ownerKind, usedColors);
+    group.baseColor = color;
+    if (color !== FREE_COLOR && color !== UNKNOWN_COLOR && color !== UNATTRIBUTED_COLOR) {
+      usedColors.add(color);
+    }
+  }
+}
+
 export function buildGpuOwnerGroups(
   gpu: GpuCardReport,
   tasks: TaskInfo[] | undefined,
@@ -142,17 +128,19 @@ export function buildGpuOwnerGroups(
     const fallbackLabel = historical ? '托管任务（历史未归因）' : '托管任务（未归因）';
     const ownerKey = rawUser ? `user:${rawUser}` : fallbackKey;
     const ownerLabel = rawUser || fallbackLabel;
-    const group = ensureOwnerGroup(groups, ownerKey, ownerLabel, getOwnerColor(ownerKey, 'user'));
+    const group = ensureOwnerGroup(groups, ownerKey, ownerLabel);
     group.managedReservedMb += allocation.declaredVramMb;
     group.taskCount += 1;
   }
 
   for (const process of gpu.userProcesses) {
     const ownerKey = `user:${process.user}`;
-    const group = ensureOwnerGroup(groups, ownerKey, process.user, getOwnerColor(ownerKey, 'user'));
+    const group = ensureOwnerGroup(groups, ownerKey, process.user);
     group.unmanagedMb += process.vramMb;
     group.processCount += 1;
   }
+
+  assignGroupColors(groups);
 
   const unknownMb = gpu.unknownProcesses.reduce((sum, process) => sum + process.vramMb, 0);
   const totalManagedReserved = [...groups.values()].reduce((sum, group) => sum + group.managedReservedMb, 0);
