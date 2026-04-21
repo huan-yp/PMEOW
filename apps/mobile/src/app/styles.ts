@@ -159,6 +159,31 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
+  serverDetailTabRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 18,
+  },
+  serverDetailTab: {
+    flexBasis: '31%',
+    minWidth: 110,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#27445c',
+    backgroundColor: '#091723',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  serverDetailTabText: {
+    color: '#9db1c2',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+
   segmentTextActive: {
     color: '#f3f8fc',
   },

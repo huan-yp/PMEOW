@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, SafeAreaView, StatusBar, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Platform, SafeAreaView, StatusBar, Text, ToastAndroid, View } from 'react-native';
 import {
   ADMIN_TABS,
   PERSON_TABS,
@@ -71,6 +71,7 @@ export default function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskDetailRefreshNonce, setTaskDetailRefreshNonce] = useState(0);
   const foregroundResumeInFlightRef = useRef(false);
+  const lastBackPressAtRef = useRef(0);
 
   useEffect(() => {
     void hydrate();
@@ -196,6 +197,49 @@ export default function App() {
       setTaskDetailRefreshNonce((current) => current + 1);
     }
   };
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !session.authenticated) {
+      return;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (selectedServerId) {
+        setSelectedServerId(null);
+        return true;
+      }
+
+      if (taskDetailVisible) {
+        setSelectedTaskId(null);
+        return true;
+      }
+
+      if (isAdmin && adminTab !== 'dashboard') {
+        setAdminTab('dashboard');
+        return true;
+      }
+
+      if (!isAdmin && personTab !== 'home') {
+        setPersonTab('home');
+        setSelectedTaskId((current) => normalizeSelectedTaskIdForTab('home', current));
+        return true;
+      }
+
+      const now = Date.now();
+      if (now - lastBackPressAtRef.current < 2000) {
+        BackHandler.exitApp();
+        return true;
+      }
+
+      lastBackPressAtRef.current = now;
+      ToastAndroid.show('再按一次退出', ToastAndroid.SHORT);
+      return true;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [adminTab, isAdmin, personTab, selectedServerId, session.authenticated, taskDetailVisible]);
 
   const handleChangePersonTab = (tab: PersonTab) => {
     setPersonTab(tab);

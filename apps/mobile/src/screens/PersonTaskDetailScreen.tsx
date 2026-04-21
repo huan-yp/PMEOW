@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { Task } from '@pmeow/app-common';
 import {
   formatTaskDetailValue,
@@ -81,17 +81,6 @@ export function PersonTaskDetailScreen(props: {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      props.onBack();
-      return true;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [props.onBack]);
 
   useEffect(() => {
     void refreshTask();
