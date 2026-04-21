@@ -23,7 +23,7 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
       id, server_id, status, command, cwd, user, launch_mode, require_vram_mb, require_gpu_count,
       gpu_ids, priority, created_at, started_at, finished_at, pid, exit_code, assigned_gpus,
       declared_vram_per_gpu, schedule_history, end_reason
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       server_id = excluded.server_id,
       status = excluded.status,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pmeow-agent"
-version = "1.1.0"
+version = "1.1.1"
 description = "PMEOW GPU cluster monitoring agent"
 authors = [{name = "huan-yp"}]
 license = { text = "AGPL-3.0-only" }
