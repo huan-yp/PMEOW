@@ -83,7 +83,7 @@ export function ServerCard({ server, status, report }: Props) {
 
       {snap ? (
         <div className={`space-y-3 ${isStale ? 'opacity-50' : ''}`}>
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid gap-3 2xl:grid-cols-2">
             <SummaryMetricCard
               label="GPU 占用率"
               value={hasGpu ? `${avgGpuUtil.toFixed(1)}%` : 'N/A'}
