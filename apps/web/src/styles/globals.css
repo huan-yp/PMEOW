@@ -27,6 +27,8 @@ body {
   color: var(--text-primary);
   font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  line-height: 1.5;
   min-height: 100vh;
 }
 
@@ -252,6 +254,24 @@ body {
   border-color: rgba(245, 158, 11, 0.24);
   background: rgba(245, 158, 11, 0.14);
   color: #fde68a;
+}
+
+@media (max-width: 640px) {
+  .brand-kicker {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+  }
+
+  .brand-chip {
+    font-size: 0.74rem;
+    padding: 0.4rem 0.72rem;
+  }
+
+  .node-badge-base {
+    padding: 0.34rem 0.72rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+  }
 }
 
 /* Scrollbar */

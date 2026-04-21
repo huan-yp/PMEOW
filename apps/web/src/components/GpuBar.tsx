@@ -1,6 +1,6 @@
 import type { GpuCardReport, TaskInfo } from '../transport/types.js';
 import { formatVramGB } from '../utils/vram.js';
-import { FREE_COLOR, UNKNOWN_COLOR } from '../utils/ownerColor.js';
+import { FREE_COLOR, UNKNOWN_COLOR } from '@pmeow/app-common';
 import { buildGpuOwnerGroups } from '../utils/gpuAllocation.js';
 
 interface Props {

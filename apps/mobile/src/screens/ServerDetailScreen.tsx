@@ -151,6 +151,9 @@ export function ServerDetailScreen(props: {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
       <SectionCard title={props.server.name} description={`Agent ${props.server.agentId.slice(0, 8)} · 最近上报 ${formatTimestamp(props.status?.lastSeenAt ?? null)}`}>
+        <Pressable style={styles.detailBackButton} onPress={props.onBack}>
+          <Text style={styles.detailBackButtonText}>← 返回看板</Text>
+        </Pressable>
         <View style={styles.detailStripeRow}>
           <View style={[styles.detailStripe, isOnline ? styles.detailStripeOnline : styles.detailStripeOffline]}>
             <Text style={styles.detailStripeLabel}>在线状态</Text>
@@ -165,17 +168,17 @@ export function ServerDetailScreen(props: {
         {gpuCards.length > 0 ? (
           <Text style={styles.connectionMeta}>总显存 <Text style={{ color: vramPalette.textColor }}>{formatMemoryPairGb(gpuTotals.totalVramUsedMb, gpuTotals.totalVramMb)}</Text> · 总利用率 <Text style={{ color: gpuPalette.textColor }}>{formatPercent(gpuTotals.averageUtilization)}</Text></Text>
         ) : null}
-        <View style={styles.segmentRow}>
+        <View style={styles.serverDetailTabRow}>
           {DETAIL_TABS.map((tab) => {
             const active = tab.id === activeTab;
 
             return (
               <Pressable
                 key={tab.id}
-                style={[styles.segment, active ? styles.segmentActive : null]}
+                style={[styles.serverDetailTab, active ? styles.segmentActive : null]}
                 onPress={() => setActiveTab(tab.id)}
               >
-                <Text style={[styles.segmentText, active ? styles.segmentTextActive : null]}>{tab.label}</Text>
+                <Text style={[styles.serverDetailTabText, active ? styles.segmentTextActive : null]}>{tab.label}</Text>
               </Pressable>
             );
           })}
@@ -270,9 +273,6 @@ export function ServerDetailScreen(props: {
               <Text style={styles.connectionMeta}>当前机器没有 GPU，无法配置 GPU 空闲提醒。</Text>
             )
           ) : null}
-          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-            <Text style={styles.ghostButtonText}>返回</Text>
-          </Pressable>
         </SectionCard>
       ) : null}
 
@@ -303,27 +303,18 @@ export function ServerDetailScreen(props: {
           ) : (
             <Text style={styles.emptyText}>当前节点没有可展示的实时资源指标。</Text>
           )}
-          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-            <Text style={styles.ghostButtonText}>返回</Text>
-          </Pressable>
         </SectionCard>
       ) : null}
 
       {activeTab === 'disk' ? (
         <SectionCard title="磁盘占用" description="低于 60% 绿色，超过 60% 黄色，超过 90% 红色。">
           <DiskUsageSection report={props.report} />
-          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-            <Text style={styles.ghostButtonText}>返回</Text>
-          </Pressable>
         </SectionCard>
       ) : null}
 
       {activeTab === 'vram' ? (
         <SectionCard title="VRAM 分布" description="按托管任务、用户进程、未归属进程和可用显存拆分。">
           <VramDistributionSection gpuCards={gpuCards} tasks={allocationTasks} />
-          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-            <Text style={styles.ghostButtonText}>返回</Text>
-          </Pressable>
         </SectionCard>
       ) : null}
 
@@ -342,9 +333,6 @@ export function ServerDetailScreen(props: {
             <TaskQueueSection title="排队任务" emptyText="当前没有排队任务。" tasks={queuedTasks} />
             <TaskQueueSection title="最近结束任务" emptyText="当前没有最近结束的任务。" tasks={recentlyEndedTasks} />
           </View>
-          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-            <Text style={styles.ghostButtonText}>返回</Text>
-          </Pressable>
         </SectionCard>
       ) : null}
     </ScrollView>

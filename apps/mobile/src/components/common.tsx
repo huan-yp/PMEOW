@@ -1,5 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import PagerView from 'react-native-pager-view';
+import { indexToTab, tabToIndex } from '../app/constants';
 import type { Server, ServerStatus, Task, TaskInfo, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import {
@@ -86,7 +88,7 @@ export function TaskRow(props: {
   return (
     <View style={styles.eventRow}>
       <View style={styles.rowHeader}>
-        <Pressable style={{ flex: 1 }} onPress={props.onPress} disabled={!props.onPress}>
+        <Pressable style={styles.taskRowMain} onPress={props.onPress} disabled={!props.onPress}>
           <Text style={styles.eventTitle}>{formatTaskStatus(props.task.status)} · {props.task.command}</Text>
           <Text style={styles.eventMeta}>{props.task.serverId} · {props.task.user} · {formatTimestamp(props.task.createdAt)}</Text>
         </Pressable>
@@ -185,6 +187,55 @@ export function BottomTabs<T extends string>(props: {
         );
       })}
     </View>
+  );
+}
+
+export function SwipeTabView<T extends string>(props: {
+  tabs: Array<{ id: T; label: string }>;
+  activeTab: T;
+  onChangeTab: (tab: T) => void;
+  renderScene: (tab: T) => ReactNode;
+}) {
+  const pagerRef = useRef<PagerView>(null);
+  // Tracks the page index the pager is currently showing, so we can
+  // avoid calling setPage() when it's already on the right page.
+  const lastKnownPageRef = useRef(tabToIndex(props.tabs, props.activeTab));
+  // Signals that the next onPageSelected event was triggered programmatically
+  // (bottom-tab press → setPage), not by a user swipe, so we skip the
+  // redundant onChangeTab call.
+  const isProgrammaticRef = useRef(false);
+
+  const targetIndex = tabToIndex(props.tabs, props.activeTab);
+
+  useEffect(() => {
+    if (lastKnownPageRef.current !== targetIndex && pagerRef.current) {
+      lastKnownPageRef.current = targetIndex;
+      isProgrammaticRef.current = true;
+      pagerRef.current.setPage(targetIndex);
+    }
+  }, [targetIndex]);
+
+  return (
+    <PagerView
+      ref={pagerRef}
+      style={{ flex: 1 }}
+      initialPage={targetIndex}
+      onPageSelected={(e) => {
+        const position = e.nativeEvent.position;
+        lastKnownPageRef.current = position;
+        if (isProgrammaticRef.current) {
+          isProgrammaticRef.current = false;
+          return;
+        }
+        props.onChangeTab(indexToTab(props.tabs, position));
+      }}
+    >
+      {props.tabs.map((tab) => (
+        <View key={tab.id} style={{ flex: 1 }}>
+          {props.renderScene(tab.id)}
+        </View>
+      ))}
+    </PagerView>
   );
 }
 

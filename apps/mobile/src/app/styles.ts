@@ -155,8 +155,35 @@ export const styles = StyleSheet.create({
   segmentText: {
     color: '#9db1c2',
     fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
     fontWeight: '600',
   },
+  serverDetailTabRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 18,
+  },
+  serverDetailTab: {
+    flexBasis: '31%',
+    minWidth: 110,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#27445c',
+    backgroundColor: '#091723',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  serverDetailTabText: {
+    color: '#9db1c2',
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+
   segmentTextActive: {
     color: '#f3f8fc',
   },
@@ -224,9 +251,13 @@ export const styles = StyleSheet.create({
   },
   rowHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  taskRowMain: {
+    flex: 1,
+    minWidth: 0,
   },
   summaryBlock: {
     flex: 1,
@@ -267,11 +298,13 @@ export const styles = StyleSheet.create({
   serverHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   serverTitle: {
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
     color: '#f3f8fc',
     fontSize: 17,
     fontWeight: '700',
@@ -520,22 +553,25 @@ export const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
     flex: 1,
+    flexShrink: 1,
   },
   eventMeta: {
     marginTop: 6,
     color: '#8ea5b8',
     fontSize: 12,
     lineHeight: 18,
+    flexShrink: 1,
   },
   listFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
     marginTop: 12,
   },
   listFooterMeta: {
     flex: 1,
+    minWidth: 0,
     color: '#8ea5b8',
     fontSize: 12,
     lineHeight: 18,
@@ -657,6 +693,25 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  detailBackButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#102638',
+  },
+  detailBackButtonText: {
+    color: '#dce9f4',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  noticeText: {
+    marginTop: 12,
+    color: '#7fd9aa',
+    fontSize: 14,
+    lineHeight: 21,
+  },
   secondaryButtonWide: {
     marginTop: 16,
     borderRadius: 16,
@@ -690,6 +745,8 @@ export const styles = StyleSheet.create({
     gap: 12,
   },
   compactHeaderLabel: {
+    flex: 1,
+    minWidth: 0,
     color: '#a8bccd',
     fontSize: 13,
     fontWeight: '600',
@@ -717,6 +774,8 @@ export const styles = StyleSheet.create({
   },
   gpuIdleBarName: {
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
     color: '#edf5fb',
     fontSize: 13,
     fontWeight: '600',

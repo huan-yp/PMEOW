@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, SafeAreaView, StatusBar, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Platform, SafeAreaView, StatusBar, Text, ToastAndroid, View } from 'react-native';
 import {
   ADMIN_TABS,
   PERSON_TABS,
@@ -10,7 +10,7 @@ import {
 } from './app/constants';
 import { useServerGpuHistory } from './app/useServerGpuHistory';
 import { styles } from './app/styles';
-import { AuthenticatedShell, BottomTabs } from './components/common';
+import { AuthenticatedShell, BottomTabs, SwipeTabView } from './components/common';
 import { setNativeAppInForeground } from './lib/native-notifications';
 import type { MobileHomeView } from './lib/preferences';
 import { AdminAlertsScreen, AdminDashboardScreen } from './screens/AdminScreens';
@@ -71,6 +71,7 @@ export default function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [taskDetailRefreshNonce, setTaskDetailRefreshNonce] = useState(0);
   const foregroundResumeInFlightRef = useRef(false);
+  const lastBackPressAtRef = useRef(0);
 
   useEffect(() => {
     void hydrate();
@@ -197,6 +198,49 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !session.authenticated) {
+      return;
+    }
+
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (selectedServerId) {
+        setSelectedServerId(null);
+        return true;
+      }
+
+      if (taskDetailVisible) {
+        setSelectedTaskId(null);
+        return true;
+      }
+
+      if (isAdmin && adminTab !== 'dashboard') {
+        setAdminTab('dashboard');
+        return true;
+      }
+
+      if (!isAdmin && personTab !== 'home') {
+        setPersonTab('home');
+        setSelectedTaskId((current) => normalizeSelectedTaskIdForTab('home', current));
+        return true;
+      }
+
+      const now = Date.now();
+      if (now - lastBackPressAtRef.current < 2000) {
+        BackHandler.exitApp();
+        return true;
+      }
+
+      lastBackPressAtRef.current = now;
+      ToastAndroid.show('再按一次退出', ToastAndroid.SHORT);
+      return true;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [adminTab, isAdmin, personTab, selectedServerId, session.authenticated, taskDetailVisible]);
+
   const handleChangePersonTab = (tab: PersonTab) => {
     setPersonTab(tab);
     setSelectedTaskId((current) => normalizeSelectedTaskIdForTab(tab, current));
@@ -273,48 +317,59 @@ export default function App() {
           onRefresh={refreshOverview}
           tabs={<BottomTabs tabs={ADMIN_TABS} activeTab={adminTab} onChangeTab={setAdminTab} />}
         >
-          {adminTab === 'dashboard' ? (
-            <AdminDashboardScreen
-              realtimeConnected={realtimeConnected}
-              serverCount={servers.length}
-              onlineCount={onlineCount}
-              alertCount={alerts.length}
-              securityCount={securityEvents.length}
-              servers={adminHomeServers}
-              statuses={statuses}
-              latestMetrics={latestMetrics}
-              recentTaskEvents={recentTaskEvents}
-              homeView={adminHomeView}
-              onChangeHomeView={handleHomeViewChange('admin')}
-              onSelectServer={setSelectedServerId}
-            />
-          ) : adminTab === 'alerts' ? (
-            <AdminAlertsScreen alerts={alerts} securityEvents={securityEvents} />
-          ) : (
-            <SettingsScreen
-              baseUrl={baseUrl}
-              isAdmin
-              notificationsEnabled={notificationSettings.notificationsEnabled}
-              notificationPermissionGranted={notificationPermissionGranted}
-              guardServiceRunning={guardServiceRunning}
-              batteryOptimizationIgnored={batteryOptimizationIgnored}
-              adminCategorySettings={notificationSettings.adminCategories}
-              personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
-              idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
-              adminHiddenServerIds={adminHiddenServerIds}
-              servers={servers}
-              notificationInbox={notificationInbox}
-              onOpenBatteryOptimizationSettings={() => {
-                void openBatteryOptimizationSettings();
-              }}
-              onToggleNotificationsEnabled={toggleNotificationsEnabled}
-              onToggleAdminCategory={toggleAdminCategory}
-              onTogglePersonTaskNotifications={togglePersonTaskNotifications}
-              onToggleIdleServerSubscription={toggleIdleServerSubscription}
-              onToggleAdminHiddenServer={toggleAdminHiddenServer}
-              onSignOut={signOut}
-            />
-          )}
+          <SwipeTabView
+            tabs={ADMIN_TABS}
+            activeTab={adminTab}
+            onChangeTab={setAdminTab}
+            renderScene={(tab) => {
+              if (tab === 'dashboard') {
+                return (
+                  <AdminDashboardScreen
+                    realtimeConnected={realtimeConnected}
+                    serverCount={servers.length}
+                    onlineCount={onlineCount}
+                    alertCount={alerts.length}
+                    securityCount={securityEvents.length}
+                    servers={adminHomeServers}
+                    statuses={statuses}
+                    latestMetrics={latestMetrics}
+                    recentTaskEvents={recentTaskEvents}
+                    homeView={adminHomeView}
+                    onChangeHomeView={handleHomeViewChange('admin')}
+                    onSelectServer={setSelectedServerId}
+                  />
+                );
+              }
+              if (tab === 'alerts') {
+                return <AdminAlertsScreen alerts={alerts} securityEvents={securityEvents} />;
+              }
+              return (
+                <SettingsScreen
+                  baseUrl={baseUrl}
+                  isAdmin
+                  notificationsEnabled={notificationSettings.notificationsEnabled}
+                  notificationPermissionGranted={notificationPermissionGranted}
+                  guardServiceRunning={guardServiceRunning}
+                  batteryOptimizationIgnored={batteryOptimizationIgnored}
+                  adminCategorySettings={notificationSettings.adminCategories}
+                  personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
+                  idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
+                  adminHiddenServerIds={adminHiddenServerIds}
+                  servers={servers}
+                  notificationInbox={notificationInbox}
+                  onOpenBatteryOptimizationSettings={() => {
+                    void openBatteryOptimizationSettings();
+                  }}
+                  onToggleNotificationsEnabled={toggleNotificationsEnabled}
+                  onToggleAdminCategory={toggleAdminCategory}
+                  onTogglePersonTaskNotifications={togglePersonTaskNotifications}
+                  onToggleIdleServerSubscription={toggleIdleServerSubscription}
+                  onToggleAdminHiddenServer={toggleAdminHiddenServer}
+                  onSignOut={signOut}
+                />
+              );
+            }}
+          />
         </AuthenticatedShell>
       ) : (
         <AuthenticatedShell
@@ -327,66 +382,79 @@ export default function App() {
           onRefresh={handleRefreshPersonShell}
           tabs={<BottomTabs tabs={PERSON_TABS} activeTab={personTab} onChangeTab={handleChangePersonTab} />}
         >
-          {personTab === 'home' ? (
-            <PersonHomeScreen
-              personName={personName}
-              servers={servers}
-              statuses={statuses}
-              latestMetrics={latestMetrics}
-              personTasks={personTasks}
-              recentTaskEvents={recentTaskEvents}
-              notificationInbox={notificationInbox}
-              homeView={personHomeView}
-              onChangeHomeView={handleHomeViewChange('person')}
-              onSelectServer={(serverId) => {
-                setSelectedTaskId(null);
-                setSelectedServerId(serverId);
-              }}
-            />
-          ) : personTab === 'tasks' ? (
-            taskDetailVisible && selectedTaskId ? (
-              <PersonTaskDetailScreen
-                taskId={selectedTaskId}
-                baseUrl={baseUrl}
-                authToken={authToken}
-                refreshNonce={taskDetailRefreshNonce}
-                onBack={() => setSelectedTaskId(null)}
-                onRefreshOverview={refreshOverview}
-              />
-            ) : (
-              <PersonTasksScreen
-                personTasks={personTasks}
-                pendingTaskId={pendingTaskId}
-                onSelectTask={(task) => {
-                  setSelectedServerId(null);
-                  setSelectedTaskId(task.id);
-                }}
-                onCancelTask={cancelTask}
-              />
-            )
-          ) : (
-            <SettingsScreen
+          {taskDetailVisible && selectedTaskId ? (
+            <PersonTaskDetailScreen
+              taskId={selectedTaskId}
               baseUrl={baseUrl}
-              isAdmin={false}
-              notificationsEnabled={notificationSettings.notificationsEnabled}
-              notificationPermissionGranted={notificationPermissionGranted}
-              guardServiceRunning={guardServiceRunning}
-              batteryOptimizationIgnored={batteryOptimizationIgnored}
-              adminCategorySettings={notificationSettings.adminCategories}
-              personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
-              idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
-              adminHiddenServerIds={adminHiddenServerIds}
-              servers={personNotificationServers}
-              notificationInbox={notificationInbox}
-              onOpenBatteryOptimizationSettings={() => {
-                void openBatteryOptimizationSettings();
+              authToken={authToken}
+              refreshNonce={taskDetailRefreshNonce}
+              onBack={() => setSelectedTaskId(null)}
+              onRefreshOverview={refreshOverview}
+            />
+          ) : (
+            <SwipeTabView
+              tabs={PERSON_TABS}
+              activeTab={personTab}
+              onChangeTab={handleChangePersonTab}
+              renderScene={(tab) => {
+                if (tab === 'home') {
+                  return (
+                    <PersonHomeScreen
+                      personName={personName}
+                      servers={servers}
+                      statuses={statuses}
+                      latestMetrics={latestMetrics}
+                      personTasks={personTasks}
+                      recentTaskEvents={recentTaskEvents}
+                      notificationInbox={notificationInbox}
+                      homeView={personHomeView}
+                      onChangeHomeView={handleHomeViewChange('person')}
+                      onSelectServer={(serverId) => {
+                        setSelectedTaskId(null);
+                        setSelectedServerId(serverId);
+                      }}
+                    />
+                  );
+                }
+                if (tab === 'tasks') {
+                  return (
+                    <PersonTasksScreen
+                      personTasks={personTasks}
+                      pendingTaskId={pendingTaskId}
+                      onSelectTask={(task) => {
+                        setSelectedServerId(null);
+                        setSelectedTaskId(task.id);
+                      }}
+                      onCancelTask={cancelTask}
+                    />
+                  );
+                }
+                return (
+                  <SettingsScreen
+                    baseUrl={baseUrl}
+                    isAdmin={false}
+                    notificationsEnabled={notificationSettings.notificationsEnabled}
+                    notificationPermissionGranted={notificationPermissionGranted}
+                    guardServiceRunning={guardServiceRunning}
+                    batteryOptimizationIgnored={batteryOptimizationIgnored}
+                    adminCategorySettings={notificationSettings.adminCategories}
+                    personTaskNotificationsEnabled={notificationSettings.person.taskEvents}
+                    idleServerIds={Object.keys(notificationSettings.person.idleServerRules)}
+                    adminHiddenServerIds={adminHiddenServerIds}
+                    servers={personNotificationServers}
+                    notificationInbox={notificationInbox}
+                    onOpenBatteryOptimizationSettings={() => {
+                      void openBatteryOptimizationSettings();
+                    }}
+                    onToggleNotificationsEnabled={toggleNotificationsEnabled}
+                    onToggleAdminCategory={toggleAdminCategory}
+                    onTogglePersonTaskNotifications={togglePersonTaskNotifications}
+                    onToggleIdleServerSubscription={toggleIdleServerSubscription}
+                    onToggleAdminHiddenServer={toggleAdminHiddenServer}
+                    onSignOut={signOut}
+                  />
+                );
               }}
-              onToggleNotificationsEnabled={toggleNotificationsEnabled}
-              onToggleAdminCategory={toggleAdminCategory}
-              onTogglePersonTaskNotifications={togglePersonTaskNotifications}
-              onToggleIdleServerSubscription={toggleIdleServerSubscription}
-              onToggleAdminHiddenServer={toggleAdminHiddenServer}
-              onSignOut={signOut}
             />
           )}
         </AuthenticatedShell>

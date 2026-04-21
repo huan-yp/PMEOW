@@ -59,12 +59,12 @@ export default function NodeDetail() {
   }
 
   const tabClass = (t: Tab) =>
-    `px-4 py-2 text-sm rounded-t-lg transition-colors ${tab === t ? 'bg-dark-card text-slate-100 border-b-2 border-accent-blue' : 'text-slate-500 hover:text-slate-300'}`;
+    `shrink-0 px-3 py-2 text-sm rounded-t-lg transition-colors sm:px-4 ${tab === t ? 'bg-dark-card text-slate-100 border-b-2 border-accent-blue' : 'text-slate-500 hover:text-slate-300'}`;
 
   return (
-    <div className="space-y-6">
-      <div className={`node-surface-shell ${connectionVisual.surfaceClassName} rounded-[28px] p-5 sm:p-6`}>
-        <button onClick={() => navigate(backTarget)} className="text-xs text-accent-blue hover:underline mb-2">← {backLabel}</button>
+    <div className="space-y-5 sm:space-y-6">
+      <div className={`node-surface-shell ${connectionVisual.surfaceClassName} rounded-[24px] p-4 sm:rounded-[28px] sm:p-5 lg:p-6`}>
+        <button onClick={() => navigate(backTarget)} className="mb-2 text-xs leading-5 text-accent-blue hover:underline">← {backLabel}</button>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <span className={`node-badge-base ${connectionVisual.badgeClassName}`}>
@@ -78,7 +78,7 @@ export default function NodeDetail() {
             <span className="node-badge-base node-badge-source-agent">Agent {agentLabel}</span>
             {status?.version && <span className="node-badge-base node-badge-status-neutral">v{status.version}</span>}
           </div>
-          <h2 className="mt-4 text-3xl font-semibold tracking-tight text-slate-50 sm:text-[2.35rem]">{server.name}</h2>
+          <h2 className="mt-4 break-words text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl lg:text-[2.35rem]">{server.name}</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:max-w-xl">
             <IdentityPill label="节点类型" value="Agent 节点" accent="cyan" />
             <IdentityPill label="实时状态" value={snap ? '指标已接入' : '等待最新快照'} accent={snap ? 'green' : 'amber'} />
@@ -86,12 +86,14 @@ export default function NodeDetail() {
         </div>
       </div>
 
-      <div className="flex gap-1 border-b border-dark-border">
-        <button className={tabClass('realtime')} onClick={() => setTab('realtime')}>实时概览</button>
-        <button className={tabClass('processes')} onClick={() => setTab('processes')}>进程</button>
-        <button className={tabClass('tasks')} onClick={() => setTab('tasks')}>任务</button>
-        <button className={tabClass('history')} onClick={() => setTab('history')}>历史</button>
-        <button className={tabClass('snapshot')} onClick={() => setTab('snapshot')}>快照</button>
+      <div className="overflow-x-auto border-b border-dark-border">
+        <div className="flex min-w-max gap-1">
+          <button className={tabClass('realtime')} onClick={() => setTab('realtime')}>实时概览</button>
+          <button className={tabClass('processes')} onClick={() => setTab('processes')}>进程</button>
+          <button className={tabClass('tasks')} onClick={() => setTab('tasks')}>任务</button>
+          <button className={tabClass('history')} onClick={() => setTab('history')}>历史</button>
+          <button className={tabClass('snapshot')} onClick={() => setTab('snapshot')}>快照</button>
+        </div>
       </div>
 
       {tab === 'realtime' && (

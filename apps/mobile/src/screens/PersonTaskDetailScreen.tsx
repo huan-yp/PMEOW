@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { BackHandler, Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import type { Task } from '@pmeow/app-common';
 import {
   formatTaskDetailValue,
@@ -83,17 +83,6 @@ export function PersonTaskDetailScreen(props: {
   };
 
   useEffect(() => {
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      props.onBack();
-      return true;
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [props.onBack]);
-
-  useEffect(() => {
     void refreshTask();
   }, [props.authToken, props.baseUrl, props.refreshNonce, props.taskId]);
 
@@ -128,18 +117,12 @@ export function PersonTaskDetailScreen(props: {
     <ScrollView contentContainerStyle={styles.screenContent}>
       <SectionCard title="任务详情" description={summaryText}>
         <Pressable
-          style={{
-            alignSelf: 'flex-start',
-            borderRadius: 999,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-            backgroundColor: '#102638',
-          }}
+          style={styles.detailBackButton}
           onPress={props.onBack}
         >
-          <Text style={{ color: '#dce9f4', fontSize: 12, fontWeight: '700' }}>← 返回我的任务</Text>
+          <Text style={styles.detailBackButtonText}>← 返回我的任务</Text>
         </Pressable>
-        {notice ? <Text style={{ marginTop: 12, color: '#7fd9aa', fontSize: 14, lineHeight: 21 }}>{notice}</Text> : null}
+        {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
         {loading ? <Text style={styles.emptyText}>加载中...</Text> : null}
         {!loading && !error ? <Text style={styles.connectionMeta}>任务 ID：{props.taskId}</Text> : null}

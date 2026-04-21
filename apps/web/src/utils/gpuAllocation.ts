@@ -1,5 +1,7 @@
 import type { GpuCardReport, TaskInfo } from '../transport/types.js';
-import { getOwnerColor } from './ownerColor.js';
+import { FREE_COLOR, UNKNOWN_COLOR, UNATTRIBUTED_COLOR, getOwnerColor } from '@pmeow/app-common';
+
+export { FREE_COLOR, UNKNOWN_COLOR };
 
 export interface OwnerGroup {
   key: string;
@@ -24,7 +26,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function ensureOwnerGroup(groups: Map<string, OwnerGroup>, key: string, label: string, baseColor: string): OwnerGroup {
+function ensureOwnerGroup(groups: Map<string, OwnerGroup>, key: string, label: string): OwnerGroup {
   const existing = groups.get(key);
   if (existing) {
     return existing;
@@ -33,7 +35,7 @@ function ensureOwnerGroup(groups: Map<string, OwnerGroup>, key: string, label: s
   const next: OwnerGroup = {
     key,
     label,
-    baseColor,
+    baseColor: '', // assigned in post-processing
     managedReservedMb: 0,
     managedActualMb: 0,
     unmanagedMb: 0,
@@ -86,6 +88,26 @@ function distributeManagedActual(groups: OwnerGroup[], totalActualManagedMb: num
   }
 }
 
+/**
+ * Assign baseColor to every group using the collision-aware algorithm.
+ *
+ * Owners are sorted alphabetically by key before assignment so that each
+ * owner deterministically "claims" its preferred hash color ahead of any
+ * other owner that might hash to the same slot.
+ */
+function assignGroupColors(groups: Map<string, OwnerGroup>): void {
+  const usedColors = new Set<string>();
+  for (const key of [...groups.keys()].sort()) {
+    const group = groups.get(key)!;
+    const ownerKind = key.startsWith('managed:') ? 'managed' : 'user';
+    const color = getOwnerColor(key, ownerKind, usedColors);
+    group.baseColor = color;
+    if (color !== FREE_COLOR && color !== UNKNOWN_COLOR && color !== UNATTRIBUTED_COLOR) {
+      usedColors.add(color);
+    }
+  }
+}
+
 export function buildGpuOwnerGroups(gpu: GpuCardReport, tasks: TaskInfo[] | undefined, historical: boolean): { groups: OwnerGroup[]; unknownMb: number; totalDisplayedMb: number; freeMb: number; note: string | null; } {
   const groups = new Map<string, OwnerGroup>();
   const taskMap = new Map((tasks ?? []).map((task) => [task.taskId, task]));
@@ -97,17 +119,19 @@ export function buildGpuOwnerGroups(gpu: GpuCardReport, tasks: TaskInfo[] | unde
     const fallbackLabel = historical ? '托管任务（历史未归因）' : '托管任务（未归因）';
     const ownerKey = rawUser ? `user:${rawUser}` : fallbackKey;
     const ownerLabel = rawUser || fallbackLabel;
-    const group = ensureOwnerGroup(groups, ownerKey, ownerLabel, getOwnerColor(ownerKey, 'user'));
+    const group = ensureOwnerGroup(groups, ownerKey, ownerLabel);
     group.managedReservedMb += allocation.declaredVramMb;
     group.taskCount += 1;
   }
 
   for (const process of gpu.userProcesses) {
     const ownerKey = `user:${process.user}`;
-    const group = ensureOwnerGroup(groups, ownerKey, process.user, getOwnerColor(ownerKey, 'user'));
+    const group = ensureOwnerGroup(groups, ownerKey, process.user);
     group.unmanagedMb += process.vramMb;
     group.processCount += 1;
   }
+
+  assignGroupColors(groups);
 
   const unknownMb = gpu.unknownProcesses.reduce((sum, process) => sum + process.vramMb, 0);
   const totalManagedReserved = [...groups.values()].reduce((sum, group) => sum + group.managedReservedMb, 0);

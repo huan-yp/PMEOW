@@ -59,6 +59,29 @@ describe('task detail field formatting', () => {
   });
 });
 
+describe('tab swipe index helpers', () => {
+  it('tabToIndex returns the correct index for a known tab id', () => {
+    expect(constants.tabToIndex(constants.PERSON_TABS, 'home')).toBe(0);
+    expect(constants.tabToIndex(constants.PERSON_TABS, 'tasks')).toBe(1);
+    expect(constants.tabToIndex(constants.PERSON_TABS, 'settings')).toBe(2);
+  });
+
+  it('tabToIndex returns 0 for an unknown tab id', () => {
+    expect(constants.tabToIndex(constants.PERSON_TABS, 'nonexistent' as constants.PersonTab)).toBe(0);
+  });
+
+  it('indexToTab returns the correct tab id for a valid index', () => {
+    expect(constants.indexToTab(constants.ADMIN_TABS, 0)).toBe('dashboard');
+    expect(constants.indexToTab(constants.ADMIN_TABS, 1)).toBe('alerts');
+    expect(constants.indexToTab(constants.ADMIN_TABS, 2)).toBe('settings');
+  });
+
+  it('indexToTab falls back to tabs[0].id for an out-of-range index', () => {
+    expect(constants.indexToTab(constants.PERSON_TABS, 99)).toBe('home');
+    expect(constants.indexToTab(constants.PERSON_TABS, -1)).toBe('home');
+  });
+});
+
 describe('mobile Chinese labels', () => {
   it('keeps bottom tab labels readable', () => {
     expect(constants.PERSON_TABS.map((tab) => tab.label)).toEqual(['首页', '我的任务', '设置']);
