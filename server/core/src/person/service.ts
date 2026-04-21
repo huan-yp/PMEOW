@@ -119,21 +119,12 @@ export function getPersonTimeline(personId: string, from: number, to: number): {
 }
 
 export function getPersonTasks(personId: string, page: number, limit: number): { tasks: TaskRecord[]; total: number } {
-  const bindings = personBindingDb.getBindingsByPersonId(personId);
-  let allTasks: TaskRecord[] = [];
-
-  for (const binding of bindings) {
-    const tasks = taskDb.getTasks({ serverId: binding.serverId, user: binding.systemUser });
-    allTasks = allTasks.concat(tasks);
-  }
-
-  const tasks = allTasks
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
-    .slice((page - 1) * limit, page * limit);
+  const offset = (page - 1) * limit;
+  const tasks = taskDb.getTasks({ personId, limit, offset });
 
   return {
     tasks,
-    total: allTasks.length,
+    total: taskDb.countTasks({ personId }),
   };
 }
 

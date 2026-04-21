@@ -1,6 +1,7 @@
 import { Router } from "express";
-import { canAccessTask, cancelTask, getTask, getTaskScheduleHistory, listTasks, setPriority, type AgentSessionRegistry, type TaskRecord } from "@pmeow/core";
+import { canAccessTask, cancelTask, countTasksForPrincipal, getTask, getTaskScheduleHistory, listTasksForPrincipal, setPriority, type AgentSessionRegistry, type TaskRecord } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
+import { parsePagination } from "./pagination.js";
 
 function toApiTask(r: TaskRecord, scheduleHistoryOverride?: unknown) {
   return {
@@ -21,18 +22,15 @@ export function taskRoutes(registry: AgentSessionRegistry): Router {
       return;
     }
 
-    const page = req.query.page ? Number(req.query.page) : 1;
-    const limit = req.query.limit ? Number(req.query.limit) : 20;
+    const { limit, offset } = parsePagination(req.query);
     const filter = {
       serverId: req.query.serverId as string | undefined,
       status: req.query.status as string | undefined,
       user: req.query.user as string | undefined,
     };
 
-    const allTasks = listTasks(filter)
-      .filter((task) => principal.kind === "admin" || canAccessTask(principal, task.serverId, task.user));
-    const total = allTasks.length;
-    const tasks = allTasks.slice((page - 1) * limit, page * limit).map(toApiTask);
+    const total = countTasksForPrincipal(principal, filter);
+    const tasks = listTasksForPrincipal(principal, { ...filter, limit, offset }).map(toApiTask);
     res.json({ tasks, total });
   });
   

@@ -6,12 +6,16 @@ import { useStore } from '../store/useStore.js';
 
 export function TaskBrowser({
   serverId,
+  personId,
   hideServerColumn = false,
   emptyText = '无任务记录',
+  pageSize = 20,
 }: {
   serverId?: string;
+  personId?: string;
   hideServerColumn?: boolean;
   emptyText?: string;
+  pageSize?: number;
 }) {
   const transport = useTransport();
   const navigate = useNavigate();
@@ -21,16 +25,20 @@ export function TaskBrowser({
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
-  const limit = 20;
 
   useEffect(() => {
     setPage(1);
-  }, [serverId]);
+  }, [personId, serverId]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    transport.getTasks({ serverId, page, limit, status: statusFilter || undefined })
+
+    const request = personId
+      ? transport.getPersonTasks(personId, { page, limit: pageSize })
+      : transport.getTasks({ serverId, page, limit: pageSize, status: statusFilter || undefined });
+
+    request
       .then((res) => {
         if (cancelled) return;
         setTasks(res.tasks);
@@ -50,28 +58,30 @@ export function TaskBrowser({
     return () => {
       cancelled = true;
     };
-  }, [transport, serverId, page, statusFilter]);
+  }, [transport, personId, serverId, page, pageSize, statusFilter]);
 
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.ceil(total / pageSize);
   const colSpan = hideServerColumn ? 7 : 8;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <select
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-slate-200 outline-none"
-        >
-          <option value="">全部状态</option>
-          <option value="queued">排队中</option>
-          <option value="running">运行中</option>
-          <option value="succeeded">已完成</option>
-          <option value="failed">失败</option>
-          <option value="cancelled">已取消</option>
-          <option value="abnormal">异常结束</option>
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">共 {total} 条任务</p>
+        {!personId && (
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-slate-200 outline-none"
+          >
+            <option value="">全部状态</option>
+            <option value="queued">排队中</option>
+            <option value="running">运行中</option>
+            <option value="succeeded">已完成</option>
+            <option value="failed">失败</option>
+            <option value="cancelled">已取消</option>
+            <option value="abnormal">异常结束</option>
+          </select>
+        )}
       </div>
 
       <div className="overflow-auto">
@@ -123,9 +133,9 @@ export function TaskBrowser({
 
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 text-sm">
-          <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="px-3 py-1 rounded border border-dark-border text-slate-400 hover:text-slate-200 disabled:opacity-30">上一页</button>
+          <button disabled={page <= 1} onClick={() => setPage((current) => current - 1)} className="px-3 py-1 rounded border border-dark-border text-slate-400 hover:text-slate-200 disabled:opacity-30">上一页</button>
           <span className="text-slate-500">{page} / {totalPages}</span>
-          <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="px-3 py-1 rounded border border-dark-border text-slate-400 hover:text-slate-200 disabled:opacity-30">下一页</button>
+          <button disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)} className="px-3 py-1 rounded border border-dark-border text-slate-400 hover:text-slate-200 disabled:opacity-30">下一页</button>
         </div>
       )}
     </div>

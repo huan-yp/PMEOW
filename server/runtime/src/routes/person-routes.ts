@@ -8,6 +8,7 @@ import {
 } from "@pmeow/core";
 import type { PersonTokenRecord, TaskRecord } from "@pmeow/core";
 import { adminOnly, canAccessPersonId } from "../auth.js";
+import { parsePagination } from "./pagination.js";
 
 export function personRoutes(): Router {
   const router = Router();
@@ -112,8 +113,7 @@ export function personRoutes(): Router {
       return;
     }
 
-    const page = Number(req.query.page) || 1;
-    const limit = Number(req.query.limit) || 20;
+    const { page, limit } = parsePagination(req.query);
     const result = getPersonTasks(req.params.id, page, limit);
     res.json({
       tasks: result.tasks.map(toApiTask),

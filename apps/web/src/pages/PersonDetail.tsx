@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useStore } from '../store/useStore.js';
 import { useTransport } from '../transport/TransportProvider.js';
-import type { Person, PersonBinding, Task, PersonTimelinePoint, PersonToken } from '../transport/types.js';
+import type { Person, PersonBinding, PersonTimelinePoint, PersonToken } from '../transport/types.js';
+import { TaskBrowser } from '../components/TaskBrowser.js';
 import { TimeSeriesChart } from '../components/TimeSeriesChart.js';
 import { formatVramGB } from '../utils/vram.js';
 
@@ -19,7 +20,6 @@ export default function PersonDetail() {
 
   const [person, setPerson] = useState<Person | null>(null);
   const [bindings, setBindings] = useState<PersonBinding[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [timeline, setTimeline] = useState<PersonTimelinePoint[]>([]);
   const [tokens, setTokens] = useState<PersonToken[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,14 +37,12 @@ export default function PersonDetail() {
     Promise.all([
       transport.getPerson(id),
       transport.getPersonBindings(id),
-      transport.getPersonTasks(id),
       transport.getPersonTimeline(id),
       transport.getPersonTokens(id).catch(() => [] as PersonToken[]),
     ])
-      .then(([p, b, t, tl, tk]) => {
+      .then(([p, b, tl, tk]) => {
         setPerson(p);
         setBindings(b);
-        setTasks(t.tasks);
         setTimeline(tl.points);
         setTokens(tk);
         setEditName(p.displayName);
@@ -152,28 +150,7 @@ export default function PersonDetail() {
 
       <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
         <h3 className="mb-3 text-sm font-medium text-slate-300">任务记录</h3>
-        {tasks.length === 0 ? (
-          <p className="text-sm text-slate-500">暂无任务</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-slate-500 border-b border-dark-border">
-                <th className="text-left py-2 px-3">命令</th>
-                <th className="text-left py-2 px-3">状态</th>
-                <th className="text-left py-2 px-3">创建时间</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tasks.map((t) => (
-                <tr key={t.id} className="border-b border-dark-border/50 hover:bg-dark-hover cursor-pointer" onClick={() => navigate(`/tasks/${t.id}`)}>
-                  <td className="py-2 px-3 text-slate-200 truncate max-w-[200px]">{t.command}</td>
-                  <td className="py-2 px-3 text-xs text-slate-400">{t.status}</td>
-                  <td className="py-2 px-3 text-xs text-slate-500">{new Date(t.createdAt * 1000).toLocaleString('zh-CN')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        {id && <TaskBrowser personId={id} emptyText="暂无任务" />}
       </div>
       <div className="rounded-2xl border border-dark-border bg-dark-card p-4">
         <div className="flex items-center justify-between mb-3">
