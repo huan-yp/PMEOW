@@ -52,7 +52,18 @@ def run_attached_command(
             stderr=subprocess.PIPE,
             bufsize=0,
         )
-        on_started(proc.pid)
+        try:
+            on_started(proc.pid)
+        except Exception:
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+            raise
 
         threads: list[threading.Thread] = []
 

@@ -58,7 +58,7 @@ class CompletionObservation:
 class RuntimeObservation:
     """Runtime monitor observed a process-level anomaly."""
     task_id: str
-    reason: TaskEndReason  # pid_disappeared | attach_timeout | running_no_pid
+    reason: TaskEndReason  # pid_disappeared | attach_timeout | running_no_pid | launch_failed
     timestamp: float
 
 

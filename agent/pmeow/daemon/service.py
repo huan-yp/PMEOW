@@ -38,7 +38,7 @@ from pmeow.models import (
 from pmeow.queue.history import GpuHistoryTracker
 from pmeow.queue.scheduler import QueueScheduler, TaskScheduleEvaluation, validate_request_possible
 from pmeow.reporter import Reporter
-from pmeow.state.task_queue import CompletionObservation, TaskQueue
+from pmeow.state.task_queue import CompletionObservation, RuntimeObservation, TaskQueue
 from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
@@ -424,6 +424,31 @@ class DaemonService:
             log.info("foreground task %s finished (exit=%d)", task_id, exit_code)
             return True
 
+    def fail_foreground_launch(self, task_id: str, reason: str) -> bool:
+        with self._lock:
+            task = self.task_queue.get(task_id)
+            if task is None or task.launch_mode != TaskLaunchMode.foreground:
+                return False
+            if task.status != TaskStatus.reserved:
+                return False
+
+            normalized_reason = " | ".join(
+                part.strip() for part in reason.splitlines() if part.strip()
+            ) or "unknown foreground launch failure"
+            self._submit_credentials.pop(task_id, None)
+            self._append_task_message(
+                task_id,
+                self._format_launch_failed_message(task_id, normalized_reason),
+            )
+            self.task_queue.push_runtime(RuntimeObservation(
+                task_id=task_id,
+                reason=TaskEndReason.launch_failed,
+                timestamp=time.time(),
+            ))
+            self.task_queue.tick()
+            log.warning("foreground task %s launch failed: %s", task_id, normalized_reason)
+            return True
+
     # ------------------------------------------------------------------
     # Task diagnostics
     # ------------------------------------------------------------------
@@ -548,6 +573,9 @@ class DaemonService:
 
     def _format_finished_message(self, task_id: str, exit_code: int) -> str:
         return f"task finished: exit_code={exit_code} task_id={task_id}"
+
+    def _format_launch_failed_message(self, task_id: str, reason: str) -> str:
+        return f"task launch failed: reason={reason} task_id={task_id}"
 
     def _format_gpu_ids(self, gpu_ids: list[int]) -> str:
         return ",".join(str(gpu_id) for gpu_id in gpu_ids) or "none"

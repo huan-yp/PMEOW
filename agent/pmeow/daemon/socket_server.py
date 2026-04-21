@@ -237,6 +237,10 @@ def _finish_foreground_task(svc: DaemonService, params: dict) -> bool:
     return svc.finish_foreground_task(params["task_id"], exit_code=params["exit_code"])
 
 
+def _fail_foreground_launch(svc: DaemonService, params: dict) -> bool:
+    return svc.fail_foreground_launch(params["task_id"], reason=params.get("reason", ""))
+
+
 def _set_priority(svc: DaemonService, params: dict) -> bool:
     return svc.set_task_priority(params["task_id"], int(params["priority"]))
 
@@ -249,6 +253,7 @@ _METHODS: dict[str, Any] = {
     "get_logs": _get_logs,
     "confirm_foreground_launch": _confirm_foreground_launch,
     "finish_foreground_task": _finish_foreground_task,
+    "fail_foreground_launch": _fail_foreground_launch,
     "set_priority": _set_priority,
 }
 

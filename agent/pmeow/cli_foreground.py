@@ -131,6 +131,13 @@ def _resolve_default_socket() -> str:
     return resolve_client_socket_path()
 
 
+def _format_launch_failure_reason(exc: BaseException) -> str:
+    detail = str(exc).strip()
+    if detail:
+        return f"{type(exc).__name__}: {detail}"
+    return type(exc).__name__
+
+
 def run_foreground_invocation(
     invocation: ForegroundInvocation,
     *,
@@ -191,6 +198,20 @@ def run_foreground_invocation(
                     )
                 except KeyboardInterrupt:
                     exit_code = 130
+                except Exception as exc:
+                    reason = _format_launch_failure_reason(exc)
+                    try:
+                        response = send_request(
+                            socket_path,
+                            "fail_foreground_launch",
+                            {"task_id": task_id, "reason": reason},
+                        )
+                        if not response.get("ok") or response.get("result") is not True:
+                            print("warning: daemon rejected launch failure report", file=sys.stderr)
+                    except Exception:
+                        print("warning: failed to notify daemon of launch failure", file=sys.stderr)
+                    print(f"error: failed to start foreground task: {reason}", file=sys.stderr)
+                    return 1
                 try:
                     send_request(socket_path, "finish_foreground_task", {"task_id": task_id, "exit_code": exit_code})
                 except Exception:
