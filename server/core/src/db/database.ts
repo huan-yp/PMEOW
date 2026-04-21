@@ -122,6 +122,22 @@ function initSchema(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_tasks_server_status ON tasks (server_id, status);
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks (user, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks (created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_tasks_server_status_created_at ON tasks (server_id, status, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS task_schedule_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      server_id TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      bucket_start INTEGER NOT NULL,
+      source_timestamp REAL NOT NULL,
+      snapshot_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE (task_id, tier, bucket_start)
+    );
+    CREATE INDEX IF NOT EXISTS idx_task_schedule_snapshots_task_bucket
+      ON task_schedule_snapshots (task_id, tier, bucket_start DESC);
 
     CREATE TABLE IF NOT EXISTS alerts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,6 +201,7 @@ function initSchema(db: Database.Database): void {
       updated_at INTEGER NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_person_bindings_active_unique ON person_bindings (server_id, system_user) WHERE enabled = 1;
+    CREATE INDEX IF NOT EXISTS idx_person_bindings_person_active ON person_bindings (person_id, enabled, server_id, system_user);
 
     CREATE TABLE IF NOT EXISTS person_tokens (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

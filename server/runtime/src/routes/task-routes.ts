@@ -1,13 +1,13 @@
 import { Router } from "express";
-import { canAccessTask, cancelTask, getTask, listTasks, setPriority, type AgentSessionRegistry, type TaskRecord } from "@pmeow/core";
+import { canAccessTask, cancelTask, getTask, getTaskScheduleHistory, listTasks, setPriority, type AgentSessionRegistry, type TaskRecord } from "@pmeow/core";
 import { adminOnly } from "../auth.js";
 
-function toApiTask(r: TaskRecord) {
+function toApiTask(r: TaskRecord, scheduleHistoryOverride?: unknown) {
   return {
     ...r,
     gpuIds: r.gpuIds ? JSON.parse(r.gpuIds) : null,
     assignedGpus: r.assignedGpus ? JSON.parse(r.assignedGpus) : null,
-    scheduleHistory: r.scheduleHistory ? JSON.parse(r.scheduleHistory) : null,
+    scheduleHistory: scheduleHistoryOverride ?? (r.scheduleHistory ? JSON.parse(r.scheduleHistory) : null),
   };
 }
 
@@ -49,7 +49,7 @@ export function taskRoutes(registry: AgentSessionRegistry): Router {
       res.status(403).json({ error: "无权访问该任务" });
       return;
     }
-    res.json(toApiTask(task));
+    res.json(toApiTask(task, getTaskScheduleHistory(task)));
   });
   
   router.post("/servers/:serverId/tasks/:taskId/cancel", (req, res) => {

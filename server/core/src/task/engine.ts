@@ -2,7 +2,7 @@
  * 任务摄入的唯一业务入口。
  *
  * 从一份 Agent 汇报中提取 active / recentlyEnded 视图，
- * 调用 diffTasks 生成状态变化，逐条执行 upsertTask / endTask 落库，
+ * 每轮先全量更新任务持久化，再调用 diffTasks 生成状态变化用于事件广播，
  * 并返回 TaskEvent[] 供上层广播。
  *
  * @module
@@ -23,17 +23,28 @@ export class TaskEngine {
       : [];
     const currTasks = [...currentReport.taskQueue.queued, ...currentReport.taskQueue.running];
     const recentlyEnded = currentReport.taskQueue.recentlyEnded ?? [];
+    const reportTimestamp = Math.floor(currentReport.timestamp);
+
+    const persistedTaskIds = new Set<string>();
+    for (const task of currTasks) {
+      taskDb.upsertTask(serverId, task);
+      taskDb.upsertTaskScheduleSnapshot(serverId, task, reportTimestamp);
+      persistedTaskIds.add(task.taskId);
+    }
+
+    for (const task of recentlyEnded) {
+      taskDb.upsertTask(serverId, task);
+      taskDb.upsertTaskScheduleSnapshot(serverId, task, reportTimestamp);
+      persistedTaskIds.add(task.taskId);
+    }
 
     const diffs = diffTasks(serverId, prevTasks, currTasks, recentlyEnded);
     const events: TaskEvent[] = [];
-    const nowSeconds = Math.floor(Date.now() / 1000);
 
     for (const diff of diffs) {
-      if (diff.eventType === 'ended') {
-        const finishedAt = diff.task.finishedAt ?? nowSeconds;
-        taskDb.endTask(diff.task.taskId, finishedAt, diff.task.exitCode ?? null, diff.task.status, diff.task.endReason ?? null);
-      } else {
+      if (diff.eventType === 'ended' && !persistedTaskIds.has(diff.task.taskId)) {
         taskDb.upsertTask(serverId, diff.task);
+        persistedTaskIds.add(diff.task.taskId);
       }
 
       events.push({

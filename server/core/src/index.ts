@@ -6,7 +6,7 @@ export { getDatabase, closeDatabase } from "./db/database.js";
 export { getAllServers, getServerById, getServerByAgentId, createServer, updateServer, deleteServer } from "./db/servers.js";
 export { saveSnapshot, deleteOldRecentSnapshots, getSnapshotHistory, getLatestSnapshot } from "./db/snapshots.js";
 export type { SnapshotWithGpus } from "./db/snapshots.js";
-export { upsertTask, endTask, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
+export { upsertTask, upsertTaskScheduleSnapshot, getTaskScheduleHistory as getPersistedTaskScheduleHistory, endTask, updateTaskPriority, updateTaskScheduleHistory } from "./db/tasks.js";
 export { getAlerts, getActiveAlerts, getAlertByKey, reconcileAlerts, silenceAlert, unsilenceAlert, batchSilenceAlerts, batchUnsilenceAlerts, deleteAlertsByServerId } from "./db/alerts.js";
 export { createSecurityEvent, findOpenSecurityEvent, listSecurityEvents, markSecurityEventSafe, unresolveSecurityEvent } from "./db/security-events.js";
 export type { SecurityEventInput, SecurityEventQuery } from "./db/security-events.js";
@@ -35,7 +35,7 @@ export { SnapshotScheduler } from "./ingest/snapshot-scheduler.js";
 export { TaskEngine } from "./task/engine.js";
 export { diffTasks } from "./task/differ.js";
 export type { TaskDiffResult } from "./task/differ.js";
-export { listTasks, getTask, countTasks, cancelTask, setPriority } from "./task/service.js";
+export { listTasks, listTasksForPrincipal, getTask, getTaskScheduleHistory, countTasks, countTasksForPrincipal, cancelTask, setPriority } from "./task/service.js";
 export type { TaskFilter } from "./task/service.js";
 export type { TaskEvent, TaskEventType } from "./task/events.js";
 

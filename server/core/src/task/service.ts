@@ -9,12 +9,13 @@
 import * as taskDb from '../db/tasks.js';
 import { AgentSessionRegistry } from '../node/registry.js';
 import { SERVER_COMMAND } from '../agent/protocol.js';
-import { TaskRecord } from '../types.js';
+import { Principal, ScheduleEvaluation, TaskRecord } from '../types.js';
 
 export interface TaskFilter {
   serverId?: string;
   status?: string;
   user?: string;
+  personId?: string;
   limit?: number;
   offset?: number;
 }
@@ -27,8 +28,28 @@ export function getTask(taskId: string): TaskRecord | undefined {
   return taskDb.getTaskById(taskId);
 }
 
+export function getTaskScheduleHistory(task: Pick<TaskRecord, 'id' | 'scheduleHistory'>, nowSeconds?: number): ScheduleEvaluation[] {
+  return taskDb.getTaskScheduleHistory(task.id, task.scheduleHistory, nowSeconds);
+}
+
 export function countTasks(filter?: TaskFilter): number {
   return taskDb.countTasks(filter);
+}
+
+export function listTasksForPrincipal(principal: Principal, filter?: Omit<TaskFilter, 'personId'>): TaskRecord[] {
+  if (principal.kind === 'admin') {
+    return listTasks(filter);
+  }
+
+  return listTasks({ ...filter, personId: principal.personId });
+}
+
+export function countTasksForPrincipal(principal: Principal, filter?: Omit<TaskFilter, 'personId'>): number {
+  if (principal.kind === 'admin') {
+    return countTasks(filter);
+  }
+
+  return countTasks({ ...filter, personId: principal.personId });
 }
 
 export function cancelTask(registry: AgentSessionRegistry, serverId: string, taskId: string): void {
