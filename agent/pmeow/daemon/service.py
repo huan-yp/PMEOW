@@ -315,6 +315,7 @@ class DaemonService:
                     self._last_per_gpu,
                     spec.require_gpu_count,
                     spec.require_vram_mb,
+                    require_vram_omitted=spec.require_vram_omitted,
                 )
                 if err is not None:
                     raise ValueError(err)
