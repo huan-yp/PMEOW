@@ -2,7 +2,7 @@
 
 Managed task reservations are authoritative (declared VRAM, not observed).
 Unmanaged activity is judged by historical peak within the sliding window.
-Tasks with require_vram_mb == 0 are exclusive and require fully idle GPUs.
+Tasks with omitted VRAM requirement are exclusive and require fully idle GPUs.
 """
 
 from __future__ import annotations
@@ -91,6 +91,8 @@ def validate_request_possible(
     per_gpu: list[PerGpuAllocationSummary],
     require_gpu_count: int,
     require_vram_mb: int,
+    *,
+    require_vram_omitted: bool,
 ) -> str | None:
     """Return an error message if the request can never fit, else None."""
     gpu_count = len(per_gpu)
@@ -98,7 +100,7 @@ def validate_request_possible(
         return (
             f"requested {require_gpu_count} GPUs but this node only has {gpu_count}"
         )
-    if require_vram_mb > 0:
+    if not require_vram_omitted and require_vram_mb > 0:
         capable = sum(
             1 for g in per_gpu
             if g.total_memory_mb * CAPACITY_FACTOR >= require_vram_mb
@@ -162,7 +164,7 @@ def _build_gpu_ledgers(
 
         # Exclusive owner: any pmeow task with declared_vram == 0, or pending exclusive
         has_exclusive = (
-            any(t.declared_vram_mb == 0 for t in gpu.pmeow_tasks)
+            any(t.require_vram_omitted for t in gpu.pmeow_tasks)
             or idx in exclusive_pending
         )
 
@@ -274,7 +276,7 @@ class QueueScheduler:
             ledger_snapshots = [l.to_snapshot_dict() for l in ledgers]
             current_free = {l.gpu_index: l.effective_free_mb for l in ledgers}
 
-            is_exclusive = task.require_vram_mb == 0
+            is_exclusive = task.require_vram_omitted
 
             if is_exclusive:
                 gpu_ids = self._try_exclusive(

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { ScheduleEvaluation, Task } from '../transport/types.js';
-import { formatVramGB } from '../utils/vram.js';
+import { formatTaskRequestedResources, formatVramGB } from '../utils/vram.js';
 import { useStore } from '../store/useStore.js';
 
 export default function TaskDetail() {
@@ -54,7 +54,10 @@ export default function TaskDetail() {
         <InfoCard label="状态" value={statusLabels[task.status] ?? task.status} />
         <InfoCard label="启动模式" value={task.launchMode} />
         <InfoCard label="优先级" value={String(task.priority)} />
-        <InfoCard label="请求 VRAM" value={`${task.requireVramMb} MB × ${task.requireGpuCount} GPU`} />
+        <InfoCard
+          label="请求 VRAM"
+          value={formatTaskRequestedResources(task.requireVramMb, task.requireVramOmitted, task.requireGpuCount)}
+        />
         <InfoCard label="PID" value={task.pid ? String(task.pid) : '—'} />
         <InfoCard label="退出码" value={task.exitCode !== null ? String(task.exitCode) : '—'} />
         <InfoCard label="结束原因" value={task.endReason ?? '—'} />
@@ -81,6 +84,7 @@ export default function TaskDetail() {
                 entry={entry}
                 fallbackRequestedGpuCount={task.requireGpuCount}
                 fallbackRequestedVramMb={task.requireVramMb}
+                fallbackRequestedVramOmitted={task.requireVramOmitted}
               />
             ))}
           </div>
@@ -136,10 +140,12 @@ function ScheduleHistoryCard({
   entry,
   fallbackRequestedGpuCount,
   fallbackRequestedVramMb,
+  fallbackRequestedVramOmitted,
 }: {
   entry: ScheduleEvaluation;
   fallbackRequestedGpuCount: number;
   fallbackRequestedVramMb: number;
+  fallbackRequestedVramOmitted: boolean;
 }) {
   const selectedGpuIds = parseGpuIdList(entry.detail, 'selected');
   const eligibleGpuIds = parseGpuIdList(entry.detail, 'eligible_now');
@@ -147,6 +153,7 @@ function ScheduleHistoryCard({
   const effectiveFree = extractEffectiveFreeSnapshot(entry.gpuSnapshot);
   const requestedGpuCount = getSnapshotNumber(entry.gpuSnapshot, 'requestedGpuCount') ?? fallbackRequestedGpuCount;
   const requestedVramMb = getSnapshotNumber(entry.gpuSnapshot, 'requestedVramMb') ?? fallbackRequestedVramMb;
+  const requestedVramOmitted = getSnapshotBoolean(entry.gpuSnapshot, 'requestedVramOmitted') ?? fallbackRequestedVramOmitted;
   const selectedGpuCount = getSnapshotNumber(entry.gpuSnapshot, 'selectedGpuCount') ?? selectedGpuIds.length;
   const eligibleNowCount = getSnapshotNumber(entry.gpuSnapshot, 'eligibleNowCount') ?? eligibleGpuIds.length;
   const eligibleSustainedCount = getSnapshotNumber(entry.gpuSnapshot, 'eligibleSustainedCount') ?? sustainedGpuIds.length;
@@ -165,7 +172,9 @@ function ScheduleHistoryCard({
           </span>
         </div>
         <div className="text-xs text-slate-400">
-          需要 {requestedGpuCount} 张 GPU，每张至少 {formatVramGB(requestedVramMb)}
+          {requestedVramOmitted
+            ? `需要 ${requestedGpuCount} 张 GPU，VRAM 未声明（独占）`
+            : `需要 ${requestedGpuCount} 张 GPU，每张至少 ${formatVramGB(requestedVramMb)}`}
         </div>
       </div>
 
@@ -269,6 +278,20 @@ function getSnapshotNumber(snapshot: Record<string, number>, key: string): numbe
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function getSnapshotBoolean(snapshot: Record<string, number>, key: string): boolean | null {
+  const value = snapshot[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  if (value === 1) {
+    return true;
+  }
+  if (value === 0) {
+    return false;
+  }
+  return null;
+}
+
 function extractEffectiveFreeSnapshot(snapshot: Record<string, number>) {
   return Object.entries(snapshot)
     .filter(([key, value]) => key.startsWith('effectiveFreeMb.gpu') && typeof value === 'number' && Number.isFinite(value))
@@ -279,6 +302,7 @@ function extractEffectiveFreeSnapshot(snapshot: Record<string, number>) {
     .filter((item) => Number.isInteger(item.gpuId))
     .sort((left, right) => left.gpuId - right.gpuId);
 }
+
 
 function resolveGpuDecisionState(
   gpuId: number,

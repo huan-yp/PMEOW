@@ -119,6 +119,7 @@ class TaskSpec:
     user: str
     require_vram_mb: int
     require_gpu_count: int = 1
+    require_vram_omitted: bool = False
     gpu_ids: Optional[list[int]] = None
     priority: int = 10
     argv: Optional[list[str]] = None
@@ -150,6 +151,7 @@ class TaskRecord:
     # Resource requirements
     require_vram_mb: int
     require_gpu_count: int
+    require_vram_omitted: bool = False
     gpu_ids: Optional[list[int]] = None  # user-requested GPU affinity
     priority: int = 10
     task_name: str = ""
@@ -210,6 +212,7 @@ class GpuTaskAllocation:
     gpu_index: int
     declared_vram_mb: int
     actual_vram_mb: float
+    require_vram_omitted: bool = False
     pid: Optional[int] = None
     user: Optional[str] = None
     command: Optional[str] = None
@@ -442,6 +445,7 @@ class TaskInfo:
     gpu_ids: Optional[list[int]]
     priority: int
     created_at: float
+    require_vram_omitted: bool = False
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     pid: Optional[int] = None

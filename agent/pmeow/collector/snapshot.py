@@ -198,7 +198,7 @@ def _build_gpu_cards(
                 task_id=task.task_id,
                 declared_vram_mb=(
                     int(round(card.memory_total_mb))
-                    if task.declared_vram_mb == 0
+                    if task.require_vram_omitted
                     else task.declared_vram_mb
                 ),
                 pid=task.pid,
@@ -208,7 +208,7 @@ def _build_gpu_cards(
             )
             for task in pmeow_tasks
         ]
-        exclusive_task_present = any(task.declared_vram_mb == 0 for task in pmeow_tasks)
+        exclusive_task_present = any(task.require_vram_omitted for task in pmeow_tasks)
 
         managed_reserved_mb = sum(task.declared_vram_mb for task in reported_task_allocations)
         unmanaged_actual_mb = (

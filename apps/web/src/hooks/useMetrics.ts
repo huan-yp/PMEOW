@@ -140,6 +140,7 @@ function toTaskRecord(task: TaskInfo, serverId: string): Task {
     user: task.user,
     launchMode: task.launchMode,
     requireVramMb: task.requireVramMb,
+    requireVramOmitted: task.requireVramOmitted,
     requireGpuCount: task.requireGpuCount,
     gpuIds: task.gpuIds,
     priority: task.priority,

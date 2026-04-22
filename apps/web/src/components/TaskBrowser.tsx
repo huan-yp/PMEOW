@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
 import type { Task } from '../transport/types.js';
 import { useStore } from '../store/useStore.js';
+import { formatTaskRequestedVram } from '../utils/vram.js';
 
 export function TaskBrowser({
   serverId,
@@ -122,7 +123,7 @@ export function TaskBrowser({
                     <StatusBadge status={task.status} />
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.priority}</td>
-                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.requireVramMb} MB</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{formatTaskRequestedVram(task.requireVramMb, task.requireVramOmitted)}</td>
                   <td className="py-2.5 px-3 text-xs leading-5 text-slate-500 whitespace-nowrap">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
                 </tr>
               );

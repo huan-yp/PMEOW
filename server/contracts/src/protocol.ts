@@ -57,6 +57,7 @@ interface WireTaskInfo {
   user: string;
   launchMode: 'background' | 'foreground';
   requireVramMB: number;
+  requireVramOmitted?: boolean;
   requireGpuCount: number;
   gpuIds: number[] | null;
   priority: number;
@@ -192,10 +193,12 @@ function isTaskInfo(task: unknown): task is WireTaskInfo {
     && typeof record.user === 'string'
     && typeof record.launchMode === 'string'
     && typeof record.requireVramMB === 'number'
+    && (record.requireVramOmitted === undefined || typeof record.requireVramOmitted === 'boolean')
     && typeof record.requireGpuCount === 'number'
     && typeof record.priority === 'number'
     && typeof record.createdAt === 'number';
 }
+
 
 function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queued'][number] {
   return {
@@ -206,6 +209,7 @@ function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queu
     user: task.user,
     launchMode: task.launchMode,
     requireVramMb: task.requireVramMB,
+    requireVramOmitted: task.requireVramOmitted === true,
     requireGpuCount: task.requireGpuCount,
     gpuIds: task.gpuIds,
     priority: task.priority,

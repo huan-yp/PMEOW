@@ -107,6 +107,7 @@ function initSchema(db: Database.Database): void {
       user TEXT NOT NULL,
       launch_mode TEXT NOT NULL,
       require_vram_mb INTEGER NOT NULL,
+      require_vram_omitted INTEGER NOT NULL DEFAULT 0,
       require_gpu_count INTEGER NOT NULL,
       gpu_ids TEXT,
       priority INTEGER NOT NULL DEFAULT 10,

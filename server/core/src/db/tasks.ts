@@ -20,10 +20,10 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
   const db = getDatabase();
   db.prepare(
     `INSERT INTO tasks (
-      id, server_id, status, command, cwd, user, launch_mode, require_vram_mb, require_gpu_count,
+      id, server_id, status, command, cwd, user, launch_mode, require_vram_mb, require_vram_omitted, require_gpu_count,
       gpu_ids, priority, created_at, started_at, finished_at, pid, exit_code, assigned_gpus,
       declared_vram_per_gpu, schedule_history, end_reason
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       server_id = excluded.server_id,
       status = excluded.status,
@@ -35,7 +35,8 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
       declared_vram_per_gpu = excluded.declared_vram_per_gpu,
       schedule_history = excluded.schedule_history,
       priority = excluded.priority,
-      end_reason = excluded.end_reason`
+      end_reason = excluded.end_reason,
+      require_vram_omitted = excluded.require_vram_omitted`
   ).run(
     task.taskId,
     serverId,
@@ -45,6 +46,7 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
     task.user,
     task.launchMode,
     task.requireVramMb,
+    task.requireVramOmitted ? 1 : 0,
     task.requireGpuCount,
     task.gpuIds ? JSON.stringify(task.gpuIds) : null,
     task.priority,
@@ -235,6 +237,7 @@ function mapTaskRow(r: Record<string, unknown>): TaskRecord {
     user: r.user as string,
     launchMode: r.launch_mode as string,
     requireVramMb: r.require_vram_mb as number,
+    requireVramOmitted: Boolean(r.require_vram_omitted),
     requireGpuCount: r.require_gpu_count as number,
     gpuIds: r.gpu_ids as string | null,
     priority: r.priority as number,

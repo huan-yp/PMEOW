@@ -172,6 +172,7 @@ def _to_task_dict(rec: Any, *, log_path: str | None = None) -> dict:
         "cwd": rec.cwd,
         "user": rec.user,
         "require_vram_mb": rec.require_vram_mb,
+        "require_vram_omitted": rec.require_vram_omitted,
         "require_gpu_count": rec.require_gpu_count,
         "argv": rec.argv,
         "launch_mode": rec.launch_mode.value,
@@ -190,11 +191,15 @@ def _to_task_dict(rec: Any, *, log_path: str | None = None) -> dict:
 
 def _submit_task(svc: DaemonService, params: dict) -> dict:
     from pmeow.models import TaskLaunchMode
+    require_vram_omitted = params.get("require_vram_omitted")
+    if require_vram_omitted is None:
+        require_vram_omitted = "require_vram_mb" not in params
     spec = TaskSpec(
         command=params["command"],
         cwd=params.get("cwd", "."),
         user=params.get("user", "unknown"),
         require_vram_mb=params.get("require_vram_mb", 0),
+        require_vram_omitted=bool(require_vram_omitted),
         require_gpu_count=params.get("require_gpu_count", 1),
         gpu_ids=params.get("gpu_ids"),
         priority=params.get("priority", 10),

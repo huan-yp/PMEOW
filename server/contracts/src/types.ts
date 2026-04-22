@@ -116,6 +116,7 @@ export interface TaskInfo {
   user: string;
   launchMode: 'background' | 'foreground';
   requireVramMb: number;
+  requireVramOmitted: boolean;
   requireGpuCount: number;
   gpuIds: number[] | null;
   priority: number;
@@ -216,6 +217,7 @@ export interface TaskRecord {
   launchMode: string;
   requireVramMb: number;
   requireGpuCount: number;
+  requireVramOmitted: boolean;
   gpuIds: string | null;  // JSON
   priority: number;
   createdAt: number;

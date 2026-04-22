@@ -24,12 +24,13 @@ def test_detect_foreground_invocation_splits_flags_and_command(tmp_path):
 
     assert invocation is not None
     assert invocation.require_vram_mb == 10240
+    assert invocation.require_vram_omitted is False
     assert invocation.require_gpu_count == 2
     assert invocation.task_name == "nightly-train"
     assert invocation.argv == ["python", "train.py", "--epochs", "3"]
 
 
-def test_detect_foreground_invocation_shell_command():
+def test_detect_foreground_invocation_defaults_to_omitted_vram():
     invocation = detect_foreground_invocation([
         "--gpus=1",
         "sh",
@@ -37,6 +38,8 @@ def test_detect_foreground_invocation_shell_command():
     ])
 
     assert invocation is not None
+    assert invocation.require_vram_mb == 0
+    assert invocation.require_vram_omitted is True
     assert invocation.argv == ["sh", "run.sh"]
 
 
@@ -93,6 +96,7 @@ def test_run_foreground_invocation_submits_with_explicit_argv(monkeypatch, tmp_p
         ForegroundInvocation(
             socket_path="socket",
             require_vram_mb=0,
+            require_vram_omitted=True,
             require_gpu_count=1,
             priority=10,
             task_name="nightly-train",
@@ -108,3 +112,5 @@ def test_run_foreground_invocation_submits_with_explicit_argv(monkeypatch, tmp_p
     assert params["argv"] == ["python", "train.py", "--epochs", "3"]
     assert params["launch_mode"] == "foreground"
     assert params["task_name"] == "nightly-train"
+    assert params["require_vram_mb"] == 0
+    assert params["require_vram_omitted"] is True

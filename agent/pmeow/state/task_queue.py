@@ -83,6 +83,7 @@ def _task_to_info(task: TaskRecord) -> TaskInfo:
         launch_mode=task.launch_mode.value,
         require_vram_mb=task.require_vram_mb,
         require_gpu_count=task.require_gpu_count,
+        require_vram_omitted=task.require_vram_omitted,
         gpu_ids=task.gpu_ids,
         priority=task.priority,
         created_at=task.created_at,
@@ -204,6 +205,7 @@ class TaskQueue:
             launch_mode=spec.launch_mode,
             require_vram_mb=spec.require_vram_mb,
             require_gpu_count=spec.require_gpu_count,
+            require_vram_omitted=spec.require_vram_omitted,
             gpu_ids=spec.gpu_ids,
             priority=spec.priority,
             task_name=spec.task_name or "",
@@ -232,10 +234,10 @@ class TaskQueue:
         task.assigned_gpus = gpu_ids
         task.reserved_at = time.time()
         task.attach_deadline = attach_deadline
-        if task.require_vram_mb > 0:
-            task.declared_vram_per_gpu = task.require_vram_mb
-        else:
+        if task.require_vram_omitted:
             task.declared_vram_per_gpu = 0
+        else:
+            task.declared_vram_per_gpu = task.require_vram_mb
         self.reserved[task_id] = task
         return task
 

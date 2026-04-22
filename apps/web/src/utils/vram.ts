@@ -27,3 +27,18 @@ export function formatVramGB(megabytes: number): string {
 export function formatVramPairGB(usedMB: number, totalMB: number): string {
   return formatMemoryPairGB(usedMB, totalMB);
 }
+
+export function formatTaskRequestedVram(requireVramMb: number, requireVramOmitted: boolean): string {
+  if (requireVramOmitted) {
+    return '未声明（独占）';
+  }
+  return `${requireVramMb} MB`;
+}
+
+export function formatTaskRequestedResources(
+  requireVramMb: number,
+  requireVramOmitted: boolean,
+  requireGpuCount: number,
+): string {
+  return `${formatTaskRequestedVram(requireVramMb, requireVramOmitted)} × ${requireGpuCount} GPU`;
+}

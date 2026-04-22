@@ -107,10 +107,14 @@ export function TaskRow(props: {
 }
 
 export function QueueTaskRow(props: { task: TaskInfo }) {
+  const requestedVramText = props.task.requireVramOmitted
+    ? '未声明（独占）'
+    : `${props.task.requireVramMb} MB`;
+
   return (
     <View style={styles.eventRow}>
       <Text style={styles.eventTitle}>{formatQueueTaskStatus(props.task.status)} · {props.task.command}</Text>
-      <Text style={styles.eventMeta}>{props.task.user} · VRAM {props.task.requireVramMb}MB · {formatTimestamp(props.task.createdAt)}</Text>
+      <Text style={styles.eventMeta}>{props.task.user} · VRAM {requestedVramText} · {formatTimestamp(props.task.createdAt)}</Text>
     </View>
   );
 }

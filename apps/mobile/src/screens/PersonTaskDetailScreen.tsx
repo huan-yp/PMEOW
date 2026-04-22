@@ -26,7 +26,10 @@ function formatTaskDetailError(error: unknown): string {
 }
 
 function formatRequestedResources(task: Task): string {
-  return `${task.requireVramMb} MB × ${task.requireGpuCount} GPU`;
+  const requestedVramText = task.requireVramOmitted
+    ? '未声明（独占）'
+    : `${task.requireVramMb} MB`;
+  return `${requestedVramText} × ${task.requireGpuCount} GPU`;
 }
 
 function formatGpuList(values: number[] | null): string {
