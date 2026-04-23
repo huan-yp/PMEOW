@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import Svg, { Circle, G, Line, Polyline } from 'react-native-svg';
+import Svg, { Circle, ClipPath, Defs, G, Line, Polyline, Rect } from 'react-native-svg';
 import type { GpuCardReport, TaskInfo, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent } from '../app/formatters';
 import {
@@ -27,6 +27,24 @@ import { styles } from '../app/styles';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function mixColor(color: string, target: string, amount: number): string {
+  const source = color.replace('#', '');
+  const destination = target.replace('#', '');
+  if (source.length !== 6 || destination.length !== 6) {
+    return color;
+  }
+
+  const red = Math.round(parseInt(source.slice(0, 2), 16) * (1 - amount) + parseInt(destination.slice(0, 2), 16) * amount);
+  const green = Math.round(parseInt(source.slice(2, 4), 16) * (1 - amount) + parseInt(destination.slice(2, 4), 16) * amount);
+  const blue = Math.round(parseInt(source.slice(4, 6), 16) * (1 - amount) + parseInt(destination.slice(4, 6), 16) * amount);
+
+  return `rgb(${red}, ${green}, ${blue})`;
+}
+
+function getMutedOwnerColor(baseColor: string): string {
+  return mixColor(baseColor, '#d9e1ec', 0.35);
 }
 
 const CHART_AXIS_LEFT = 2;
@@ -81,6 +99,71 @@ function ThresholdUsageBar(props: { usagePercent: number | undefined }) {
   return (
     <View style={styles.thresholdTrack}>
       <View style={[styles.thresholdFillMask, { width: `${fillPercent}%`, backgroundColor: palette.accentColor }]} />
+    </View>
+  );
+}
+
+interface AllocationSegment {
+  key: string;
+  color: string;
+  percent: number;
+  kind: 'managed' | 'unmanaged' | 'unknown' | 'free';
+}
+
+function AllocationTrack(props: { gpuIndex: number; segments: AllocationSegment[] }) {
+  const trackHeight = 14;
+  let cursor = 0;
+  const segments = props.segments.map((segment) => {
+    const x = cursor;
+    cursor += segment.percent;
+    return {
+      ...segment,
+      x,
+      clipId: `gpu-${props.gpuIndex}-${segment.key.replace(/[^a-zA-Z0-9_-]/g, '-')}-clip`,
+    };
+  });
+
+  return (
+    <View style={styles.allocationTrack}>
+      <Svg width="100%" height={trackHeight} viewBox={`0 0 100 ${trackHeight}`} preserveAspectRatio="none">
+        <Defs>
+          {segments
+            .filter((segment) => segment.kind === 'managed')
+            .map((segment) => (
+              <ClipPath key={segment.clipId} id={segment.clipId}>
+                <Rect x={segment.x} y={0} width={segment.percent} height={trackHeight} />
+              </ClipPath>
+            ))}
+        </Defs>
+        {segments.map((segment) => {
+          const width = segment.percent;
+          const currentX = segment.x;
+          const stripeColor = segment.kind === 'managed' ? mixColor(segment.color, '#ffffff', 0.35) : segment.color;
+
+          return (
+            <G key={`${props.gpuIndex}-${segment.key}`}>
+              <Rect x={currentX} y={0} width={width} height={trackHeight} fill={segment.color} />
+              {segment.kind === 'managed'
+                ? Array.from({ length: Math.ceil((width + trackHeight) / 5) + 1 }).map((_, index) => {
+                    const lineX = currentX - trackHeight + (index * 5);
+                    return (
+                      <Line
+                        key={`${segment.key}-stripe-${index}`}
+                        x1={lineX}
+                        y1={trackHeight}
+                        x2={lineX + trackHeight}
+                        y2={0}
+                        stroke={stripeColor}
+                        strokeWidth={2}
+                        clipPath={`url(#${segment.clipId})`}
+                      />
+                    );
+                  })
+                : null}
+            </G>
+          );
+        })}
+      </Svg>
     </View>
   );
 }
@@ -377,14 +460,37 @@ export function VramDistributionSection(props: {
       {props.gpuCards.map((gpu) => {
         const allocation = buildGpuOwnerGroups(gpu, props.tasks, false);
         const denominator = Math.max(gpu.memoryTotalMb, allocation.totalDisplayedMb, 1);
-        const segments = [
-          ...allocation.groups.map((group) => ({
-            key: group.key,
-            color: group.baseColor,
-            percent: ((group.managedReservedMb + group.unmanagedMb) / denominator) * 100,
-          })),
-          ...(allocation.unknownMb > 0 ? [{ key: 'unknown', color: UNKNOWN_COLOR, percent: (allocation.unknownMb / denominator) * 100 }] : []),
-          ...(allocation.freeMb > 0 ? [{ key: 'free', color: FREE_COLOR, percent: (allocation.freeMb / denominator) * 100 }] : []),
+        const segments: AllocationSegment[] = [
+          ...allocation.groups.flatMap((group) => [
+            ...(group.managedReservedMb > 0
+              ? [{
+                key: `${group.key}:managed`,
+                color: group.baseColor,
+                percent: (group.managedReservedMb / denominator) * 100,
+                kind: 'managed' as const,
+              }]
+              : []),
+            ...(group.unmanagedMb > 0
+              ? [{
+                key: `${group.key}:unmanaged`,
+                color: getMutedOwnerColor(group.baseColor),
+                percent: (group.unmanagedMb / denominator) * 100,
+                kind: 'unmanaged' as const,
+              }]
+              : []),
+          ]),
+          ...(allocation.unknownMb > 0 ? [{
+            key: 'unknown',
+            color: UNKNOWN_COLOR,
+            percent: (allocation.unknownMb / denominator) * 100,
+            kind: 'unknown' as const,
+          }] : []),
+          ...(allocation.freeMb > 0 ? [{
+            key: 'free',
+            color: FREE_COLOR,
+            percent: (allocation.freeMb / denominator) * 100,
+            kind: 'free' as const,
+          }] : []),
         ].filter((item) => item.percent > 0);
 
         return (
@@ -396,11 +502,7 @@ export function VramDistributionSection(props: {
             <Text style={styles.detailPanelMeta}>
               调度可用 {formatMemoryGb(gpu.effectiveFreeMb)} · 托管预留 {formatMemoryGb(gpu.managedReservedMb)}
             </Text>
-            <View style={styles.allocationTrack}>
-              {segments.map((segment) => (
-                <View key={`${gpu.index}-${segment.key}`} style={[styles.allocationSegment, { width: `${segment.percent}%`, backgroundColor: segment.color }]} />
-              ))}
-            </View>
+            <AllocationTrack gpuIndex={gpu.index} segments={segments} />
           </View>
         );
       })}
