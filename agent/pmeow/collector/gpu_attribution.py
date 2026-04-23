@@ -23,6 +23,7 @@ from pmeow.models import (
     PerGpuAllocationSummary,
     TaskRecord,
     UserGpuUsageSummary,
+    VramMode,
 )
 
 
@@ -107,10 +108,32 @@ def calculate_effective_free(
     return max(0.0, free)
 
 
-def _declared_vram_for_task(task: TaskRecord) -> int:
+def _reclaimed_vram_for_gpu(task: TaskRecord, gpu_index: int) -> Optional[int]:
+    reclaimed = task.auto_reclaimed_vram_by_gpu_mb
+    if reclaimed is None:
+        return None
+    return reclaimed.get(gpu_index)
+
+
+def _is_exclusive_active_for_gpu(task: TaskRecord, gpu_index: int) -> bool:
+    """Return whether *task* still owns *gpu_index* exclusively."""
+    if task.vram_mode != VramMode.exclusive_auto:
+        return False
+    reclaimed = task.auto_reclaimed_vram_by_gpu_mb
+    if reclaimed is None:
+        return True
+    return reclaimed.get(gpu_index) is None
+
+
+def _declared_vram_for_task(task: TaskRecord, gpu_index: int) -> int:
     """Return the per-GPU reservation that should be exposed to the scheduler."""
+    reclaimed_mb = _reclaimed_vram_for_gpu(task, gpu_index)
+    if reclaimed_mb is not None:
+        return reclaimed_mb
     if task.declared_vram_per_gpu is not None:
         return task.declared_vram_per_gpu
+    if task.requested_vram_mb is not None:
+        return task.requested_vram_mb
     return task.require_vram_mb
 
 
@@ -159,9 +182,10 @@ def attribute_gpu_processes(
             task_allocs[gpu_idx].append(GpuTaskAllocation(
                 task_id=task.id,
                 gpu_index=gpu_idx,
-                declared_vram_mb=_declared_vram_for_task(task),
+                declared_vram_mb=_declared_vram_for_task(task, gpu_idx),
                 actual_vram_mb=proc.used_memory_mb,
-                require_vram_omitted=task.require_vram_omitted,
+                vram_mode=task.vram_mode,
+                exclusive_active=_is_exclusive_active_for_gpu(task, gpu_idx),
                 pid=proc.pid,
                 user=username_for_task,
                 command=cmdline_for_task,
@@ -206,16 +230,17 @@ def attribute_gpu_processes(
         if not assigned_gpu_ids:
             continue
 
-        declared_vram_mb = _declared_vram_for_task(task)
         for gpu_idx in assigned_gpu_ids:
             if (task.id, gpu_idx) in observed_task_gpu_pairs:
                 continue
+            declared_vram_mb = _declared_vram_for_task(task, gpu_idx)
             task_allocs[gpu_idx].append(GpuTaskAllocation(
                 task_id=task.id,
                 gpu_index=gpu_idx,
                 declared_vram_mb=declared_vram_mb,
                 actual_vram_mb=0.0,
-                require_vram_omitted=task.require_vram_omitted,
+                vram_mode=task.vram_mode,
+                exclusive_active=_is_exclusive_active_for_gpu(task, gpu_idx),
                 pid=task.pid,
                 user=task.user,
                 command=task.command,

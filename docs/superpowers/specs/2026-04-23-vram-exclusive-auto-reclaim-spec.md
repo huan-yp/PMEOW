@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-当前仓库已经部分区分“未填写 VRAM”和“显式填写 0”，实现方式是 `require_vram_mb + require_vram_omitted`。这解决了部分调度歧义，但还存在三个问题：
+当前仓库已经部分区分“未填写 VRAM”和“显式填写 0”，但语义仍散落在旧数字字段和派生布尔字段中。这解决了部分调度歧义，但还存在三个问题：
 
 - 语义仍分散在旧数字字段和布尔字段中，无法直接表达“独占自动模式”和“共享模式”。
 - 独占任务启动后没有观察窗口，也没有一次性回收到共享预留的机制。
@@ -37,7 +37,7 @@ vramMode: VramMode;
 | 显式 `--vram 0` | `0` | `shared` | 共享调度，单卡预留 0 |
 | 显式 `--vram N` | `N` | `shared` | 共享调度，单卡预留 N |
 
-旧字段 `require_vram_mb`、`require_vram_omitted` 可以在迁移期保留为派生或传输兼容字段，但不能作为调度、采集、展示、日志的主判断依据。
+旧 omit 布尔字段不再保留；`require_vram_mb` 仅作为数值型派生字段保留，不能作为调度、采集、展示、日志的主判断依据。
 
 ## 4. 数据模型
 
@@ -127,7 +127,7 @@ else:
 
 - `agent/pmeow/queue/scheduler.py`
 
-调度器不再从 `require_vram_mb == 0`、`require_vram_omitted`、`declared_vram_mb == 0` 推导独占。
+调度器不再从 `require_vram_mb == 0` 或 `declared_vram_mb == 0` 推导独占。
 
 ### 5.4 采集与账本
 
@@ -214,12 +214,10 @@ export type VramMode = 'exclusive_auto' | 'shared';
 `server/contracts/src/protocol.ts` normalize 后透传新字段。若新 agent 未提供字段，按当前新规则兜底推导，但不做旧语义兼容：
 
 ```text
-if requireVramOmitted == true:
+if vramMode == exclusive_auto:
   requestedVramMb = null
-  vramMode = exclusive_auto
 else:
-  requestedVramMb = requireVramMb
-  vramMode = shared
+  requestedVramMb = requireVramMb when requestedVramMb is missing
 ```
 
 这里的兜底只是为了避免缺字段崩溃，不引入旧 `0 == exclusive` 解释。
@@ -242,12 +240,7 @@ auto_reclaim_done INTEGER NOT NULL DEFAULT 0;
 迁移规则：
 
 ```text
-if require_vram_omitted == 1:
-  requested_vram_mb = NULL
-  vram_mode = exclusive_auto
-else:
-  requested_vram_mb = require_vram_mb
-  vram_mode = shared
+不做任务表迁移。上线时直接删除现有 SQLite 数据库文件，由新 schema 重新创建。
 ```
 
 不检查创建时间，不引入版本切点，不保留旧 `require_vram_mb=0 => exclusive`。

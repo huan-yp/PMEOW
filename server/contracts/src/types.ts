@@ -108,6 +108,8 @@ export interface GpuCardReport {
   unknownProcesses: { pid: number; vramMb: number }[];
 }
 
+export type VramMode = 'exclusive_auto' | 'shared';
+
 export interface TaskInfo {
   taskId: string;
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'abnormal';
@@ -116,7 +118,8 @@ export interface TaskInfo {
   user: string;
   launchMode: 'background' | 'foreground';
   requireVramMb: number;
-  requireVramOmitted: boolean;
+  requestedVramMb: number | null;
+  vramMode: VramMode;
   requireGpuCount: number;
   gpuIds: number[] | null;
   priority: number;
@@ -128,13 +131,17 @@ export interface TaskInfo {
   endReason: string | null;
   assignedGpus: number[] | null;
   declaredVramPerGpu: number | null;
+  autoObserveWindowSec: number | null;
+  autoPeakVramByGpuMb: Record<string, number> | null;
+  autoReclaimedVramByGpuMb: Record<string, number | null> | null;
+  autoReclaimDone: boolean;
   scheduleHistory: ScheduleEvaluation[];
 }
 
 export interface ScheduleEvaluation {
   timestamp: number;
   result: 'scheduled' | 'blocked_by_priority' | 'insufficient_gpu' | 'sustained_window_not_met';
-  gpuSnapshot: Record<string, number>;
+  gpuSnapshot: Record<string, unknown>;
   detail: string;
 }
 
@@ -216,8 +223,9 @@ export interface TaskRecord {
   user: string;
   launchMode: string;
   requireVramMb: number;
+  requestedVramMb: number | null;
+  vramMode: VramMode;
   requireGpuCount: number;
-  requireVramOmitted: boolean;
   gpuIds: string | null;  // JSON
   priority: number;
   createdAt: number;
@@ -227,6 +235,10 @@ export interface TaskRecord {
   exitCode: number | null;
   assignedGpus: string | null;  // JSON
   declaredVramPerGpu: number | null;
+  autoObserveWindowSec: number | null;
+  autoPeakVramByGpuMb: Record<string, number> | null;
+  autoReclaimedVramByGpuMb: Record<string, number | null> | null;
+  autoReclaimDone: boolean;
   scheduleHistory: string | null;  // JSON
   endReason: string | null;
 }

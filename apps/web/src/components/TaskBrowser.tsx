@@ -123,7 +123,7 @@ export function TaskBrowser({
                     <StatusBadge status={task.status} />
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.priority}</td>
-                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{formatTaskRequestedVram(task.requireVramMb, task.requireVramOmitted)}</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{formatTaskRequestedVram(task)}</td>
                   <td className="py-2.5 px-3 text-xs leading-5 text-slate-500 whitespace-nowrap">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
                 </tr>
               );

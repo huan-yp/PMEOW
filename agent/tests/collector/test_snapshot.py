@@ -5,6 +5,7 @@ from pmeow.collector.snapshot import _build_gpu_cards
 from pmeow.models import (
     GpuTaskAllocation,
     PerGpuAllocationSummary,
+    VramMode,
 )
 
 
@@ -32,7 +33,8 @@ def test_build_gpu_cards_treats_zero_vram_task_as_full_gpu_reservation() -> None
                         gpu_index=1,
                         declared_vram_mb=0,
                         actual_vram_mb=4300.0,
-                        require_vram_omitted=True,
+                        vram_mode=VramMode.exclusive_auto,
+                        exclusive_active=True,
                     )
                 ],
                 user_processes=[],

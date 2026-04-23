@@ -35,6 +35,7 @@ import type {
   TaskRecord,
   UnifiedReport,
   UserResourceSummary,
+  VramMode,
 } from '@pmeow/server-contracts';
 
 // Re-export types that frontends consume
@@ -65,6 +66,7 @@ export type {
   TaskInfo,
   UnifiedReport,
   UserResourceSummary,
+  VramMode,
 } from '@pmeow/server-contracts';
 
 // Re-export boundary constants

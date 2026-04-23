@@ -26,10 +26,42 @@ function formatTaskDetailError(error: unknown): string {
 }
 
 function formatRequestedResources(task: Task): string {
-  const requestedVramText = task.requireVramOmitted
-    ? '未声明（独占）'
-    : `${task.requireVramMb} MB`;
+  const mode = task.vramMode;
+  const requested = task.requestedVramMb ?? (mode === 'exclusive_auto' ? null : task.requireVramMb);
+  const requestedVramText = mode === 'exclusive_auto'
+    ? '独占（自动观察）'
+    : requested === 0
+      ? '0 MB（共享 / 不预留）'
+      : `${requested ?? 0} MB（共享）`;
   return `${requestedVramText} × ${task.requireGpuCount} GPU`;
+}
+
+function formatPerGpuVramMap(values: Record<string, number> | null | undefined): string {
+  if (!values || Object.keys(values).length === 0) {
+    return '—';
+  }
+  return Object.entries(values)
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([gpuId, value]) => `GPU ${gpuId}: ${value} MB`)
+    .join('；');
+}
+
+function formatReclaimStatus(task: Task): string {
+  const mode = task.vramMode;
+  if (mode !== 'exclusive_auto') {
+    return '不适用';
+  }
+  if (!task.autoReclaimDone) {
+    return '观察中';
+  }
+  const values = task.autoReclaimedVramByGpuMb;
+  if (!values || Object.keys(values).length === 0) {
+    return '未生成回收结果，保持独占';
+  }
+  return Object.entries(values)
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([gpuId, value]) => (value == null ? `GPU ${gpuId}: 未回收，保持独占` : `GPU ${gpuId}: 已回收至 ${value} MB`))
+    .join('；');
 }
 
 function formatGpuList(values: number[] | null): string {
@@ -157,6 +189,10 @@ export function PersonTaskDetailScreen(props: {
             <View style={styles.panelStack}>
               <DetailField label="状态" value={formatTaskStatus(task.status)} />
               <DetailField label="请求资源" value={formatRequestedResources(task)} />
+              <DetailField label="VRAM 模式" value={task.vramMode} />
+              <DetailField label="观察窗口" value={task.autoObserveWindowSec == null ? null : `${task.autoObserveWindowSec} 秒`} />
+              <DetailField label="观察峰值" value={formatPerGpuVramMap(task.autoPeakVramByGpuMb)} />
+              <DetailField label="回收状态" value={formatReclaimStatus(task)} />
               <DetailField label="启动模式" value={task.launchMode} />
               <DetailField label="优先级" value={task.priority} />
               <DetailField label="指定 GPU" value={formatGpuList(task.gpuIds)} />

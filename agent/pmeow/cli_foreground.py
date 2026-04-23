@@ -14,11 +14,12 @@ from typing import BinaryIO
 class ForegroundInvocation:
     socket_path: str | None
     require_vram_mb: int
-    require_vram_omitted: bool
     require_gpu_count: int
     priority: int
     task_name: str | None
     argv: list[str]
+    requested_vram_mb: int | None = None
+    vram_mode: str = "shared"
 
 
 def parse_vram_mb(value: str) -> int:
@@ -57,7 +58,8 @@ def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None
 
     socket_path: str | None = None
     require_vram_mb = 0
-    require_vram_omitted = True
+    requested_vram_mb: int | None = None
+    vram_mode = "exclusive_auto"
     require_gpu_count = 1
     priority = 10
     task_name: str | None = None
@@ -73,10 +75,12 @@ def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None
             if index >= len(argv):
                 raise SystemExit("error: --vram requires a value")
             require_vram_mb = parse_vram_mb(argv[index])
-            require_vram_omitted = False
+            requested_vram_mb = require_vram_mb
+            vram_mode = "shared"
         elif token.startswith("--vram="):
             require_vram_mb = parse_vram_mb(token.split("=", 1)[1])
-            require_vram_omitted = False
+            requested_vram_mb = require_vram_mb
+            vram_mode = "shared"
         elif token == "--gpus":
             index += 1
             if index >= len(argv):
@@ -119,7 +123,8 @@ def detect_foreground_invocation(argv: list[str]) -> ForegroundInvocation | None
             return ForegroundInvocation(
                 socket_path=socket_path,
                 require_vram_mb=require_vram_mb,
-                require_vram_omitted=require_vram_omitted,
+                requested_vram_mb=requested_vram_mb,
+                vram_mode=vram_mode,
                 require_gpu_count=require_gpu_count,
                 priority=priority,
                 task_name=task_name,
@@ -162,7 +167,8 @@ def run_foreground_invocation(
         "cwd": os.getcwd(),
         "user": os.environ.get("USER") or os.environ.get("USERNAME", "unknown"),
         "require_vram_mb": invocation.require_vram_mb,
-        "require_vram_omitted": invocation.require_vram_omitted,
+        "requested_vram_mb": invocation.requested_vram_mb,
+        "vram_mode": invocation.vram_mode,
         "require_gpu_count": invocation.require_gpu_count,
         "priority": invocation.priority,
         "argv": argv,

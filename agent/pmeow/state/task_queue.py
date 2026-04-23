@@ -83,7 +83,8 @@ def _task_to_info(task: TaskRecord) -> TaskInfo:
         launch_mode=task.launch_mode.value,
         require_vram_mb=task.require_vram_mb,
         require_gpu_count=task.require_gpu_count,
-        require_vram_omitted=task.require_vram_omitted,
+        requested_vram_mb=task.requested_vram_mb,
+        vram_mode=task.vram_mode.value,
         gpu_ids=task.gpu_ids,
         priority=task.priority,
         created_at=task.created_at,
@@ -94,6 +95,10 @@ def _task_to_info(task: TaskRecord) -> TaskInfo:
         end_reason=task.end_reason.value if task.end_reason else None,
         assigned_gpus=task.assigned_gpus,
         declared_vram_per_gpu=task.declared_vram_per_gpu,
+        auto_observe_window_sec=task.auto_observe_window_sec,
+        auto_peak_vram_by_gpu_mb=task.auto_peak_vram_by_gpu_mb,
+        auto_reclaimed_vram_by_gpu_mb=task.auto_reclaimed_vram_by_gpu_mb,
+        auto_reclaim_done=task.auto_reclaim_done,
         schedule_history=[
             {
                 "timestamp": e.timestamp,
@@ -196,6 +201,11 @@ class TaskQueue:
 
     def submit(self, spec: TaskSpec) -> TaskRecord:
         """Create a new task from spec and add to queued."""
+        requested_vram_mb = (
+            None
+            if spec.vram_mode.value == "exclusive_auto"
+            else (spec.requested_vram_mb if spec.requested_vram_mb is not None else spec.require_vram_mb)
+        )
         task = TaskRecord(
             id=str(uuid.uuid4()),
             status=TaskStatus.queued,
@@ -203,9 +213,11 @@ class TaskQueue:
             cwd=spec.cwd,
             user=spec.user,
             launch_mode=spec.launch_mode,
-            require_vram_mb=spec.require_vram_mb,
+            require_vram_mb=requested_vram_mb if requested_vram_mb is not None else 0,
             require_gpu_count=spec.require_gpu_count,
-            require_vram_omitted=spec.require_vram_omitted,
+            requested_vram_mb=requested_vram_mb,
+            vram_mode=spec.vram_mode,
+            auto_observe_window_sec=spec.auto_observe_window_sec,
             gpu_ids=spec.gpu_ids,
             priority=spec.priority,
             task_name=spec.task_name or "",
@@ -234,10 +246,10 @@ class TaskQueue:
         task.assigned_gpus = gpu_ids
         task.reserved_at = time.time()
         task.attach_deadline = attach_deadline
-        if task.require_vram_omitted:
+        if task.vram_mode.value == "exclusive_auto":
             task.declared_vram_per_gpu = 0
         else:
-            task.declared_vram_per_gpu = task.require_vram_mb
+            task.declared_vram_per_gpu = task.requested_vram_mb if task.requested_vram_mb is not None else task.require_vram_mb
         self.reserved[task_id] = task
         return task
 
