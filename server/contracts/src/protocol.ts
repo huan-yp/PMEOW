@@ -74,7 +74,9 @@ interface WireTaskInfo {
   declaredVramPerGpu: number | null;
   autoObserveWindowSec?: number | null;
   autoPeakVramByGpuMb?: Record<string, number> | null;
+  autoPeakVramByGpuMB?: Record<string, number> | null;
   autoReclaimedVramByGpuMb?: Record<string, number | null> | null;
+  autoReclaimedVramByGpuMB?: Record<string, number | null> | null;
   autoReclaimDone?: boolean;
   scheduleHistory: UnifiedReport['taskQueue']['queued'][number]['scheduleHistory'];
 }
@@ -232,8 +234,8 @@ function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queu
     assignedGpus: task.assignedGpus,
     declaredVramPerGpu: task.declaredVramPerGpu,
     autoObserveWindowSec: task.autoObserveWindowSec ?? null,
-    autoPeakVramByGpuMb: normalizeNumberMap(task.autoPeakVramByGpuMb),
-    autoReclaimedVramByGpuMb: normalizeNullableNumberMap(task.autoReclaimedVramByGpuMb),
+    autoPeakVramByGpuMb: normalizeNumberMap(task.autoPeakVramByGpuMb ?? task.autoPeakVramByGpuMB),
+    autoReclaimedVramByGpuMb: normalizeNullableNumberMap(task.autoReclaimedVramByGpuMb ?? task.autoReclaimedVramByGpuMB),
     autoReclaimDone: task.autoReclaimDone === true,
     scheduleHistory: task.scheduleHistory,
     finishedAt: task.finishedAt ?? null,
