@@ -46,8 +46,8 @@ vramMode: VramMode;
 1. `requested_vram_mb: int | None` / `requestedVramMb: number | null`
 2. `vram_mode: "exclusive_auto" | "shared"` / `vramMode`
 3. `auto_observe_window_sec: int | None` / `autoObserveWindowSec`
-4. `auto_peak_vram_mb: int | None` / `autoPeakVramMb`
-5. `auto_reclaimed_vram_per_gpu_mb: int | None` / `autoReclaimedVramPerGpuMb`
+4. `auto_peak_vram_by_gpu_mb: dict[int, int] | None` / `autoPeakVramByGpuMb: Record<number, number> | null`
+5. `auto_reclaimed_vram_by_gpu_mb: dict[int, int | None] | None` / `autoReclaimedVramByGpuMb: Record<number, number | null> | null`
 6. `auto_reclaim_done: bool` / `autoReclaimDone`
 
 字段含义：
@@ -57,8 +57,8 @@ vramMode: VramMode;
 | `requestedVramMb` | 用户原始 VRAM 输入；未填为 `null`，显式 0 保留为 `0` |
 | `vramMode` | 调度和展示的唯一语义源 |
 | `autoObserveWindowSec` | `exclusive_auto` 任务的观察窗口长度，默认 300 秒 |
-| `autoPeakVramMb` | 观察窗口内 assigned GPU 上该任务的最大实际显存峰值 |
-| `autoReclaimedVramPerGpuMb` | 回收后每 GPU 声明预留；为空表示未回收到共享预留 |
+| `autoPeakVramByGpuMb` | 观察窗口内该任务在每张 assigned GPU 上分别记录的实际显存峰值 |
+| `autoReclaimedVramByGpuMb` | 回收后每张 GPU 各自的声明预留；任务尚未完成观察时为 `null`，观察完成后每个 assigned GPU 都有一个键，值为数字表示该 GPU 已回收，值为 `null` 表示该 GPU 仍保持独占 |
 | `autoReclaimDone` | 观察回收流程是否已经完成；完成后不再二次调整 |
 
 ## 5. Agent 设计
@@ -96,31 +96,31 @@ vramMode: VramMode;
 - `agent/pmeow/models.py`
 - `agent/pmeow/state/task_queue.py`
 
-`TaskQueue.reserve()` 设置声明预留时：
+`TaskQueue.reserve()` 设置启动阶段声明预留时：
 
 - `vramMode == shared`：`declared_vram_per_gpu = requested_vram_mb`
 - `vramMode == exclusive_auto`：启动阶段仍可使用 `declared_vram_per_gpu = 0` 作为内部哨兵值
 
-独占判断不得读取 `declared_vram_per_gpu == 0`。
+独占判断不得读取 `declared_vram_per_gpu == 0`。回收后的 per-GPU 预留以 `auto_reclaimed_vram_by_gpu_mb[gpu_id]` 为准，不再试图用单个 `declared_vram_per_gpu` 表达多 GPU 任务的各卡差异。
 
 ### 5.3 调度器
 
 调度分支：
 
 ```text
-if task.vram_mode == exclusive_auto and task.auto_reclaimed_vram_per_gpu_mb is None:
-  use exclusive admission
+if task.vram_mode == exclusive_auto:
+  use exclusive admission for GPUs where auto_reclaimed_vram_by_gpu_mb[gpu_id] is absent or null
 else:
-  use shared admission with reservation_mb
+  use shared admission with per-GPU reservation
 ```
 
 共享预留值：
 
 ```text
-if task.auto_reclaimed_vram_per_gpu_mb is not None:
-  reservation_mb = task.auto_reclaimed_vram_per_gpu_mb
+if task.auto_reclaimed_vram_by_gpu_mb[gpu_id] is a number:
+  reservation_mb_for_gpu = task.auto_reclaimed_vram_by_gpu_mb[gpu_id]
 else:
-  reservation_mb = task.requested_vram_mb or 0
+  reservation_mb_for_gpu = task.requested_vram_mb or 0
 ```
 
 影响文件：
@@ -134,15 +134,15 @@ else:
 新增内部 helper，用于统一判断一个任务当前是否仍占用整卡：
 
 ```text
-is_exclusive_active(task):
+is_exclusive_active(task, gpu_id):
   task.vram_mode == exclusive_auto
-  and task.auto_reclaimed_vram_per_gpu_mb is None
+  and task.auto_reclaimed_vram_by_gpu_mb[gpu_id] is absent or null
 ```
 
 账本规则：
 
 - active exclusive task：整卡不可共享，展示为整卡 reserved。
-- reclaimed exclusive task：按 `auto_reclaimed_vram_per_gpu_mb` 计入 managed reserved，不再阻塞整卡。
+- reclaimed exclusive task：对每张 GPU 独立判断；有数值的 GPU 按 `auto_reclaimed_vram_by_gpu_mb[gpu_id]` 计入 managed reserved，不再阻塞该 GPU；值为 `null` 或缺失的 GPU 仍阻塞整卡。
 - shared task：按 `requested_vram_mb` 计入 managed reserved，可为 0。
 
 影响文件：
@@ -166,30 +166,32 @@ is_exclusive_active(task):
 
 - 从 `started_at` 开始计时。
 - 默认 `auto_observe_window_sec = 300`。
-- 每轮 collect 根据 `per_gpu.pmeow_tasks` 中该 task 的 `actual_vram_mb` 更新 `auto_peak_vram_mb`。
+- 每轮 collect 根据 `per_gpu.pmeow_tasks` 中该 task 在各 assigned GPU 上的 `actual_vram_mb` 分别更新 `auto_peak_vram_by_gpu_mb[gpu_id]`。
 
 回收条件：
 
 ```text
 window_elapsed = now >= started_at + auto_observe_window_sec
-has_peak = auto_peak_vram_mb is not None
-below_threshold = auto_peak_vram_mb < assigned_gpu_total_memory_mb * 0.7
+has_peak_for_gpu = auto_peak_vram_by_gpu_mb[gpu_id] is not None
+below_threshold_for_gpu = auto_peak_vram_by_gpu_mb[gpu_id] < gpu_total_memory_mb[gpu_id] * 0.7
 ```
 
 回收值：
 
 ```text
-auto_reclaimed_vram_per_gpu_mb =
-  ceil(max(auto_peak_vram_mb * 1.1, auto_peak_vram_mb + 512))
+auto_reclaimed_vram_by_gpu_mb[gpu_id] =
+  ceil(max(auto_peak_vram_by_gpu_mb[gpu_id] * 1.1, auto_peak_vram_by_gpu_mb[gpu_id] + 512))
 ```
 
-多 GPU 任务先使用统一每卡回收值，峰值取 assigned GPUs 上观察到的最大值。
+多 GPU 任务必须按 GPU 分别计算峰值、阈值、回收值和是否继续独占。不能用所有 assigned GPUs 的最大峰值生成统一每卡预留，也不能因为一张 GPU 未达回收条件就让其他 GPU 放弃回收。
 
 窗口结束行为：
 
-- 有峰值且低于阈值：写入 `auto_reclaimed_vram_per_gpu_mb`，同步 `declared_vram_per_gpu`，设置 `auto_reclaim_done=true`。
-- 无峰值：保持独占，设置 `auto_reclaim_done=true`。
-- 峰值不低于阈值：保持独占，设置 `auto_reclaim_done=true`。
+- 对每张 assigned GPU 独立决策。
+- 某 GPU 有峰值且低于该 GPU 阈值：`auto_reclaimed_vram_by_gpu_mb[gpu_id] = reclaim_mb`，该 GPU 不再独占。
+- 某 GPU 无峰值：`auto_reclaimed_vram_by_gpu_mb[gpu_id] = null`，该 GPU 保持独占。
+- 某 GPU 峰值不低于该 GPU 阈值：`auto_reclaimed_vram_by_gpu_mb[gpu_id] = null`，该 GPU 保持独占。
+- 所有 assigned GPU 都完成决策后设置 `auto_reclaim_done=true`。
 
 完成后不再调整。
 
@@ -230,10 +232,12 @@ else:
 requested_vram_mb INTEGER;
 vram_mode TEXT NOT NULL DEFAULT 'shared';
 auto_observe_window_sec INTEGER;
-auto_peak_vram_mb INTEGER;
-auto_reclaimed_vram_per_gpu_mb INTEGER;
+auto_peak_vram_by_gpu_mb TEXT;
+auto_reclaimed_vram_by_gpu_mb TEXT;
 auto_reclaim_done INTEGER NOT NULL DEFAULT 0;
 ```
+
+`auto_peak_vram_by_gpu_mb` 存储 JSON 对象，键为 GPU id 字符串，值为 MB 整数，例如 `{"0": 6200, "1": 9100}`。`auto_reclaimed_vram_by_gpu_mb` 的值可以是 MB 整数或 `null`，例如 `{"0": 7000, "1": null}` 表示 GPU 0 已回收到 7000 MB，GPU 1 仍保持独占。
 
 迁移规则：
 
@@ -281,9 +285,9 @@ else:
 | 模式 | `vramMode` |
 | 请求 VRAM | `requestedVramMb` |
 | 观察窗口 | `autoObserveWindowSec` |
-| 观察峰值 | `autoPeakVramMb` |
-| 回收状态 | `autoReclaimDone + autoReclaimedVramPerGpuMb` |
-| 回收后预留 | `autoReclaimedVramPerGpuMb` |
+| 观察峰值 | `autoPeakVramByGpuMb`，按 GPU 展示 |
+| 回收状态 | `autoReclaimDone + autoReclaimedVramByGpuMb` |
+| 回收后预留 | `autoReclaimedVramByGpuMb`，按 GPU 展示 |
 
 回收状态文案：
 
@@ -294,11 +298,11 @@ vramMode != exclusive_auto:
 vramMode == exclusive_auto && !autoReclaimDone:
   观察中
 
-autoReclaimDone && autoReclaimedVramPerGpuMb != null:
-  已回收至 N MB/GPU
+autoReclaimDone && autoReclaimedVramByGpuMb != null:
+  按 GPU 显示：GPU 0 已回收至 N MB；GPU 1 未回收，保持独占
 
-autoReclaimDone && autoReclaimedVramPerGpuMb == null:
-  未回收，保持独占
+autoReclaimDone && autoReclaimedVramByGpuMb == null:
+  未生成回收结果，保持独占
 ```
 
 影响文件：
@@ -331,10 +335,10 @@ schedule scheduled: need <G> GPU(s) with >= <N> MB in shared mode; ...
 回收日志模板：
 
 ```text
-auto reclaim observed: peak=<N>MB window=<S>s
-auto reclaim applied: reserved=<N>MB/GPU peak=<P>MB
-auto reclaim skipped: peak=<P>MB threshold=<T>MB keep exclusive
-auto reclaim skipped: no peak sample keep exclusive
+auto reclaim observed: peaks={gpu0=<N>MB,gpu1=<M>MB} window=<S>s
+auto reclaim applied: reserved={gpu0=<N>MB,gpu1=<M>MB} peaks={gpu0=<P>MB,gpu1=<Q>MB}
+auto reclaim skipped: gpu=<G> peak=<P>MB threshold=<T>MB keep exclusive
+auto reclaim skipped: gpu=<G> no peak sample keep exclusive
 ```
 
 调度详情 `gpuSnapshot` 增加：
@@ -343,8 +347,8 @@ auto reclaim skipped: no peak sample keep exclusive
 requestedVramMb
 vramMode
 autoObserveWindowSec
-autoPeakVramMb
-autoReclaimedVramPerGpuMb
+autoPeakVramByGpuMb
+autoReclaimedVramByGpuMb
 autoReclaimDone
 ```
 
@@ -363,13 +367,13 @@ autoReclaimDone
 
 观察缺样本：
 
-- 窗口结束时无峰值样本则保持独占。
-- 写日志并设置 `autoReclaimDone=true`，避免无限观察。
+- 窗口结束时，某张 GPU 无峰值样本则该 GPU 保持独占。
+- 每张 GPU 分别写日志；所有 assigned GPU 都决策完后设置 `autoReclaimDone=true`，避免无限观察。
 
 任务提前结束：
 
 - 不执行回收。
-- 保留已观察到的 `autoPeakVramMb`。
+- 保留已观察到的 `autoPeakVramByGpuMb`。
 
 ## 10. 人工验收点
 
@@ -380,11 +384,12 @@ autoReclaimDone
 3. 显式 `--vram 0` 不进入独占调度分支。
 4. `exclusive_auto` 任务启动时独占整卡。
 5. 观察窗口结束后最多执行一次回收。
-6. 回收成功后任务不再阻塞整卡共享调度。
-7. 回收失败或无样本时保持独占。
-8. 任务日志包含提交语义、观察峰值、回收结果。
-9. Web 任务详情显示模式、窗口、峰值、回收状态。
-10. Mobile 任务详情和队列摘要显示相同语义。
+6. 某张 GPU 回收成功后，任务不再阻塞该 GPU 的共享调度。
+7. 某张 GPU 回收失败或无样本时，该 GPU 保持独占，不影响其他 GPU 的回收结果。
+8. 多 GPU 任务按每张 GPU 分别记录峰值并分别计算回收预留。
+9. 任务日志包含提交语义、逐 GPU 观察峰值、逐 GPU 回收结果。
+10. Web 任务详情显示模式、窗口、逐 GPU 峰值、回收状态。
+11. Mobile 任务详情和队列摘要显示相同语义。
 
 ## 11. 范围外
 
@@ -400,6 +405,6 @@ autoReclaimDone
 ## 12. 自审结果
 
 - Placeholder scan：无未决项或未填章节。
-- Internal consistency：字段、调度、回收、展示均以 `vramMode` 为唯一语义源。
+- Internal consistency：字段、调度、回收、展示均以 `vramMode` 为唯一语义源；多 GPU 峰值、回收值、独占状态均按 GPU 分别表达。
 - Scope check：范围集中在 VRAM 语义、一次性回收、展示透传，可作为一个实现阶段推进。
 - Ambiguity check：历史数据明确不做旧语义兼容，`0` 一律按共享 0 处理。
