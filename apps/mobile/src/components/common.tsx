@@ -107,12 +107,26 @@ export function TaskRow(props: {
 }
 
 export function QueueTaskRow(props: { task: TaskInfo }) {
+  const requestedVramText = formatTaskRequestedVram(props.task);
+
   return (
     <View style={styles.eventRow}>
       <Text style={styles.eventTitle}>{formatQueueTaskStatus(props.task.status)} · {props.task.command}</Text>
-      <Text style={styles.eventMeta}>{props.task.user} · VRAM {props.task.requireVramMb}MB · {formatTimestamp(props.task.createdAt)}</Text>
+      <Text style={styles.eventMeta}>{props.task.user} · VRAM {requestedVramText} · {formatTimestamp(props.task.createdAt)}</Text>
     </View>
   );
+}
+
+function formatTaskRequestedVram(task: Pick<TaskInfo, 'requireVramMb' | 'requestedVramMb' | 'vramMode'>): string {
+  const mode = task.vramMode;
+  const requested = task.requestedVramMb ?? (mode === 'exclusive_auto' ? null : task.requireVramMb);
+  if (mode === 'exclusive_auto') {
+    return '独占（自动观察）';
+  }
+  if (requested === 0) {
+    return '0 MB（共享 / 不预留）';
+  }
+  return `${requested ?? 0} MB（共享）`;
 }
 
 export function ExpandableList(props: {

@@ -79,11 +79,17 @@ def _cmd_submit(args: argparse.Namespace) -> None:
     if not command:
         print("error: no command specified", file=sys.stderr)
         raise SystemExit(1)
+    has_explicit_vram = args.vram is not None
+    requested_vram_mb = args.vram if has_explicit_vram else None
+    vram_mb = requested_vram_mb if requested_vram_mb is not None else 0
+    vram_mode = "shared" if has_explicit_vram else "exclusive_auto"
     resp = send_request(_socket_path(args), "submit_task", {
         "command": command,
         "cwd": os.getcwd(),
         "user": os.environ.get("USER") or os.environ.get("USERNAME", "unknown"),
-        "require_vram_mb": args.vram,
+        "require_vram_mb": vram_mb,
+        "requested_vram_mb": requested_vram_mb,
+        "vram_mode": vram_mode,
         "require_gpu_count": args.gpus,
         "priority": args.priority,
         "argv": argv,
@@ -176,7 +182,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--vram",
         dest="vram",
         type=parse_vram_mb,
-        default=0,
+        default=None,
         help="VRAM per GPU; accepts MB integers or g/m suffixes",
     )
     submit_parser.add_argument("--gpus", dest="gpus", type=int, default=1, help="GPU count")

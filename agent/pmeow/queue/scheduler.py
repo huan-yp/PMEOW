@@ -2,14 +2,14 @@
 
 Managed task reservations are authoritative (declared VRAM, not observed).
 Unmanaged activity is judged by historical peak within the sliding window.
-Tasks with require_vram_mb == 0 are exclusive and require fully idle GPUs.
+Tasks with `vram_mode=exclusive_auto` are exclusive and require fully idle GPUs.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pmeow.models import PerGpuAllocationSummary, TaskRecord
+from pmeow.models import PerGpuAllocationSummary, TaskRecord, VramMode
 from pmeow.queue.history import GpuHistoryTracker
 
 # ---------------------------------------------------------------------------
@@ -91,6 +91,8 @@ def validate_request_possible(
     per_gpu: list[PerGpuAllocationSummary],
     require_gpu_count: int,
     require_vram_mb: int,
+    *,
+    vram_mode: VramMode | None = None,
 ) -> str | None:
     """Return an error message if the request can never fit, else None."""
     gpu_count = len(per_gpu)
@@ -98,7 +100,8 @@ def validate_request_possible(
         return (
             f"requested {require_gpu_count} GPUs but this node only has {gpu_count}"
         )
-    if require_vram_mb > 0:
+    mode = vram_mode or VramMode.shared
+    if mode == VramMode.shared and require_vram_mb > 0:
         capable = sum(
             1 for g in per_gpu
             if g.total_memory_mb * CAPACITY_FACTOR >= require_vram_mb
@@ -160,9 +163,9 @@ def _build_gpu_ledgers(
             if t.declared_vram_mb > 0
         ) + pending.get(idx, 0.0)
 
-        # Exclusive owner: any pmeow task with declared_vram == 0, or pending exclusive
+        # Exclusive owner: any active exclusive pmeow task, or pending exclusive
         has_exclusive = (
-            any(t.declared_vram_mb == 0 for t in gpu.pmeow_tasks)
+            any(t.exclusive_active for t in gpu.pmeow_tasks)
             or idx in exclusive_pending
         )
 
@@ -195,6 +198,13 @@ def _build_gpu_ledgers(
 def _eligible_shared(ledger: GpuLedger, require_vram_mb: int) -> bool:
     """Can this GPU accept a shared-capacity task requesting *require_vram_mb*?"""
     return not ledger.exclusive_owner and ledger.effective_free_mb >= require_vram_mb
+
+
+def _task_shared_reservation_mb(task: TaskRecord) -> int:
+    """Return the per-GPU reservation for a queued/shared task."""
+    if task.requested_vram_mb is not None:
+        return task.requested_vram_mb
+    return task.require_vram_mb
 
 
 def _is_gpu_idle_in_sample(
@@ -274,7 +284,8 @@ class QueueScheduler:
             ledger_snapshots = [l.to_snapshot_dict() for l in ledgers]
             current_free = {l.gpu_index: l.effective_free_mb for l in ledgers}
 
-            is_exclusive = task.require_vram_mb == 0
+            is_exclusive = task.vram_mode == VramMode.exclusive_auto
+            reservation_mb = _task_shared_reservation_mb(task)
 
             if is_exclusive:
                 gpu_ids = self._try_exclusive(
@@ -283,7 +294,7 @@ class QueueScheduler:
                 )
             else:
                 gpu_ids = self._try_shared(
-                    ledgers, task.require_vram_mb, task.require_gpu_count,
+                    ledgers, reservation_mb, task.require_gpu_count,
                 )
 
             if gpu_ids is not None:
@@ -292,7 +303,7 @@ class QueueScheduler:
                 ))
                 eligible_ids = [l.gpu_index for l in ledgers if (
                     _eligible_exclusive(l, history_samples, current_per_gpu)
-                    if is_exclusive else _eligible_shared(l, task.require_vram_mb)
+                    if is_exclusive else _eligible_shared(l, reservation_mb)
                 )]
                 result.evaluations.append(TaskScheduleEvaluation(
                     task_id=task.id,
@@ -312,14 +323,14 @@ class QueueScheduler:
                         exclusive_pending.add(gid)
                 else:
                     for gid in gpu_ids:
-                        pending[gid] = pending.get(gid, 0.0) + task.require_vram_mb
+                        pending[gid] = pending.get(gid, 0.0) + reservation_mb
                 prior_scheduled_task_ids.append(task.id)
                 continue
 
             # Blocked — determine reason
             eligible_ids = [l.gpu_index for l in ledgers if (
                 _eligible_exclusive(l, history_samples, current_per_gpu)
-                if is_exclusive else _eligible_shared(l, task.require_vram_mb)
+                if is_exclusive else _eligible_shared(l, reservation_mb)
             )]
 
             # Check if would pass without pending reservations
@@ -333,7 +344,7 @@ class QueueScheduler:
                 )
             else:
                 baseline_ids = self._try_shared(
-                    baseline_ledgers, task.require_vram_mb, task.require_gpu_count,
+                    baseline_ledgers, reservation_mb, task.require_gpu_count,
                 )
 
             if baseline_ids is not None and prior_scheduled_task_ids:

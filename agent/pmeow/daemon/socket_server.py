@@ -16,7 +16,7 @@ import threading
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
 
-from pmeow.models import TaskSpec, TaskStatus
+from pmeow.models import TaskSpec, TaskStatus, VramMode
 
 if TYPE_CHECKING:
     from pmeow.daemon.service import DaemonService
@@ -172,6 +172,12 @@ def _to_task_dict(rec: Any, *, log_path: str | None = None) -> dict:
         "cwd": rec.cwd,
         "user": rec.user,
         "require_vram_mb": rec.require_vram_mb,
+        "requested_vram_mb": rec.requested_vram_mb,
+        "vram_mode": rec.vram_mode.value,
+        "auto_observe_window_sec": rec.auto_observe_window_sec,
+        "auto_peak_vram_by_gpu_mb": rec.auto_peak_vram_by_gpu_mb,
+        "auto_reclaimed_vram_by_gpu_mb": rec.auto_reclaimed_vram_by_gpu_mb,
+        "auto_reclaim_done": rec.auto_reclaim_done,
         "require_gpu_count": rec.require_gpu_count,
         "argv": rec.argv,
         "launch_mode": rec.launch_mode.value,
@@ -190,11 +196,23 @@ def _to_task_dict(rec: Any, *, log_path: str | None = None) -> dict:
 
 def _submit_task(svc: DaemonService, params: dict) -> dict:
     from pmeow.models import TaskLaunchMode
+    requested_vram_mb = params.get("requested_vram_mb", params.get("requestedVramMb"))
+    vram_mode_value = params.get("vram_mode", params.get("vramMode"))
+    if vram_mode_value is None:
+        vram_mode_value = "exclusive_auto" if requested_vram_mb is None and "require_vram_mb" not in params else "shared"
+    vram_mode = VramMode(vram_mode_value)
+    if requested_vram_mb is None and vram_mode == VramMode.shared:
+        requested_vram_mb = params.get("require_vram_mb", 0)
+    requested_vram_mb = int(requested_vram_mb) if requested_vram_mb is not None else None
+    require_vram_mb = requested_vram_mb if requested_vram_mb is not None else 0
     spec = TaskSpec(
         command=params["command"],
         cwd=params.get("cwd", "."),
         user=params.get("user", "unknown"),
-        require_vram_mb=params.get("require_vram_mb", 0),
+        require_vram_mb=require_vram_mb,
+        requested_vram_mb=requested_vram_mb,
+        vram_mode=vram_mode,
+        auto_observe_window_sec=params.get("auto_observe_window_sec", params.get("autoObserveWindowSec")),
         require_gpu_count=params.get("require_gpu_count", 1),
         gpu_ids=params.get("gpu_ids"),
         priority=params.get("priority", 10),

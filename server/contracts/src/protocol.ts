@@ -1,4 +1,5 @@
 import type { UnifiedReport } from './types.js';
+import type { VramMode } from './types.js';
 
 export const AGENT_EVENT = {
   register: 'agent:register',
@@ -57,6 +58,9 @@ interface WireTaskInfo {
   user: string;
   launchMode: 'background' | 'foreground';
   requireVramMB: number;
+  requestedVramMb?: number | null;
+  requestedVramMB?: number | null;
+  vramMode: VramMode;
   requireGpuCount: number;
   gpuIds: number[] | null;
   priority: number;
@@ -68,6 +72,12 @@ interface WireTaskInfo {
   endReason: string | null;
   assignedGpus: number[] | null;
   declaredVramPerGpu: number | null;
+  autoObserveWindowSec?: number | null;
+  autoPeakVramByGpuMb?: Record<string, number> | null;
+  autoPeakVramByGpuMB?: Record<string, number> | null;
+  autoReclaimedVramByGpuMb?: Record<string, number | null> | null;
+  autoReclaimedVramByGpuMB?: Record<string, number | null> | null;
+  autoReclaimDone?: boolean;
   scheduleHistory: UnifiedReport['taskQueue']['queued'][number]['scheduleHistory'];
 }
 
@@ -192,12 +202,19 @@ function isTaskInfo(task: unknown): task is WireTaskInfo {
     && typeof record.user === 'string'
     && typeof record.launchMode === 'string'
     && typeof record.requireVramMB === 'number'
+    && (record.requestedVramMb === undefined || record.requestedVramMb === null || typeof record.requestedVramMb === 'number')
+    && (record.requestedVramMB === undefined || record.requestedVramMB === null || typeof record.requestedVramMB === 'number')
+    && (record.vramMode === 'exclusive_auto' || record.vramMode === 'shared')
     && typeof record.requireGpuCount === 'number'
     && typeof record.priority === 'number'
     && typeof record.createdAt === 'number';
 }
 
+
 function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queued'][number] {
+  const requestedVramMb = normalizeRequestedVramMb(task);
+  const vramMode = normalizeVramMode(task);
+
   return {
     taskId: task.taskId,
     status: task.status,
@@ -206,6 +223,8 @@ function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queu
     user: task.user,
     launchMode: task.launchMode,
     requireVramMb: task.requireVramMB,
+    requestedVramMb,
+    vramMode,
     requireGpuCount: task.requireGpuCount,
     gpuIds: task.gpuIds,
     priority: task.priority,
@@ -214,9 +233,53 @@ function normalizeTaskInfo(task: WireTaskInfo): UnifiedReport['taskQueue']['queu
     pid: task.pid,
     assignedGpus: task.assignedGpus,
     declaredVramPerGpu: task.declaredVramPerGpu,
+    autoObserveWindowSec: task.autoObserveWindowSec ?? null,
+    autoPeakVramByGpuMb: normalizeNumberMap(task.autoPeakVramByGpuMb ?? task.autoPeakVramByGpuMB),
+    autoReclaimedVramByGpuMb: normalizeNullableNumberMap(task.autoReclaimedVramByGpuMb ?? task.autoReclaimedVramByGpuMB),
+    autoReclaimDone: task.autoReclaimDone === true,
     scheduleHistory: task.scheduleHistory,
     finishedAt: task.finishedAt ?? null,
     exitCode: task.exitCode ?? null,
     endReason: task.endReason ?? null,
   };
+}
+
+function normalizeRequestedVramMb(task: WireTaskInfo): number | null {
+  if (typeof task.requestedVramMb === 'number' || task.requestedVramMb === null) {
+    return task.requestedVramMb;
+  }
+  if (typeof task.requestedVramMB === 'number' || task.requestedVramMB === null) {
+    return task.requestedVramMB;
+  }
+  return task.vramMode === 'exclusive_auto' ? null : task.requireVramMB;
+}
+
+function normalizeVramMode(task: WireTaskInfo): VramMode {
+  return task.vramMode;
+}
+
+function normalizeNumberMap(value: unknown): Record<string, number> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const result: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (typeof entry === 'number' && Number.isFinite(entry)) {
+      result[key] = entry;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function normalizeNullableNumberMap(value: unknown): Record<string, number | null> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const result: Record<string, number | null> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === null || (typeof entry === 'number' && Number.isFinite(entry))) {
+      result[key] = entry;
+    }
+  }
+  return Object.keys(result).length > 0 ? result : null;
 }

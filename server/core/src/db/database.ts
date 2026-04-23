@@ -107,6 +107,8 @@ function initSchema(db: Database.Database): void {
       user TEXT NOT NULL,
       launch_mode TEXT NOT NULL,
       require_vram_mb INTEGER NOT NULL,
+      requested_vram_mb INTEGER,
+      vram_mode TEXT NOT NULL DEFAULT 'shared',
       require_gpu_count INTEGER NOT NULL,
       gpu_ids TEXT,
       priority INTEGER NOT NULL DEFAULT 10,
@@ -117,6 +119,10 @@ function initSchema(db: Database.Database): void {
       exit_code INTEGER,
       assigned_gpus TEXT,
       declared_vram_per_gpu INTEGER,
+      auto_observe_window_sec INTEGER,
+      auto_peak_vram_by_gpu_mb TEXT,
+      auto_reclaimed_vram_by_gpu_mb TEXT,
+      auto_reclaim_done INTEGER NOT NULL DEFAULT 0,
       schedule_history TEXT,
       end_reason TEXT
     );

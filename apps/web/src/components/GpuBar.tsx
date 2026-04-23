@@ -55,15 +55,10 @@ export function GpuBar({ gpu, tasks, historical = false }: Props) {
             <div key={`${group.key}-segments`} className="contents">
               {group.managedReservedMb > 0 && (
                 <div
-                  className="relative h-full border-r border-dark-border/60"
+                  className="h-full border-r border-dark-border/60"
                   style={{ width: `${(group.managedReservedMb / displayDenominator) * 100}%`, backgroundColor: group.baseColor, backgroundImage: getReservedStripe(group.baseColor) }}
                   title={`${group.label} · 托管任务：已用 ${formatVramGB(group.managedActualMb)} / 预留 ${formatVramGB(group.managedReservedMb)}`}
-                >
-                  <div
-                    className="absolute inset-y-0 left-0"
-                    style={{ width: `${group.managedReservedMb > 0 ? (group.managedActualMb / group.managedReservedMb) * 100 : 0}%`, backgroundColor: group.baseColor }}
-                  />
-                </div>
+                />
               )}
               {group.unmanagedMb > 0 && (
                 <div

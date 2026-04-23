@@ -20,19 +20,27 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
   const db = getDatabase();
   db.prepare(
     `INSERT INTO tasks (
-      id, server_id, status, command, cwd, user, launch_mode, require_vram_mb, require_gpu_count,
+      id, server_id, status, command, cwd, user, launch_mode, require_vram_mb,
+      requested_vram_mb, vram_mode, require_gpu_count,
       gpu_ids, priority, created_at, started_at, finished_at, pid, exit_code, assigned_gpus,
-      declared_vram_per_gpu, schedule_history, end_reason
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      declared_vram_per_gpu, auto_observe_window_sec, auto_peak_vram_by_gpu_mb,
+      auto_reclaimed_vram_by_gpu_mb, auto_reclaim_done, schedule_history, end_reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       server_id = excluded.server_id,
       status = excluded.status,
+      requested_vram_mb = excluded.requested_vram_mb,
+      vram_mode = excluded.vram_mode,
       started_at = excluded.started_at,
       finished_at = excluded.finished_at,
       pid = excluded.pid,
       exit_code = excluded.exit_code,
       assigned_gpus = excluded.assigned_gpus,
       declared_vram_per_gpu = excluded.declared_vram_per_gpu,
+      auto_observe_window_sec = excluded.auto_observe_window_sec,
+      auto_peak_vram_by_gpu_mb = excluded.auto_peak_vram_by_gpu_mb,
+      auto_reclaimed_vram_by_gpu_mb = excluded.auto_reclaimed_vram_by_gpu_mb,
+      auto_reclaim_done = excluded.auto_reclaim_done,
       schedule_history = excluded.schedule_history,
       priority = excluded.priority,
       end_reason = excluded.end_reason`
@@ -45,6 +53,8 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
     task.user,
     task.launchMode,
     task.requireVramMb,
+    task.requestedVramMb,
+    task.vramMode,
     task.requireGpuCount,
     task.gpuIds ? JSON.stringify(task.gpuIds) : null,
     task.priority,
@@ -55,6 +65,10 @@ export function upsertTask(serverId: string, task: TaskInfo): void {
     task.exitCode,
     task.assignedGpus ? JSON.stringify(task.assignedGpus) : null,
     task.declaredVramPerGpu,
+    task.autoObserveWindowSec,
+    task.autoPeakVramByGpuMb ? JSON.stringify(task.autoPeakVramByGpuMb) : null,
+    task.autoReclaimedVramByGpuMb ? JSON.stringify(task.autoReclaimedVramByGpuMb) : null,
+    task.autoReclaimDone ? 1 : 0,
     task.scheduleHistory.length > 0 ? JSON.stringify(task.scheduleHistory) : null,
     task.endReason,
   );
@@ -235,6 +249,8 @@ function mapTaskRow(r: Record<string, unknown>): TaskRecord {
     user: r.user as string,
     launchMode: r.launch_mode as string,
     requireVramMb: r.require_vram_mb as number,
+    requestedVramMb: (r.requested_vram_mb as number | null) ?? null,
+    vramMode: r.vram_mode === 'exclusive_auto' ? 'exclusive_auto' : 'shared',
     requireGpuCount: r.require_gpu_count as number,
     gpuIds: r.gpu_ids as string | null,
     priority: r.priority as number,
@@ -245,6 +261,10 @@ function mapTaskRow(r: Record<string, unknown>): TaskRecord {
     exitCode: r.exit_code as number | null,
     assignedGpus: r.assigned_gpus as string | null,
     declaredVramPerGpu: r.declared_vram_per_gpu as number | null,
+    autoObserveWindowSec: r.auto_observe_window_sec as number | null,
+    autoPeakVramByGpuMb: parseNumberMap(r.auto_peak_vram_by_gpu_mb),
+    autoReclaimedVramByGpuMb: parseNullableNumberMap(r.auto_reclaimed_vram_by_gpu_mb),
+    autoReclaimDone: Boolean(r.auto_reclaim_done),
     scheduleHistory: r.schedule_history as string | null,
     endReason: r.end_reason as string | null,
   };
@@ -316,7 +336,7 @@ function normalizeScheduleEvaluation(value: unknown): ScheduleEvaluation | null 
     return null;
   }
 
-  const candidate = value as Partial<ScheduleEvaluation> & { gpuSnapshot?: Record<string, number> };
+  const candidate = value as Partial<ScheduleEvaluation> & { gpuSnapshot?: Record<string, unknown> };
   if (typeof candidate.timestamp !== 'number' || typeof candidate.result !== 'string' || typeof candidate.detail !== 'string') {
     return null;
   }
@@ -327,4 +347,46 @@ function normalizeScheduleEvaluation(value: unknown): ScheduleEvaluation | null 
     gpuSnapshot: candidate.gpuSnapshot ?? {},
     detail: candidate.detail,
   };
+}
+
+function parseNumberMap(value: unknown): Record<string, number> | null {
+  if (typeof value !== 'string' || !value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    const result: Record<string, number> = {};
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (typeof entry === 'number' && Number.isFinite(entry)) {
+        result[key] = entry;
+      }
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseNullableNumberMap(value: unknown): Record<string, number | null> | null {
+  if (typeof value !== 'string' || !value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return null;
+    }
+    const result: Record<string, number | null> = {};
+    for (const [key, entry] of Object.entries(parsed)) {
+      if (entry === null || (typeof entry === 'number' && Number.isFinite(entry))) {
+        result[key] = entry;
+      }
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  } catch {
+    return null;
+  }
 }

@@ -6,6 +6,7 @@ Pure in-memory version: uses TaskQueue instead of SQLite for task state.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import pwd
 import signal
@@ -34,6 +35,7 @@ from pmeow.models import (
     TaskRecord,
     TaskSpec,
     TaskStatus,
+    VramMode,
 )
 from pmeow.queue.history import GpuHistoryTracker
 from pmeow.queue.scheduler import QueueScheduler, TaskScheduleEvaluation, validate_request_possible
@@ -42,6 +44,11 @@ from pmeow.state.task_queue import CompletionObservation, RuntimeObservation, Ta
 from pmeow.transport.client import AgentTransportClient
 
 log = logging.getLogger(__name__)
+
+DEFAULT_AUTO_OBSERVE_WINDOW_SEC = 300
+AUTO_RECLAIM_THRESHOLD_RATIO = 0.7
+AUTO_RECLAIM_MARGIN_MB = 512
+AUTO_RECLAIM_MULTIPLIER = 1.1
 
 
 def _remaining_collection_delay(
@@ -223,6 +230,7 @@ class DaemonService:
 
             # Tick the state machine — consumes observations, reclaims reported terminals
             self.task_queue.tick()
+            self._update_auto_vram_reclaim(per_gpu, now)
             live_task_ids = {task.id for task in self.task_queue.list_all()}
             for task_id in list(self._task_log_dirs):
                 if task_id not in live_task_ids:
@@ -310,14 +318,17 @@ class DaemonService:
 
     def submit_task(self, spec: TaskSpec) -> TaskRecord:
         with self._lock:
+            self._normalize_vram_spec(spec)
             if self._last_per_gpu:
                 err = validate_request_possible(
                     self._last_per_gpu,
                     spec.require_gpu_count,
                     spec.require_vram_mb,
+                    vram_mode=spec.vram_mode,
                 )
                 if err is not None:
                     raise ValueError(err)
+            self._validate_vram_spec(spec)
             rec = self.task_queue.submit(spec)
             rec.task_log_dir = self._resolve_task_log_dir(spec.submit_uid)
             requested_name = spec.task_name.strip() if spec.task_name else ""
@@ -453,6 +464,110 @@ class DaemonService:
     # Task diagnostics
     # ------------------------------------------------------------------
 
+    def _validate_vram_spec(self, spec: TaskSpec) -> None:
+        if spec.requested_vram_mb is not None and spec.requested_vram_mb < 0:
+            raise ValueError("requested VRAM cannot be negative")
+        if spec.vram_mode == VramMode.exclusive_auto and spec.requested_vram_mb is not None:
+            raise ValueError("exclusive_auto tasks must omit requested VRAM")
+        if spec.vram_mode == VramMode.shared and spec.requested_vram_mb is None:
+            raise ValueError("shared tasks must include requested VRAM")
+
+    def _normalize_vram_spec(self, spec: TaskSpec) -> None:
+        if spec.vram_mode == VramMode.exclusive_auto:
+            spec.requested_vram_mb = None
+            spec.require_vram_mb = 0
+            return
+        if spec.requested_vram_mb is None:
+            spec.requested_vram_mb = spec.require_vram_mb
+        spec.require_vram_mb = spec.requested_vram_mb
+
+    def _update_auto_vram_reclaim(self, per_gpu: list, now: float) -> None:
+        allocation_by_task_gpu: dict[tuple[str, int], float] = {}
+        total_by_gpu: dict[int, float] = {}
+        for gpu in per_gpu:
+            total_by_gpu[gpu.gpu_index] = gpu.total_memory_mb
+            for allocation in gpu.pmeow_tasks:
+                allocation_by_task_gpu[(allocation.task_id, gpu.gpu_index)] = allocation.actual_vram_mb
+
+        for task in self.task_queue.list_running():
+            if task.vram_mode != VramMode.exclusive_auto:
+                continue
+            if task.auto_reclaim_done:
+                continue
+            if not task.assigned_gpus or task.started_at is None:
+                continue
+
+            if task.auto_observe_window_sec is None:
+                task.auto_observe_window_sec = DEFAULT_AUTO_OBSERVE_WINDOW_SEC
+            if task.auto_peak_vram_by_gpu_mb is None:
+                task.auto_peak_vram_by_gpu_mb = {}
+
+            for gpu_id in task.assigned_gpus:
+                actual_mb = allocation_by_task_gpu.get((task.id, gpu_id))
+                if actual_mb is None:
+                    continue
+                observed_peak = int(math.ceil(actual_mb))
+                previous_peak = task.auto_peak_vram_by_gpu_mb.get(gpu_id, 0)
+                if observed_peak > previous_peak:
+                    task.auto_peak_vram_by_gpu_mb[gpu_id] = observed_peak
+
+            if now >= task.started_at + task.auto_observe_window_sec:
+                self._finish_auto_vram_reclaim(task, total_by_gpu)
+
+    def _finish_auto_vram_reclaim(self, task: TaskRecord, total_by_gpu: dict[int, float]) -> None:
+        peaks = task.auto_peak_vram_by_gpu_mb or {}
+        reclaimed: dict[int, int | None] = {}
+        applied: dict[int, int] = {}
+
+        self._append_task_message(
+            task.id,
+            f"auto reclaim observed: peaks={self._format_gpu_map(peaks)} "
+            f"window={task.auto_observe_window_sec or DEFAULT_AUTO_OBSERVE_WINDOW_SEC}s",
+        )
+
+        for gpu_id in task.assigned_gpus or []:
+            peak = peaks.get(gpu_id)
+            total_mb = total_by_gpu.get(gpu_id, 0.0)
+            if peak is None:
+                reclaimed[gpu_id] = None
+                self._append_task_message(
+                    task.id,
+                    f"auto reclaim skipped: gpu={gpu_id} no peak sample keep exclusive",
+                )
+                continue
+
+            threshold = total_mb * AUTO_RECLAIM_THRESHOLD_RATIO
+            if total_mb <= 0 or peak >= threshold:
+                reclaimed[gpu_id] = None
+                self._append_task_message(
+                    task.id,
+                    f"auto reclaim skipped: gpu={gpu_id} peak={peak}MB "
+                    f"threshold={round(threshold, 2)}MB keep exclusive",
+                )
+                continue
+
+            reserved = int(math.ceil(max(peak * AUTO_RECLAIM_MULTIPLIER, peak + AUTO_RECLAIM_MARGIN_MB)))
+            reclaimed[gpu_id] = reserved
+            applied[gpu_id] = reserved
+
+        task.auto_reclaimed_vram_by_gpu_mb = reclaimed
+        task.auto_reclaim_done = True
+        if applied:
+            self._append_task_message(
+                task.id,
+                f"auto reclaim applied: reserved={self._format_gpu_map(applied)} "
+                f"peaks={self._format_gpu_map(peaks)}",
+            )
+
+    def _format_gpu_map(self, values: dict[int, int | None]) -> str:
+        if not values:
+            return "{}"
+        parts = []
+        for gpu_id, value in sorted(values.items()):
+            rendered = "exclusive" if value is None else f"{value}MB"
+            parts.append(f"gpu{gpu_id}={rendered}")
+        return "{" + ",".join(parts) + "}"
+
     def _append_task_message(self, task_id: str, message: str) -> None:
         append_task_log_line(self.get_task_log_path(task_id), message)
 
@@ -511,14 +626,19 @@ class DaemonService:
         self,
         task: TaskRecord,
         evaluation: TaskScheduleEvaluation,
-    ) -> dict[str, float | int]:
-        snapshot: dict[str, float | int] = {
+    ) -> dict:
+        snapshot: dict = {
             "requestedGpuCount": task.require_gpu_count,
-            "requestedVramMb": task.require_vram_mb,
+            "requestedVramMb": task.requested_vram_mb,
+            "vramMode": task.vram_mode.value,
             "eligibleNowCount": len(evaluation.current_eligible_gpu_ids),
             "eligibleSustainedCount": len(evaluation.sustained_eligible_gpu_ids),
             "selectedGpuCount": len(evaluation.gpu_ids),
             "blockerCount": len(evaluation.blocker_task_ids),
+            "autoObserveWindowSec": task.auto_observe_window_sec,
+            "autoPeakVramByGpuMb": task.auto_peak_vram_by_gpu_mb,
+            "autoReclaimedVramByGpuMb": task.auto_reclaimed_vram_by_gpu_mb,
+            "autoReclaimDone": task.auto_reclaim_done,
         }
         for gpu_id, free_mb in evaluation.current_effective_free_mb.items():
             snapshot[f"effectiveFreeMb.gpu{gpu_id}"] = round(free_mb, 2)
@@ -535,34 +655,41 @@ class DaemonService:
         eligible_now = self._format_gpu_ids(evaluation.current_eligible_gpu_ids)
         sustained = self._format_gpu_ids(evaluation.sustained_eligible_gpu_ids)
         effective_free = self._format_effective_free(evaluation.current_effective_free_mb)
+        reservation_mb = task.requested_vram_mb if task.requested_vram_mb is not None else 0
+        requirement = (
+            f"need {task.require_gpu_count} idle GPU(s) in {task.vram_mode.value} mode"
+            if task.vram_mode == VramMode.exclusive_auto
+            else f"need {task.require_gpu_count} GPU(s) with >= {reservation_mb} MB in {task.vram_mode.value} mode"
+        )
 
         if evaluation.reason_code == "scheduled":
             return (
-                f"need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB; "
+                f"{requirement}; "
                 f"selected={selected}; eligible_now={eligible_now}; effective_free={effective_free}"
             )
         if evaluation.reason_code == "blocked_by_higher_priority":
             blockers = ",".join(evaluation.blocker_task_ids) or "none"
             return (
-                f"blocked by higher-priority reservations; need {task.require_gpu_count} GPU(s) with >= "
-                f"{task.require_vram_mb} MB; blockers={blockers}; eligible_now={eligible_now}; "
+                f"blocked by higher-priority reservations; {requirement}; "
+                f"blockers={blockers}; eligible_now={eligible_now}; "
                 f"effective_free={effective_free}"
             )
         if evaluation.reason_code == "sustained_window_not_satisfied":
             return (
-                f"sustained availability window not satisfied; need {task.require_gpu_count} GPU(s) with >= "
-                f"{task.require_vram_mb} MB; eligible_now={eligible_now}; sustained_common={sustained}; "
+                f"sustained availability window not satisfied; {requirement}; "
+                f"eligible_now={eligible_now}; sustained_common={sustained}; "
                 f"effective_free={effective_free}"
             )
         return (
-            f"not enough eligible GPUs; need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB; "
+            f"not enough eligible GPUs; {requirement}; "
             f"eligible_now={eligible_now}; sustained_common={sustained}; effective_free={effective_free}"
         )
 
     def _format_submitted_message(self, task: TaskRecord) -> str:
+        requested = "null" if task.requested_vram_mb is None else f"{task.requested_vram_mb}MB"
         return (
             f"submitted task {task.id} name={task.task_name} mode={task.launch_mode.value} user={task.user} cwd={task.cwd}; "
-            f"need {task.require_gpu_count} GPU(s) with >= {task.require_vram_mb} MB"
+            f"vram_mode={task.vram_mode.value} requested_vram={requested}; need {task.require_gpu_count} GPU(s)"
         )
 
     def _format_launch_reserved_message(self, gpu_ids: list[int]) -> str:

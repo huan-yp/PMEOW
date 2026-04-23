@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTransport } from '../transport/TransportProvider.js';
-import type { Task } from '../transport/types.js';
+import type { Task, TaskEvent } from '../transport/types.js';
 import { useStore } from '../store/useStore.js';
+import { formatTaskRequestedVram } from '../utils/vram.js';
 
 export function TaskBrowser({
   serverId,
@@ -25,14 +26,24 @@ export function TaskBrowser({
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const requestSeqRef = useRef(0);
+  const visibleTaskIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     setPage(1);
   }, [personId, serverId]);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
+    visibleTaskIdsRef.current = new Set(tasks.map((task) => task.id));
+  }, [tasks]);
+
+  const loadTasks = useCallback((showLoading: boolean) => {
+    const seq = requestSeqRef.current + 1;
+    requestSeqRef.current = seq;
+
+    if (showLoading) {
+      setLoading(true);
+    }
 
     const request = personId
       ? transport.getPersonTasks(personId, { page, limit: pageSize })
@@ -40,25 +51,51 @@ export function TaskBrowser({
 
     request
       .then((res) => {
-        if (cancelled) return;
+        if (seq !== requestSeqRef.current) return;
         setTasks(res.tasks);
         setTotal(res.total);
       })
       .catch(() => {
-        if (cancelled) return;
-        setTasks([]);
-        setTotal(0);
+        if (seq !== requestSeqRef.current) return;
+        if (showLoading) {
+          setTasks([]);
+          setTotal(0);
+        }
       })
       .finally(() => {
-        if (!cancelled) {
+        if (seq === requestSeqRef.current) {
           setLoading(false);
         }
       });
-
-    return () => {
-      cancelled = true;
-    };
   }, [transport, personId, serverId, page, pageSize, statusFilter]);
+
+  useEffect(() => {
+    loadTasks(true);
+  }, [loadTasks]);
+
+  useEffect(() => {
+    const unsubscribe = transport.onTaskEvent((event) => {
+      if (serverId && event.serverId !== serverId) {
+        return;
+      }
+
+      const taskId = event.task.taskId;
+      if (visibleTaskIdsRef.current.has(taskId)) {
+        const serverName = useStore.getState().servers.find((item) => item.id === event.serverId)?.name ?? event.serverId;
+        const nextTask = toTaskRecord(event, serverName);
+        setTasks((current) => current.map((task) => (task.id === taskId ? nextTask : task)));
+
+        if (statusFilter && nextTask.status !== statusFilter) {
+          loadTasks(false);
+        }
+        return;
+      }
+
+      loadTasks(false);
+    });
+
+    return unsubscribe;
+  }, [transport, serverId, statusFilter, loadTasks]);
 
   const totalPages = Math.ceil(total / pageSize);
   const colSpan = hideServerColumn ? 7 : 8;
@@ -122,7 +159,7 @@ export function TaskBrowser({
                     <StatusBadge status={task.status} />
                   </td>
                   <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.priority}</td>
-                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{task.requireVramMb} MB</td>
+                  <td className="py-2.5 px-3 text-right font-mono text-slate-300">{formatTaskRequestedVram(task)}</td>
                   <td className="py-2.5 px-3 text-xs leading-5 text-slate-500 whitespace-nowrap">{new Date(task.createdAt * 1000).toLocaleString('zh-CN')}</td>
                 </tr>
               );
@@ -140,6 +177,40 @@ export function TaskBrowser({
       )}
     </div>
   );
+}
+
+function toTaskRecord(event: TaskEvent, serverName: string): Task {
+  const task = event.task;
+
+  return {
+    id: task.taskId,
+    serverId: event.serverId,
+    serverName,
+    status: task.status,
+    command: task.command,
+    cwd: task.cwd,
+    user: task.user,
+    launchMode: task.launchMode,
+    requireVramMb: task.requireVramMb,
+    requestedVramMb: task.requestedVramMb,
+    vramMode: task.vramMode,
+    requireGpuCount: task.requireGpuCount,
+    gpuIds: task.gpuIds,
+    priority: task.priority,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt,
+    finishedAt: task.finishedAt ?? null,
+    pid: task.pid,
+    exitCode: task.exitCode ?? null,
+    assignedGpus: task.assignedGpus,
+    declaredVramPerGpu: task.declaredVramPerGpu,
+    autoObserveWindowSec: task.autoObserveWindowSec,
+    autoPeakVramByGpuMb: task.autoPeakVramByGpuMb,
+    autoReclaimedVramByGpuMb: task.autoReclaimedVramByGpuMb,
+    autoReclaimDone: task.autoReclaimDone,
+    scheduleHistory: task.scheduleHistory,
+    endReason: task.endReason ?? null,
+  };
 }
 
 function StatusBadge({ status }: { status: string }) {

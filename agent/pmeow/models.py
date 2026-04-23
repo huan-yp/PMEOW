@@ -42,7 +42,10 @@ def _serialize(obj: object) -> object:
     if isinstance(obj, enum.Enum):
         return obj.value
     if isinstance(obj, dict):
-        return {_to_camel(k): _serialize(v) for k, v in obj.items()}
+        return {
+            (_to_camel(k) if isinstance(k, str) else str(k)): _serialize(v)
+            for k, v in obj.items()
+        }
     if isinstance(obj, (list, tuple)):
         return [_serialize(v) for v in obj]
     if isinstance(obj, deque):
@@ -112,13 +115,21 @@ class TaskLaunchMode(enum.Enum):
     foreground = "foreground"
 
 
+class VramMode(enum.Enum):
+    exclusive_auto = "exclusive_auto"
+    shared = "shared"
+
+
 @dataclass
 class TaskSpec:
     command: str
     cwd: str
     user: str
     require_vram_mb: int
+    requested_vram_mb: Optional[int] = None
+    vram_mode: VramMode = VramMode.shared
     require_gpu_count: int = 1
+    auto_observe_window_sec: Optional[int] = None
     gpu_ids: Optional[list[int]] = None
     priority: int = 10
     argv: Optional[list[str]] = None
@@ -150,6 +161,8 @@ class TaskRecord:
     # Resource requirements
     require_vram_mb: int
     require_gpu_count: int
+    requested_vram_mb: Optional[int] = None
+    vram_mode: VramMode = VramMode.shared
     gpu_ids: Optional[list[int]] = None  # user-requested GPU affinity
     priority: int = 10
     task_name: str = ""
@@ -165,6 +178,10 @@ class TaskRecord:
     pid_create_time: Optional[float] = None
     assigned_gpus: Optional[list[int]] = None  # GPUs assigned by scheduler
     declared_vram_per_gpu: Optional[int] = None  # VRAM declared per GPU (MB)
+    auto_observe_window_sec: Optional[int] = None
+    auto_peak_vram_by_gpu_mb: Optional[dict[int, int]] = None
+    auto_reclaimed_vram_by_gpu_mb: Optional[dict[int, Optional[int]]] = None
+    auto_reclaim_done: bool = False
     exit_code: Optional[int] = None
     end_reason: Optional[TaskEndReason] = None
 
@@ -210,6 +227,8 @@ class GpuTaskAllocation:
     gpu_index: int
     declared_vram_mb: int
     actual_vram_mb: float
+    vram_mode: VramMode = VramMode.shared
+    exclusive_active: bool = False
     pid: Optional[int] = None
     user: Optional[str] = None
     command: Optional[str] = None
@@ -442,6 +461,8 @@ class TaskInfo:
     gpu_ids: Optional[list[int]]
     priority: int
     created_at: float
+    requested_vram_mb: Optional[int] = None
+    vram_mode: str = VramMode.shared.value
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     pid: Optional[int] = None
@@ -449,6 +470,10 @@ class TaskInfo:
     end_reason: Optional[str] = None
     assigned_gpus: Optional[list[int]] = None
     declared_vram_per_gpu: Optional[int] = None
+    auto_observe_window_sec: Optional[int] = None
+    auto_peak_vram_by_gpu_mb: Optional[dict[int, int]] = None
+    auto_reclaimed_vram_by_gpu_mb: Optional[dict[int, Optional[int]]] = None
+    auto_reclaim_done: bool = False
     schedule_history: list[dict] = field(default_factory=list)
 
 

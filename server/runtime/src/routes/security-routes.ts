@@ -4,9 +4,8 @@ import { adminOnly } from "../auth.js";
 
 export function securityRoutes(): Router {
   const router = Router();
-  router.use(adminOnly);
-  
-  router.get("/security/events", (req, res) => {
+
+  router.get("/security/events", adminOnly, (req, res) => {
     const query = {
       serverId: req.query.serverId as string | undefined,
       resolved: req.query.resolved !== undefined ? req.query.resolved === "true" : undefined,
@@ -14,20 +13,20 @@ export function securityRoutes(): Router {
     };
     res.json(listSecurityEvents(query));
   });
-  
-  router.post("/security/events/:id/mark-safe", (req, res) => {
+
+  router.post("/security/events/:id/mark-safe", adminOnly, (req, res) => {
     const { resolvedBy, reason } = req.body;
     const result = markSecurityEventSafe(Number(req.params.id), resolvedBy || "admin", reason || "");
     if (!result) { res.status(404).json({ error: "not found" }); return; }
     res.json(result);
   });
-  
-  router.post("/security/events/:id/unresolve", (req, res) => {
+
+  router.post("/security/events/:id/unresolve", adminOnly, (req, res) => {
     const { actor, reason } = req.body;
     const result = unresolveSecurityEvent(Number(req.params.id), actor || "admin", reason || "");
     if ("error" in result) { res.status(400).json(result); return; }
     res.json(result);
   });
-  
+
   return router;
 }
