@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import type { Server, ServerStatus, Task, TaskEvent, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import { formatTaskEventLabel, formatTimestamp } from '../app/formatters';
@@ -6,10 +6,9 @@ import { styles } from '../app/styles';
 import type { MobileHomeView } from '../lib/preferences';
 import {
   ExpandableList,
-  GpuIdleBar,
+  MachineViewPager,
   NotificationInboxSection,
-  SectionCard,
-  ServerCard,
+  PageSection,
   TaskRow,
 } from '../components/common';
 
@@ -27,48 +26,19 @@ export function PersonHomeScreen(props: {
 }) {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
-      <SectionCard title="机器视图" description="默认优先查看 GPU 空闲情况，也可切换到机器摘要。">
-        <View style={styles.segmentRow}>
-          <Pressable
-            style={[styles.segment, props.homeView === 'gpuIdle' ? styles.segmentActive : null]}
-            onPress={() => props.onChangeHomeView('gpuIdle')}
-          >
-            <Text style={[styles.segmentText, props.homeView === 'gpuIdle' ? styles.segmentTextActive : null]}>GPU 空闲情况</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.segment, props.homeView === 'summary' ? styles.segmentActive : null]}
-            onPress={() => props.onChangeHomeView('summary')}
-          >
-            <Text style={[styles.segmentText, props.homeView === 'summary' ? styles.segmentTextActive : null]}>机器摘要</Text>
-          </Pressable>
-        </View>
-        {props.servers.length === 0 ? (
-          <Text style={styles.emptyText}>当前没有可见机器。</Text>
-        ) : props.homeView === 'gpuIdle' ? (
-          <View style={styles.gpuIdleSection}>
-            {props.servers.map((server) => (
-              <GpuIdleBar
-                key={server.id}
-                server={server}
-                report={props.latestMetrics[server.id]}
-                onPress={() => props.onSelectServer(server.id)}
-              />
-            ))}
-          </View>
-        ) : (
-          props.servers.map((server) => (
-            <ServerCard
-                key={server.id}
-                server={server}
-                status={props.statuses[server.id]}
-                report={props.latestMetrics[server.id]}
-                onPress={() => props.onSelectServer(server.id)}
-              />
-          ))
-        )}
-      </SectionCard>
+      <PageSection title="机器视图" description="左右滑动切换机器摘要和 GPU 空闲情况，点按机器摘要可展开状态信息。">
+        <MachineViewPager
+          view={props.homeView}
+          onChangeView={props.onChangeHomeView}
+          servers={props.servers}
+          statuses={props.statuses}
+          latestMetrics={props.latestMetrics}
+          emptyText="当前没有可见机器。"
+          onSelectServer={props.onSelectServer}
+        />
+      </PageSection>
 
-      <SectionCard title="最近任务事件" description="与你可见范围相关的实时任务变更。">
+      <PageSection title="最近任务事件" description="与你可见范围相关的实时任务变更。">
         {props.recentTaskEvents.length === 0 ? (
           <Text style={styles.emptyText}>尚未收到任务实时事件。</Text>
         ) : (
@@ -87,7 +57,7 @@ export function PersonHomeScreen(props: {
             }}
           />
         )}
-      </SectionCard>
+      </PageSection>
 
       <NotificationInboxSection items={props.notificationInbox} initialVisibleCount={3} />
     </ScrollView>
@@ -102,7 +72,7 @@ export function PersonTasksScreen(props: {
 }) {
   return (
     <ScrollView contentContainerStyle={styles.screenContent}>
-      <SectionCard title="我的任务" description="点击任务可查看详情，仍可直接取消自己当前排队或运行中的任务。">
+      <PageSection title="我的任务" description="点击任务可查看详情，仍可直接取消自己当前排队或运行中的任务。">
         {props.personTasks.length === 0 ? (
           <Text style={styles.emptyText}>当前没有与你绑定账号相关的任务。</Text>
         ) : (
@@ -123,7 +93,7 @@ export function PersonTasksScreen(props: {
             }}
           />
         )}
-      </SectionCard>
+      </PageSection>
     </ScrollView>
   );
 }

@@ -19,9 +19,10 @@ export const styles = StyleSheet.create({
     flex: 1,
   },
   screenContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 24,
-    gap: 16,
+    paddingTop: 14,
+    gap: 18,
   },
   connectionContent: {
     padding: 24,
@@ -99,7 +100,7 @@ export const styles = StyleSheet.create({
     fontWeight: '700',
   },
   card: {
-    borderRadius: 24,
+    borderRadius: 18,
     padding: 20,
     backgroundColor: '#0d1d2c',
     borderWidth: 1,
@@ -183,6 +184,40 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
   },
+  serverDetailHeaderCompact: {
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: '#0d1d2c',
+    borderWidth: 1,
+    borderColor: '#1d3347',
+    gap: 10,
+  },
+  serverDetailHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  serverDetailHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  serverDetailHeaderTitle: {
+    color: '#f3f8fc',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  serverDetailHeaderMeta: {
+    marginTop: 3,
+    color: '#8ea5b8',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  serverDetailHeaderStats: {
+    borderTopWidth: 1,
+    borderTopColor: '#1b3042',
+    paddingTop: 8,
+    gap: 4,
+  },
 
   segmentTextActive: {
     color: '#f3f8fc',
@@ -244,6 +279,84 @@ export const styles = StyleSheet.create({
     gap: 12,
     marginTop: 12,
   },
+  dashboardHero: {
+    borderRadius: 18,
+    padding: 18,
+    backgroundColor: '#0d1d2c',
+    borderWidth: 1,
+    borderColor: '#1d3347',
+    gap: 14,
+  },
+  dashboardHeroHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  dashboardHeroTitle: {
+    color: '#f3f8fc',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  dashboardHeroMeta: {
+    color: '#8ea5b8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  dashboardHeroValue: {
+    color: '#f3f8fc',
+    fontSize: 34,
+    fontWeight: '800',
+  },
+  dashboardProgressTrack: {
+    height: 10,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: '#142638',
+  },
+  dashboardProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#4fbef7',
+  },
+  dashboardActionGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dashboardActionCard: {
+    flex: 1,
+    minHeight: 116,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#20384d',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  dashboardActionCardWarn: {
+    borderColor: '#8c7335',
+    backgroundColor: '#201b10',
+  },
+  dashboardActionCardDanger: {
+    borderColor: '#8c3b50',
+    backgroundColor: '#24131b',
+  },
+  dashboardActionLabel: {
+    color: '#b7cad8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dashboardActionValue: {
+    color: '#f3f8fc',
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  dashboardActionMeta: {
+    color: '#8ea5b8',
+    fontSize: 11,
+    lineHeight: 16,
+  },
   summaryGridTight: {
     flexDirection: 'row',
     gap: 12,
@@ -288,12 +401,42 @@ export const styles = StyleSheet.create({
     lineHeight: 24,
   },
   serverCard: {
-    borderRadius: 20,
+    borderRadius: 16,
     padding: 16,
     backgroundColor: '#091723',
     borderWidth: 1,
     borderColor: '#20384d',
     marginTop: 12,
+  },
+  sectionPanel: {
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: '#0d1d2c',
+    borderWidth: 1,
+    borderColor: '#1d3347',
+    gap: 10,
+  },
+  serverExpandHint: {
+    marginTop: 8,
+    color: '#86d5ff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  serverExpandedContent: {
+    marginTop: 12,
+  },
+  serverDetailLink: {
+    alignSelf: 'flex-start',
+    marginTop: 14,
+    borderRadius: 999,
+    backgroundColor: '#16324b',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  serverDetailLinkText: {
+    color: '#dce9f4',
+    fontSize: 12,
+    fontWeight: '700',
   },
   serverHeader: {
     flexDirection: 'row',
@@ -547,6 +690,14 @@ export const styles = StyleSheet.create({
     paddingTop: 12,
     marginTop: 12,
   },
+  eventRowCard: {
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#20384d',
+    marginTop: 10,
+  },
   eventTitle: {
     color: '#edf5fb',
     fontSize: 14,
@@ -682,6 +833,43 @@ export const styles = StyleSheet.create({
   bottomTabTextActive: {
     color: '#f3f8fc',
   },
+  preferenceRowInset: {
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#20384d',
+  },
+  roleTabBar: {
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 58,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#162637',
+    backgroundColor: '#07121d',
+  },
+  roleTabItem: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleTabItemActive: {
+    backgroundColor: '#12304a',
+  },
+  roleTabLabel: {
+    color: '#8ea5b8',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  roleTabLabelActive: {
+    color: '#f3f8fc',
+  },
   inlineActionButton: {
     borderRadius: 14,
     paddingHorizontal: 12,
@@ -738,7 +926,8 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    minHeight: 50,
     backgroundColor: '#0d1d2c',
     borderBottomWidth: 1,
     borderBottomColor: '#1d3347',
@@ -787,6 +976,125 @@ export const styles = StyleSheet.create({
   gpuIdleSection: {
     gap: 6,
     marginBottom: 4,
+  },
+  pageSection: {
+    gap: 12,
+  },
+  pageSectionTitle: {
+    color: '#f3f8fc',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  pageSectionDescription: {
+    color: '#8ea5b8',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  secondaryPageTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 4,
+    borderRadius: 16,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#183047',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  secondaryPageTabsScroll: {
+    flexGrow: 0,
+  },
+  secondaryPageTabIndicator: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 0,
+    borderRadius: 12,
+    backgroundColor: '#14314b',
+  },
+  secondaryPageTab: {
+    minHeight: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  secondaryPageTabActive: {
+    backgroundColor: '#14314b',
+  },
+  secondaryPageTabText: {
+    color: '#8ea5b8',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  secondaryPageTabTextActive: {
+    color: '#f3f8fc',
+  },
+  secondarySwipeWrap: {
+    gap: 12,
+  },
+  secondaryTabBlockWrap: {
+    gap: 8,
+  },
+  secondaryTabBlockPager: {
+    overflow: 'hidden',
+  },
+  secondaryTabBlockIndicatorRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 8,
+  },
+  secondaryTabBlockIndicator: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: '#86d5ff',
+  },
+  secondarySwipePagerClip: {
+    overflow: 'hidden',
+  },
+  secondarySwipePage: {
+    gap: 12,
+  },
+  machineViewWrap: {
+    gap: 12,
+  },
+  machineViewPagerClip: {
+    overflow: 'hidden',
+  },
+  machineViewHeader: {
+    flexDirection: 'row',
+    gap: 8,
+    padding: 4,
+    borderRadius: 16,
+    backgroundColor: '#091723',
+    borderWidth: 1,
+    borderColor: '#183047',
+  },
+  machineViewTab: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  machineViewTabActive: {
+    backgroundColor: '#14314b',
+  },
+  machineViewTabText: {
+    color: '#8ea5b8',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  machineViewTabTextActive: {
+    color: '#f3f8fc',
+  },
+  machineViewPage: {
+    gap: 10,
+    paddingRight: 0,
   },
   detailStripeRow: {
     flexDirection: 'row',
