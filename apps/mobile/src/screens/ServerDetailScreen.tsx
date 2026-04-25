@@ -1,22 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
 import type { Server, ServerStatus, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
 import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type HostRealtimeHistory, type PerGpuRealtimeHistory } from '../app/metrics';
+import { SERVER_DETAIL_SECONDARY_PAGES, type ServerDetailSecondaryPageId } from '../app/navigation';
 import { styles } from '../app/styles';
-import { ExpandableList, QueueTaskRow, SectionCard, StatBlock } from '../components/common';
+import { ExpandableList, QueueTaskRow, SectionCard, SecondarySwipeView, StatBlock } from '../components/common';
 import { DEFAULT_IDLE_GPU_NOTIFICATION_RULE, type IdleGpuNotificationRule } from '../lib/preferences';
 import { CpuMemoryTrendCard, DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
-
-type DetailTab = 'overview' | 'realtime' | 'disk' | 'vram' | 'tasks';
-
-const DETAIL_TABS: Array<{ id: DetailTab; label: string }> = [
-  { id: 'overview', label: '总览' },
-  { id: 'realtime', label: '资源实时走势' },
-  { id: 'disk', label: '磁盘占用' },
-  { id: 'vram', label: 'VRAM 分布' },
-  { id: 'tasks', label: '任务' },
-];
 
 function buildEditableRule(rule: IdleGpuNotificationRule | null): {
   minIdleGpuCount: string;
@@ -98,7 +89,7 @@ export function ServerDetailScreen(props: {
   const vramPalette = getUsagePalette(gpuTotals.totalVramPercent);
   const [editableRule, setEditableRule] = useState(() => buildEditableRule(props.subscriptionRule));
   const [ruleError, setRuleError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
+  const [activeTab, setActiveTab] = useState<ServerDetailSecondaryPageId>('overview');
   const isOnline = props.status?.status === 'online';
   const runningTasks = props.report?.taskQueue.running ?? [];
   const queuedTasks = props.report?.taskQueue.queued ?? [];
@@ -148,44 +139,9 @@ export function ServerDetailScreen(props: {
     });
   };
 
-  return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
-      <SectionCard title={props.server.name} description={`Agent ${props.server.agentId.slice(0, 8)} · 最近上报 ${formatTimestamp(props.status?.lastSeenAt ?? null)}`}>
-        <Pressable style={styles.detailBackButton} onPress={props.onBack}>
-          <Text style={styles.detailBackButtonText}>← 返回看板</Text>
-        </Pressable>
-        <View style={styles.detailStripeRow}>
-          <View style={[styles.detailStripe, isOnline ? styles.detailStripeOnline : styles.detailStripeOffline]}>
-            <Text style={styles.detailStripeLabel}>在线状态</Text>
-            <Text style={[styles.detailStripeValue, isOnline ? styles.detailStripeValueOnline : styles.detailStripeValueOffline]}>{isOnline ? '在线' : '离线'}</Text>
-          </View>
-          <View style={[styles.detailStripe, styles.detailStripeNeutral]}>
-            <Text style={styles.detailStripeLabel}>运行任务</Text>
-            <Text style={styles.detailStripeValue}>{runningTasks.length}</Text>
-            <Text style={styles.detailStripeMeta}>排队 {queuedTasks.length} · 最近结束 {recentlyEndedTasks.length}</Text>
-          </View>
-        </View>
-        {gpuCards.length > 0 ? (
-          <Text style={styles.connectionMeta}>总显存 <Text style={{ color: vramPalette.textColor }}>{formatMemoryPairGb(gpuTotals.totalVramUsedMb, gpuTotals.totalVramMb)}</Text> · 总利用率 <Text style={{ color: gpuPalette.textColor }}>{formatPercent(gpuTotals.averageUtilization)}</Text></Text>
-        ) : null}
-        <View style={styles.serverDetailTabRow}>
-          {DETAIL_TABS.map((tab) => {
-            const active = tab.id === activeTab;
-
-            return (
-              <Pressable
-                key={tab.id}
-                style={[styles.serverDetailTab, active ? styles.segmentActive : null]}
-                onPress={() => setActiveTab(tab.id)}
-              >
-                <Text style={[styles.serverDetailTabText, active ? styles.segmentTextActive : null]}>{tab.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </SectionCard>
-
-      {activeTab === 'overview' ? (
+  const renderDetailPage = (tab: ServerDetailSecondaryPageId) => {
+    if (tab === 'overview') {
+      return (
         <SectionCard title="总览" description="先看核心利用率与订阅入口，避免详情页首屏被大卡片占满。">
           <View style={styles.summaryGridCompact}>
             <StatBlock label="GPU 总利用率" value={gpuCards.length > 0 ? formatPercent(gpuTotals.averageUtilization) : '无 GPU'} usagePercent={gpuCards.length > 0 ? gpuTotals.averageUtilization : undefined} />
@@ -206,9 +162,18 @@ export function ServerDetailScreen(props: {
           {!props.isAdmin ? (
             canConfigureGpuIdle ? (
               <>
-                <Pressable style={styles.secondaryButtonWide} onPress={props.onToggleSubscription}>
-                  <Text style={styles.secondaryButtonText}>{props.subscribed ? '取消 GPU 空闲订阅' : '订阅 GPU 空闲提醒'}</Text>
-                </Pressable>
+                <View style={[styles.preferenceRow, styles.preferenceRowInset]}>
+                  <View style={styles.preferenceCopy}>
+                    <Text style={styles.preferenceTitle}>GPU 空闲提醒</Text>
+                    <Text style={styles.preferenceBody}>{props.subscribed ? '已订阅当前机器的 GPU 空闲提醒' : '未订阅当前机器的 GPU 空闲提醒'}</Text>
+                  </View>
+                  <Switch
+                    value={props.subscribed}
+                    onValueChange={props.onToggleSubscription}
+                    trackColor={{ false: '#314657', true: '#2188c9' }}
+                    thumbColor="#f3f8fc"
+                  />
+                </View>
                 {props.subscribed ? (
                   <View style={styles.ruleEditorCard}>
                     <Text style={styles.preferenceTitle}>订阅规则</Text>
@@ -274,9 +239,11 @@ export function ServerDetailScreen(props: {
             )
           ) : null}
         </SectionCard>
-      ) : null}
+      );
+    }
 
-      {activeTab === 'realtime' ? (
+    if (tab === 'realtime') {
+      return (
         <SectionCard
           title="资源实时走势"
           description={props.realtimeHistoryLoading ? '正在补齐最近 10 分钟的实时窗口。' : 'CPU / 内存 / GPU'}
@@ -304,21 +271,26 @@ export function ServerDetailScreen(props: {
             <Text style={styles.emptyText}>当前节点没有可展示的实时资源指标。</Text>
           )}
         </SectionCard>
-      ) : null}
+      );
+    }
 
-      {activeTab === 'disk' ? (
+    if (tab === 'disk') {
+      return (
         <SectionCard title="磁盘占用" description="低于 60% 绿色，超过 60% 黄色，超过 90% 红色。">
           <DiskUsageSection report={props.report} />
         </SectionCard>
-      ) : null}
+      );
+    }
 
-      {activeTab === 'vram' ? (
+    if (tab === 'vram') {
+      return (
         <SectionCard title="VRAM 分布" description="按托管任务、用户进程、未归属进程和可用显存拆分。">
           <VramDistributionSection gpuCards={gpuCards} tasks={allocationTasks} />
         </SectionCard>
-      ) : null}
+      );
+    }
 
-      {activeTab === 'tasks' ? (
+    return (
         <SectionCard title="任务" description="把运行中、排队和最近结束的任务收拢到一个页签中查看。">
           <View style={styles.summaryGridCompact}>
             <StatBlock label="运行中" value={runningTasks.length} />
@@ -334,7 +306,39 @@ export function ServerDetailScreen(props: {
             <TaskQueueSection title="最近结束任务" emptyText="当前没有最近结束的任务。" tasks={recentlyEndedTasks} />
           </View>
         </SectionCard>
-      ) : null}
+    );
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.screenContent}>
+      <View style={styles.serverDetailHeaderCompact}>
+        <View style={styles.serverDetailHeaderRow}>
+          <Pressable style={styles.detailBackButton} onPress={props.onBack}>
+            <Text style={styles.detailBackButtonText}>返回</Text>
+          </Pressable>
+          <View style={styles.serverDetailHeaderCopy}>
+            <Text style={styles.serverDetailHeaderTitle}>{props.server.name}</Text>
+            <Text style={styles.serverDetailHeaderMeta}>Agent {props.server.agentId.slice(0, 8)} · 最近上报 {formatTimestamp(props.status?.lastSeenAt ?? null)}</Text>
+          </View>
+          <View style={[styles.statusBadge, isOnline ? styles.statusOnline : styles.statusOffline]}>
+            <Text style={styles.statusBadgeText}>{isOnline ? '在线' : '离线'}</Text>
+          </View>
+        </View>
+        <View style={styles.serverDetailHeaderStats}>
+          <Text style={styles.detailStripeMeta}>运行 {runningTasks.length} · 排队 {queuedTasks.length} · 最近结束 {recentlyEndedTasks.length}</Text>
+          {gpuCards.length > 0 ? (
+            <Text style={styles.detailStripeMeta}>总显存 <Text style={{ color: vramPalette.textColor }}>{formatMemoryPairGb(gpuTotals.totalVramUsedMb, gpuTotals.totalVramMb)}</Text> · 总利用率 <Text style={{ color: gpuPalette.textColor }}>{formatPercent(gpuTotals.averageUtilization)}</Text></Text>
+          ) : null}
+        </View>
+      </View>
+
+      <SecondarySwipeView
+        pages={SERVER_DETAIL_SECONDARY_PAGES}
+        activePage={activeTab}
+        onChangePage={setActiveTab}
+        tabBlockSize={3}
+        renderPage={renderDetailPage}
+      />
     </ScrollView>
   );
 }

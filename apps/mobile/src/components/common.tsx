@@ -1,7 +1,28 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  Animated,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  UIManager,
+  useWindowDimensions,
+  View,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { indexToTab, tabToIndex } from '../app/constants';
+import { groupSecondaryPages } from '../app/navigation';
+import {
+  MACHINE_VIEW_PAGES,
+  getInitialServerCardExpanded,
+  getMachinePagerPageWidth,
+  getMachineViewPageIndex,
+  getMachineViewPageView,
+} from '../app/machineView';
 import type { Server, ServerStatus, Task, TaskInfo, UnifiedReport } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
 import {
@@ -15,6 +36,10 @@ import { computeGpuIdleStatus, getGpuIdlePalette, getUsagePalette } from '../app
 import { styles } from '../app/styles';
 import { ServerCardVisuals } from './monitoring';
 
+if (Platform.OS === 'android') {
+  UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
+
 export function SectionCard(props: {
   title: string;
   description?: string;
@@ -24,6 +49,20 @@ export function SectionCard(props: {
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{props.title}</Text>
       {props.description ? <Text style={styles.cardDescription}>{props.description}</Text> : null}
+      {props.children}
+    </View>
+  );
+}
+
+export function PageSection(props: {
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.pageSection}>
+      <Text style={styles.pageSectionTitle}>{props.title}</Text>
+      {props.description ? <Text style={styles.pageSectionDescription}>{props.description}</Text> : null}
       {props.children}
     </View>
   );
@@ -45,35 +84,421 @@ export function StatBlock(props: { label: string; value: string | number; usageP
   );
 }
 
+export function SecondaryPageTabs<T extends string>(props: {
+  pages: Array<{ id: T; label: string }>;
+  activePage: T;
+  onChangePage: (page: T) => void;
+  tabMinWidth?: number;
+  pageIndexOffset?: number;
+  scrollProgress?: Animated.Value;
+}) {
+  const indicatorProgress = useRef(new Animated.Value(0)).current;
+  const [containerWidth, setContainerWidth] = useState(0);
+  const activeIndex = Math.max(0, props.pages.findIndex((page) => page.id === props.activePage));
+  const pageIndexOffset = props.pageIndexOffset ?? 0;
+  const tabGap = 8;
+  const horizontalPadding = 4;
+  const fixedTabWidth = props.tabMinWidth;
+  const innerWidth = fixedTabWidth
+    ? props.pages.length * fixedTabWidth + (props.pages.length - 1) * tabGap + horizontalPadding * 2
+    : containerWidth;
+  const tabWidth = fixedTabWidth
+    ?? Math.max(1, (Math.max(1, containerWidth) - horizontalPadding * 2 - tabGap * (props.pages.length - 1)) / props.pages.length);
+  const indicatorWidth = Math.max(1, tabWidth);
+
+  useEffect(() => {
+    if (!props.scrollProgress) {
+      Animated.timing(indicatorProgress, {
+        toValue: activeIndex,
+        duration: 180,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [activeIndex, indicatorProgress, props.scrollProgress]);
+
+  const progress = props.scrollProgress ?? indicatorProgress;
+  const pageInputRange = props.pages.map((_, index) => pageIndexOffset + index);
+  const tabOutputRange = props.pages.map((_, index) => horizontalPadding + (tabWidth + tabGap) * index);
+  const inputRange = pageInputRange.length > 1 ? pageInputRange : [0, 1];
+  const outputRange = tabOutputRange.length > 1 ? tabOutputRange : [horizontalPadding, horizontalPadding];
+
+  const tabs = (
+    <View
+      style={[styles.secondaryPageTabs, fixedTabWidth ? { width: innerWidth } : null]}
+      onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.secondaryPageTabIndicator,
+          {
+            width: indicatorWidth,
+            transform: [
+              {
+                translateX: progress.interpolate({
+                  inputRange,
+                  outputRange,
+                  extrapolate: 'clamp',
+                }),
+              },
+            ],
+          },
+        ]}
+      />
+      {props.pages.map((page) => {
+        const active = page.id === props.activePage;
+        return (
+          <Pressable
+            key={page.id}
+            style={[styles.secondaryPageTab, { width: tabWidth }]}
+            onPress={() => props.onChangePage(page.id)}
+          >
+            <Text style={[styles.secondaryPageTabText, active ? styles.secondaryPageTabTextActive : null]}>{page.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  if (fixedTabWidth) {
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.secondaryPageTabsScroll}>
+        {tabs}
+      </ScrollView>
+    );
+  }
+
+  return tabs;
+}
+
+export function SecondarySwipeView<T extends string>(props: {
+  pages: Array<{ id: T; label: string }>;
+  activePage: T;
+  onChangePage: (page: T) => void;
+  renderPage: (page: T) => ReactNode;
+  tabMinWidth?: number;
+  tabBlockSize?: number;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const tabBlockScrollRef = useRef<ScrollView>(null);
+  const currentTabBlockIndexRef = useRef(0);
+  const pageProgress = useRef(new Animated.Value(0)).current;
+  const tabBlockProgress = useRef(new Animated.Value(0)).current;
+  const [measuredWidth, setMeasuredWidth] = useState<number | undefined>();
+  const { width } = useWindowDimensions();
+  const pageWidth = getMachinePagerPageWidth(measuredWidth, width - 40);
+  const activeIndex = Math.max(0, props.pages.findIndex((page) => page.id === props.activePage));
+  const tabBlocks = useMemo(
+    () => (props.tabBlockSize ? groupSecondaryPages(props.pages, props.tabBlockSize) : null),
+    [props.pages, props.tabBlockSize],
+  );
+  const tabBlockStarts = tabBlocks?.map((block) => props.pages.findIndex((page) => page.id === block[0].id)) ?? [];
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ x: activeIndex * pageWidth, animated: true });
+  }, [activeIndex, pageWidth]);
+
+  useEffect(() => {
+    if (!tabBlocks) {
+      return;
+    }
+
+    const nextBlockIndex = tabBlocks.findIndex((block) => block.some((page) => page.id === props.activePage));
+    if (nextBlockIndex < 0 || nextBlockIndex === currentTabBlockIndexRef.current) {
+      return;
+    }
+
+    currentTabBlockIndexRef.current = nextBlockIndex;
+    tabBlockScrollRef.current?.scrollTo({ x: nextBlockIndex * pageWidth, animated: true });
+    Animated.timing(tabBlockProgress, {
+      toValue: nextBlockIndex,
+      duration: 180,
+      useNativeDriver: false,
+    }).start();
+  }, [activeIndex, pageWidth, props.activePage, tabBlockProgress, tabBlocks]);
+
+  const handleMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const nextIndex = Math.max(0, Math.min(props.pages.length - 1, Math.round(event.nativeEvent.contentOffset.x / pageWidth)));
+    props.onChangePage(props.pages[nextIndex].id);
+  };
+
+  const handleContentScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    pageProgress.setValue(event.nativeEvent.contentOffset.x / pageWidth);
+  };
+
+  const handleTabBlockMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!tabBlocks) {
+      return;
+    }
+    const nextIndex = Math.max(0, Math.min(tabBlocks.length - 1, Math.round(event.nativeEvent.contentOffset.x / pageWidth)));
+    currentTabBlockIndexRef.current = nextIndex;
+    tabBlockProgress.setValue(nextIndex);
+  };
+
+  const tabs = tabBlocks ? (
+    <View style={styles.secondaryTabBlockWrap}>
+      <ScrollView
+        ref={tabBlockScrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        style={[styles.secondaryTabBlockPager, { width: pageWidth }]}
+        onScroll={(event) => tabBlockProgress.setValue(event.nativeEvent.contentOffset.x / pageWidth)}
+        onMomentumScrollEnd={handleTabBlockMomentumEnd}
+        scrollEventThrottle={16}
+      >
+        {tabBlocks.map((block, blockIndex) => (
+          <View key={block.map((page) => page.id).join('-')} style={{ width: pageWidth }}>
+            <SecondaryPageTabs
+              pages={block}
+              activePage={props.activePage}
+              onChangePage={props.onChangePage}
+              pageIndexOffset={tabBlockStarts[blockIndex] ?? 0}
+              scrollProgress={pageProgress}
+            />
+          </View>
+        ))}
+      </ScrollView>
+      <View style={styles.secondaryTabBlockIndicatorRow}>
+        {tabBlocks.map((block, blockIndex) => {
+          const inputRange = tabBlocks.map((_, index) => index);
+          const widthRange = tabBlocks.map((_, index) => (index === blockIndex ? 20 : 6));
+          const opacityRange = tabBlocks.map((_, index) => (index === blockIndex ? 1 : 0.45));
+          return (
+            <Animated.View
+              key={block.map((page) => page.id).join('-indicator')}
+              style={[
+                styles.secondaryTabBlockIndicator,
+                {
+                  width: tabBlockProgress.interpolate({
+                    inputRange,
+                    outputRange: widthRange,
+                    extrapolate: 'clamp',
+                  }),
+                  opacity: tabBlockProgress.interpolate({
+                    inputRange,
+                    outputRange: opacityRange,
+                    extrapolate: 'clamp',
+                  }),
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+    </View>
+  ) : (
+    <SecondaryPageTabs
+      pages={props.pages}
+      activePage={props.activePage}
+      onChangePage={props.onChangePage}
+      tabMinWidth={props.tabMinWidth}
+      scrollProgress={pageProgress}
+    />
+  );
+
+  return (
+    <View style={styles.secondarySwipeWrap} onLayout={(event) => setMeasuredWidth(event.nativeEvent.layout.width)}>
+      {tabs}
+      <ScrollView
+        ref={scrollRef}
+        style={[styles.secondarySwipePagerClip, { width: pageWidth }]}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleContentScroll}
+        onMomentumScrollEnd={handleMomentumEnd}
+        scrollEventThrottle={16}
+      >
+        {props.pages.map((page) => (
+          <View key={page.id} style={[styles.secondarySwipePage, { width: pageWidth }]}>
+            {props.renderPage(page.id)}
+          </View>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 export function ServerCard(props: {
   server: Server;
   status?: ServerStatus;
   report?: UnifiedReport;
   onPress?: () => void;
 }) {
+  const [expanded, setExpanded] = useState(getInitialServerCardExpanded);
+  const [contentMounted, setContentMounted] = useState(expanded);
+  const expansionProgress = useRef(new Animated.Value(expanded ? 1 : 0)).current;
   const connStatus = props.status?.status ?? 'offline';
   const runningCount = props.report?.taskQueue.running.length ?? 0;
   const queuedCount = props.report?.taskQueue.queued.length ?? 0;
   const cpuPalette = getUsagePalette(props.report?.resourceSnapshot.cpu.usagePercent);
   const memoryPalette = getUsagePalette(props.report?.resourceSnapshot.memory.usagePercent);
 
+  const toggleExpanded = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    if (expanded) {
+      setExpanded(false);
+      Animated.timing(expansionProgress, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          setContentMounted(false);
+        }
+      });
+      return;
+    }
+
+    setContentMounted(true);
+    setExpanded(true);
+    Animated.timing(expansionProgress, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  };
+
   return (
-    <Pressable style={styles.serverCard} onPress={props.onPress}>
-      <View style={styles.serverHeader}>
-        <Text style={styles.serverTitle}>{props.server.name}</Text>
-        <View style={[styles.statusBadge, connStatus === 'online' ? styles.statusOnline : styles.statusOffline]}>
-          <Text style={styles.statusBadgeText}>{connStatus === 'online' ? '在线' : '离线'}</Text>
+    <View style={styles.serverCard}>
+      <Pressable onPress={toggleExpanded}>
+        <View style={styles.serverHeader}>
+          <Text style={styles.serverTitle}>{props.server.name}</Text>
+          <View style={[styles.statusBadge, connStatus === 'online' ? styles.statusOnline : styles.statusOffline]}>
+            <Text style={styles.statusBadgeText}>{connStatus === 'online' ? '在线' : '离线'}</Text>
+          </View>
         </View>
-      </View>
-      <Text style={styles.serverMeta}>Agent {props.server.agentId.slice(0, 8)} · 最近上报 {formatTimestamp(props.status?.lastSeenAt ?? null)}</Text>
-      <View style={styles.metricRow}>
-        <Text style={[styles.metricItem, { color: cpuPalette.textColor, borderColor: cpuPalette.borderColor, backgroundColor: cpuPalette.backgroundColor }]}>CPU {formatPercent(props.report?.resourceSnapshot.cpu.usagePercent)}</Text>
-        <Text style={[styles.metricItem, { color: memoryPalette.textColor, borderColor: memoryPalette.borderColor, backgroundColor: memoryPalette.backgroundColor }]}>内存 {formatPercent(props.report?.resourceSnapshot.memory.usagePercent)}</Text>
-        <Text style={styles.metricItem}>运行 {runningCount}</Text>
-        <Text style={styles.metricItem}>排队 {queuedCount}</Text>
-      </View>
-      <ServerCardVisuals report={props.report} />
-    </Pressable>
+        <Text style={styles.serverMeta}>Agent {props.server.agentId.slice(0, 8)} · 最近上报 {formatTimestamp(props.status?.lastSeenAt ?? null)}</Text>
+        <Text style={styles.serverExpandHint}>{expanded ? '收起摘要' : '点按展开状态摘要'}</Text>
+      </Pressable>
+      {contentMounted ? (
+        <Animated.View
+          style={[
+            styles.serverExpandedContent,
+            {
+              opacity: expansionProgress,
+              transform: [
+                {
+                  translateY: expansionProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-8, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.metricRow}>
+            <Text style={[styles.metricItem, { color: cpuPalette.textColor, borderColor: cpuPalette.borderColor, backgroundColor: cpuPalette.backgroundColor }]}>CPU {formatPercent(props.report?.resourceSnapshot.cpu.usagePercent)}</Text>
+            <Text style={[styles.metricItem, { color: memoryPalette.textColor, borderColor: memoryPalette.borderColor, backgroundColor: memoryPalette.backgroundColor }]}>内存 {formatPercent(props.report?.resourceSnapshot.memory.usagePercent)}</Text>
+            <Text style={styles.metricItem}>运行 {runningCount}</Text>
+            <Text style={styles.metricItem}>排队 {queuedCount}</Text>
+          </View>
+          <ServerCardVisuals report={props.report} />
+          {props.onPress ? (
+            <Pressable style={styles.serverDetailLink} onPress={props.onPress}>
+              <Text style={styles.serverDetailLinkText}>查看详情</Text>
+            </Pressable>
+          ) : null}
+        </Animated.View>
+      ) : null}
+    </View>
+  );
+}
+
+export function MachineViewPager(props: {
+  view: 'summary' | 'gpuIdle';
+  onChangeView: (view: 'summary' | 'gpuIdle') => void;
+  servers: Server[];
+  statuses: Record<string, ServerStatus>;
+  latestMetrics: Record<string, UnifiedReport>;
+  emptyText: string;
+  onSelectServer: (serverId: string) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const pageProgress = useRef(new Animated.Value(getMachineViewPageIndex(props.view))).current;
+  const [measuredWidth, setMeasuredWidth] = useState<number | undefined>();
+  const { width } = useWindowDimensions();
+  const pageWidth = getMachinePagerPageWidth(measuredWidth, width - 40);
+  const activeIndex = getMachineViewPageIndex(props.view);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ x: activeIndex * pageWidth, animated: true });
+  }, [activeIndex, pageWidth]);
+
+  useEffect(() => {
+    Animated.timing(pageProgress, {
+      toValue: activeIndex,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [activeIndex, pageProgress]);
+
+  const handleLayout = (event: LayoutChangeEvent) => {
+    setMeasuredWidth(event.nativeEvent.layout.width);
+  };
+
+  const handleMomentumEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
+    props.onChangeView(getMachineViewPageView(nextIndex));
+  };
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    pageProgress.setValue(event.nativeEvent.contentOffset.x / pageWidth);
+  };
+
+  return (
+    <View style={styles.machineViewWrap} onLayout={handleLayout}>
+      <SecondaryPageTabs
+        pages={MACHINE_VIEW_PAGES.map((page) => ({ id: page.view, label: page.label }))}
+        activePage={props.view}
+        onChangePage={props.onChangeView}
+        scrollProgress={pageProgress}
+      />
+      <ScrollView
+        ref={scrollRef}
+        style={[styles.machineViewPagerClip, { width: pageWidth }]}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        onMomentumScrollEnd={handleMomentumEnd}
+        scrollEventThrottle={16}
+      >
+        <View style={[styles.machineViewPage, { width: pageWidth }]}>
+          {props.servers.length === 0 ? (
+            <Text style={styles.emptyText}>{props.emptyText}</Text>
+          ) : (
+            props.servers.map((server) => (
+              <ServerCard
+                key={server.id}
+                server={server}
+                status={props.statuses[server.id]}
+                report={props.latestMetrics[server.id]}
+                onPress={() => props.onSelectServer(server.id)}
+              />
+            ))
+          )}
+        </View>
+        <View style={[styles.machineViewPage, { width: pageWidth }]}>
+          {props.servers.length === 0 ? (
+            <Text style={styles.emptyText}>{props.emptyText}</Text>
+          ) : (
+            <View style={styles.gpuIdleSection}>
+              {props.servers.map((server) => (
+                <GpuIdleBar
+                  key={server.id}
+                  server={server}
+                  report={props.latestMetrics[server.id]}
+                  onPress={() => props.onSelectServer(server.id)}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -158,7 +583,7 @@ export function NotificationInboxSection(props: { items: NotificationInboxItem[]
   const initialVisibleCount = props.initialVisibleCount ?? 8;
 
   return (
-    <SectionCard title="通知记录" description="仅展示本机真正发送过的系统通知。">
+    <PageSection title="通知记录" description="仅展示本机真正发送过的系统通知。">
       {props.items.length === 0 ? (
         <Text style={styles.emptyText}>当前还没有本地通知记录。</Text>
       ) : (
@@ -177,7 +602,7 @@ export function NotificationInboxSection(props: { items: NotificationInboxItem[]
           }}
         />
       )}
-    </SectionCard>
+    </PageSection>
   );
 }
 
@@ -211,12 +636,7 @@ export function SwipeTabView<T extends string>(props: {
   renderScene: (tab: T) => ReactNode;
 }) {
   const pagerRef = useRef<PagerView>(null);
-  // Tracks the page index the pager is currently showing, so we can
-  // avoid calling setPage() when it's already on the right page.
   const lastKnownPageRef = useRef(tabToIndex(props.tabs, props.activeTab));
-  // Signals that the next onPageSelected event was triggered programmatically
-  // (bottom-tab press → setPage), not by a user swipe, so we skip the
-  // redundant onChangeTab call.
   const isProgrammaticRef = useRef(false);
 
   const targetIndex = tabToIndex(props.tabs, props.activeTab);

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -412,8 +412,22 @@ export async function runBuildApk() {
   await runWorkspaceScript('@pmeow/server-contracts', 'build');
   await runWorkspaceScript('@pmeow/app-common', 'build');
 
+  const releaseApkPath = path.join(mobileAndroidDir, 'app', 'build', 'outputs', 'apk', 'release', 'pmeow.apk');
+  const releaseGeneratedAssetsDir = path.join(mobileAndroidDir, 'app', 'build', 'generated', 'assets', 'createBundleReleaseJsAndAssets');
+  const releaseMergedAssetsDir = path.join(mobileAndroidDir, 'app', 'build', 'intermediates', 'assets', 'release');
+
+  rmSync(releaseApkPath, { force: true });
+  rmSync(releaseGeneratedAssetsDir, { recursive: true, force: true });
+  rmSync(releaseMergedAssetsDir, { recursive: true, force: true });
+
   const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
   await runCommand(gradlew, ['assembleRelease'], { cwd: mobileAndroidDir, env: getJavaEnv() });
+
+  if (!existsSync(releaseApkPath)) {
+    throw new Error(`Release APK not found after assembleRelease: ${releaseApkPath}`);
+  }
+
+  process.stdout.write(`[mobile] Release APK built: ${releaseApkPath}\n`);
 }
 
 export async function runMobileLogsOnly() {
