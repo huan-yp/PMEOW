@@ -34,7 +34,7 @@ export function ServerCard({ server, status, report }: Props) {
   const totalVram = gpuCards.reduce((s, g) => s + g.memoryTotalMb, 0);
   const usedVram = gpuCards.reduce((s, g) => s + g.memoryUsedMb, 0);
   const vramPercent = totalVram > 0 ? (usedVram / totalVram) * 100 : 0;
-  const primaryDisk = snap?.disks[0];
+  const diskSummary = summarizeDisks(snap?.disks ?? []);
 
   // Network aggregate
   const totalRx = snap?.network.rxBytesPerSec ?? 0;
@@ -126,12 +126,12 @@ export function ServerCard({ server, status, report }: Props) {
             />
             <SummaryMetricCard
               label="磁盘"
-              value={primaryDisk ? `${primaryDisk.usagePercent.toFixed(1)}%` : 'N/A'}
-              sub={primaryDisk ? `${primaryDisk.mountPoint} · ${primaryDisk.usedGB.toFixed(1)}/${primaryDisk.totalGB.toFixed(1)} GB` : '暂无磁盘数据'}
-              tone={getUsageTone(primaryDisk?.usagePercent ?? 0)}
-              icon={<MetricGlyph kind="disk" tone={getUsageTone(primaryDisk?.usagePercent ?? 0)} />}
-              barValue={primaryDisk?.usagePercent ?? 0}
-              barCaption={primaryDisk ? `已用 ${primaryDisk.usedGB.toFixed(1)}/${primaryDisk.totalGB.toFixed(1)} GB` : '暂无磁盘数据'}
+              value={diskSummary ? `${diskSummary.usagePercent.toFixed(1)}%` : 'N/A'}
+              sub={diskSummary ? `${diskSummary.label} · ${diskSummary.usedGB.toFixed(1)}/${diskSummary.totalGB.toFixed(1)} GB` : '暂无磁盘数据'}
+              tone={getUsageTone(diskSummary?.usagePercent ?? 0)}
+              icon={<MetricGlyph kind="disk" tone={getUsageTone(diskSummary?.usagePercent ?? 0)} />}
+              barValue={diskSummary?.usagePercent ?? 0}
+              barCaption={diskSummary ? `已用 ${diskSummary.usedGB.toFixed(1)}/${diskSummary.totalGB.toFixed(1)} GB` : '暂无磁盘数据'}
             />
             <SummaryMetricCard
               label="网络"
@@ -324,6 +324,22 @@ function getTonePresentation(tone: SummaryTone) {
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
+}
+
+function summarizeDisks(disks: NonNullable<UnifiedReport['resourceSnapshot']>['disks']): {
+  label: string;
+  totalGB: number;
+  usedGB: number;
+  usagePercent: number;
+} | null {
+  if (disks.length === 0) return null;
+
+  const totalGB = disks.reduce((sum, disk) => sum + disk.totalGB, 0);
+  const usedGB = disks.reduce((sum, disk) => sum + disk.usedGB, 0);
+  const usagePercent = totalGB > 0 ? (usedGB / totalGB) * 100 : 0;
+  const label = disks.length === 1 ? disks[0].mountPoint : `${disks.length} 个挂载点`;
+
+  return { label, totalGB, usedGB, usagePercent };
 }
 
 function averageGpuMemoryBandwidth(gpuCards: NonNullable<UnifiedReport['resourceSnapshot']>['gpuCards']): number {
