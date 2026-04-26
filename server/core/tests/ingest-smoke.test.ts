@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getDatabase,
   createServer,
@@ -55,6 +55,8 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     user: 'alice',
     launchMode: 'background',
     requireVramMb: 8000,
+    requestedVramMb: null,
+    vramMode: 'shared',
     requireGpuCount: 1,
     gpuIds: null,
     priority: 10,
@@ -66,6 +68,10 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     endReason: null,
     assignedGpus: null,
     declaredVramPerGpu: null,
+    autoObserveWindowSec: null,
+    autoPeakVramByGpuMb: null,
+    autoReclaimedVramByGpuMb: null,
+    autoReclaimDone: false,
     scheduleHistory: [],
     ...overrides,
   };
@@ -156,24 +162,36 @@ describe('IngestPipeline', () => {
     expect(pipeline.getLatestReport(server.id)).toBe(report);
   });
 
-  it('triggers alerts on high CPU', () => {
-    const server = createServer({ name: 'node-1', agentId: 'agent-1' });
-    const changes: AlertStateChange[] = [];
-    const pipeline = new IngestPipeline({
-      onAlertStateChange: (change) => changes.push(change),
-    }, new AlertEngine());
+  it('triggers alerts after high CPU is sustained', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-24T00:00:00Z'));
 
-    const report = makeReport({
-      resourceSnapshot: {
-        ...makeReport().resourceSnapshot,
-        cpu: { usagePercent: 95, coreCount: 16, modelName: 'AMD EPYC', frequencyMhz: 3500, perCoreUsage: [] },
-      },
-    });
-    pipeline.processReport(server.id, report);
+    try {
+      const server = createServer({ name: 'node-1', agentId: 'agent-1' });
+      const changes: AlertStateChange[] = [];
+      const pipeline = new IngestPipeline({
+        onAlertStateChange: (change) => changes.push(change),
+      }, new AlertEngine());
 
-    const cpuChanges = changes.filter((change) => change.alert.alertType === 'cpu');
-    expect(cpuChanges.length).toBeGreaterThanOrEqual(1);
-    expect(cpuChanges[0].toStatus).toBe('active');
-    expect(cpuChanges[0].alert.value).toBe(95);
+      const report = makeReport({
+        resourceSnapshot: {
+          ...makeReport().resourceSnapshot,
+          cpu: { usagePercent: 95, coreCount: 16, modelName: 'AMD EPYC', frequencyMhz: 3500, perCoreUsage: [] },
+        },
+      });
+
+      pipeline.processReport(server.id, report);
+      expect(changes.filter((change) => change.alert.alertType === 'cpu')).toHaveLength(0);
+
+      vi.advanceTimersByTime(60_000);
+      pipeline.processReport(server.id, report);
+
+      const cpuChanges = changes.filter((change) => change.alert.alertType === 'cpu');
+      expect(cpuChanges.length).toBeGreaterThanOrEqual(1);
+      expect(cpuChanges[0].toStatus).toBe('active');
+      expect(cpuChanges[0].alert.value).toBe(95);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

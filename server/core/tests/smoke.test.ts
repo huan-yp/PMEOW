@@ -76,6 +76,8 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     user: 'alice',
     launchMode: 'background',
     requireVramMb: 8000,
+    requestedVramMb: null,
+    vramMode: 'shared',
     requireGpuCount: 1,
     gpuIds: null,
     priority: 10,
@@ -87,6 +89,10 @@ function makeTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
     endReason: null,
     assignedGpus: null,
     declaredVramPerGpu: null,
+    autoObserveWindowSec: null,
+    autoPeakVramByGpuMb: null,
+    autoReclaimedVramByGpuMb: null,
+    autoReclaimDone: false,
     scheduleHistory: [],
     ...overrides,
   };
@@ -281,6 +287,7 @@ describe('settings', () => {
     const settings = getSettings();
     expect(settings.alertCpuThreshold).toBe(90);
     expect(settings.alertMemoryThreshold).toBe(90);
+    expect(settings.alertThresholdDurationSeconds).toBe(60);
     expect(settings.password).toBe('');
   });
 
