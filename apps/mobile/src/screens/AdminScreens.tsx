@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import type {
   Alert,
   SecurityEvent,
@@ -17,7 +17,7 @@ import {
 } from '../app/formatters';
 import { ADMIN_ALERT_SECONDARY_PAGES, type AdminAlertSecondaryPageId } from '../app/navigation';
 import { styles } from '../app/styles';
-import { ExpandableList, MachineViewPager, PageSection, SecondarySwipeView } from '../components/common';
+import { ExpandableList, MachineViewPager, PageSection, RefreshableScrollView, SecondarySwipeView } from '../components/common';
 import type { MobileHomeView } from '../lib/preferences';
 
 export function AdminOpsOverviewScreen(props: {
@@ -37,8 +37,8 @@ export function AdminOpsOverviewScreen(props: {
   const onlineRatio = props.serverCount === 0 ? 0 : Math.round((props.onlineCount / props.serverCount) * 100);
 
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
-      <PageSection title="当前概览" description={props.realtimeConnected ? '实时连接已建立。' : '实时连接未建立，建议手动刷新。'}>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
+      <PageSection title="当前概览" description={props.realtimeConnected ? '实时连接已建立。' : '实时连接未建立，建议下拉刷新。'}>
         <View style={styles.dashboardHero}>
           <View style={styles.dashboardHeroHeader}>
             <View>
@@ -104,7 +104,7 @@ export function AdminOpsOverviewScreen(props: {
           )}
         </View>
       </PageSection>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
@@ -117,7 +117,7 @@ export function AdminNodesScreen(props: {
   onSelectServer: (serverId: string) => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
       <PageSection title="机器视图" description="左右滑动切换机器摘要和 GPU 空闲情况，点按机器摘要可展开状态信息。">
         <MachineViewPager
           view={props.homeView}
@@ -129,7 +129,7 @@ export function AdminNodesScreen(props: {
           onSelectServer={props.onSelectServer}
         />
       </PageSection>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
@@ -142,7 +142,7 @@ export function AdminAlertsScreen(props: {
   const [activePage, setActivePage] = useState<AdminAlertSecondaryPageId>('activeAlerts');
 
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
       <PageSection title="告警中心" description="按功能分组查看活动告警和未解决安全事件。">
         <SecondarySwipeView
           pages={ADMIN_ALERT_SECONDARY_PAGES}
@@ -191,7 +191,7 @@ export function AdminAlertsScreen(props: {
           )}
         />
       </PageSection>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
@@ -200,7 +200,7 @@ export function AdminAlertDetailView(props: {
   onBack: () => void;
 }) {
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
       <Pressable style={styles.detailBackButton} onPress={props.onBack}>
         <Text style={styles.detailBackButtonText}>返回</Text>
       </Pressable>
@@ -225,7 +225,7 @@ export function AdminAlertDetailView(props: {
           </View>
         </View>
       </PageSection>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
 
@@ -236,7 +236,7 @@ export function AdminSecurityEventDetailView(props: {
   const details = props.event.details;
 
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
       <Pressable style={styles.detailBackButton} onPress={props.onBack}>
         <Text style={styles.detailBackButtonText}>返回</Text>
       </Pressable>
@@ -262,6 +262,6 @@ export function AdminSecurityEventDetailView(props: {
           </View>
         </View>
       </PageSection>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
