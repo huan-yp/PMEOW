@@ -5,7 +5,7 @@ import type { OverviewData } from './types';
 
 export async function loadOverview(client: MobileApiClient, session: AuthSession): Promise<OverviewData> {
   const personTasksPromise = session.authenticated && session.principal.kind === 'person' && session.person
-    ? client.getPersonTasks(session.person.id, { limit: 10 })
+    ? client.getPersonTasks(session.person.id, { limit: 50 })
     : Promise.resolve({ tasks: [], total: 0 });
 
   const alertsPromise = session.authenticated && session.principal.kind === 'admin'

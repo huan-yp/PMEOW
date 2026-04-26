@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Pressable, Switch, Text, TextInput, View } from 'react-native';
 import type { Server, ServerStatus, UnifiedReport } from '@pmeow/app-common';
 import { formatPercent, formatTimestamp } from '../app/formatters';
 import { computeGpuTotals, formatMemoryGb, formatMemoryPairGb, getUsagePalette, type HostRealtimeHistory, type PerGpuRealtimeHistory } from '../app/metrics';
 import { SERVER_DETAIL_SECONDARY_PAGES, type ServerDetailSecondaryPageId } from '../app/navigation';
 import { styles } from '../app/styles';
-import { ExpandableList, QueueTaskRow, SectionCard, SecondarySwipeView, StatBlock } from '../components/common';
+import { ExpandableList, QueueTaskRow, RefreshableScrollView, SectionCard, SecondarySwipeView, StatBlock } from '../components/common';
 import { DEFAULT_IDLE_GPU_NOTIFICATION_RULE, type IdleGpuNotificationRule } from '../lib/preferences';
 import { CpuMemoryTrendCard, DiskUsageSection, GpuRealtimeSection, VramDistributionSection } from '../components/monitoring';
 
@@ -41,6 +41,7 @@ function TaskQueueSection(props: {
   title: string;
   emptyText: string;
   tasks: Array<Parameters<typeof QueueTaskRow>[0]['task']>;
+  onSelectTask?: (taskId: string) => void;
 }) {
   return (
     <View style={styles.detailPanel}>
@@ -54,7 +55,13 @@ function TaskQueueSection(props: {
           renderItems={(expanded) => {
             const visibleTasks = expanded ? props.tasks : props.tasks.slice(0, 5);
 
-            return visibleTasks.map((task) => <QueueTaskRow key={task.taskId} task={task} />);
+            return visibleTasks.map((task) => (
+              <QueueTaskRow
+                key={task.taskId}
+                task={task}
+                onPress={props.onSelectTask ? () => props.onSelectTask?.(task.taskId) : undefined}
+              />
+            ));
           }}
         />
       )}
@@ -75,6 +82,7 @@ export function ServerDetailScreen(props: {
   onBack: () => void;
   onToggleSubscription: () => void;
   onSaveSubscriptionRule: (rule: IdleGpuNotificationRule) => void;
+  onSelectTask?: (taskId: string) => void;
 }) {
   const gpuCards = props.report?.resourceSnapshot.gpuCards ?? [];
   const gpuTotals = computeGpuTotals(gpuCards);
@@ -301,16 +309,16 @@ export function ServerDetailScreen(props: {
             <StatBlock label="总任务数" value={runningTasks.length + queuedTasks.length + recentlyEndedTasks.length} />
           </View>
           <View style={styles.panelStack}>
-            <TaskQueueSection title="运行中任务" emptyText="当前没有运行中的任务。" tasks={runningTasks} />
-            <TaskQueueSection title="排队任务" emptyText="当前没有排队任务。" tasks={queuedTasks} />
-            <TaskQueueSection title="最近结束任务" emptyText="当前没有最近结束的任务。" tasks={recentlyEndedTasks} />
+            <TaskQueueSection title="运行中任务" emptyText="当前没有运行中的任务。" tasks={runningTasks} onSelectTask={props.onSelectTask} />
+            <TaskQueueSection title="排队任务" emptyText="当前没有排队任务。" tasks={queuedTasks} onSelectTask={props.onSelectTask} />
+            <TaskQueueSection title="最近结束任务" emptyText="当前没有最近结束的任务。" tasks={recentlyEndedTasks} onSelectTask={props.onSelectTask} />
           </View>
         </SectionCard>
     );
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
       <View style={styles.serverDetailHeaderCompact}>
         <View style={styles.serverDetailHeaderRow}>
           <Pressable style={styles.detailBackButton} onPress={props.onBack}>
@@ -339,6 +347,6 @@ export function ServerDetailScreen(props: {
         tabBlockSize={3}
         renderPage={renderDetailPage}
       />
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }

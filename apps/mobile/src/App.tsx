@@ -7,6 +7,7 @@ import {
   type BottomTabScreenProps,
 } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Path } from 'react-native-svg';
 import {
   createNativeStackNavigator,
   type NativeStackNavigationProp,
@@ -16,9 +17,10 @@ import type { Alert as PmeowAlert, SecurityEvent, Server } from '@pmeow/app-comm
 import { ADMIN_TAB_ROUTES, PERSON_TAB_ROUTES } from './app/navigation';
 import { styles } from './app/styles';
 import { useServerGpuHistory } from './app/useServerGpuHistory';
-import { AuthenticatedShell, SectionCard } from './components/common';
+import { AuthenticatedShell, RefreshableScrollView, SectionCard } from './components/common';
 import { setNativeAppInForeground } from './lib/native-notifications';
 import type { MobileHomeView } from './lib/preferences';
+import type { MainTabIconId } from './app/navigation';
 import {
   AdminAlertDetailView,
   AdminAlertsScreen,
@@ -27,7 +29,7 @@ import {
   AdminSecurityEventDetailView,
 } from './screens/AdminScreens';
 import { ConnectionScreen } from './screens/ConnectionScreen';
-import { PersonHomeScreen, PersonTasksScreen } from './screens/PersonScreens';
+import { PersonHomeScreen, PersonNotificationsScreen, PersonTasksScreen } from './screens/PersonScreens';
 import { PersonTaskDetailScreen } from './screens/PersonTaskDetailScreen';
 import { ServerDetailScreen } from './screens/ServerDetailScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -51,6 +53,7 @@ type AdminStackParamList = {
 type PersonTabParamList = {
   Resources: undefined;
   MyTasks: undefined;
+  Notifications: undefined;
   PersonSettings: undefined;
 };
 
@@ -98,6 +101,97 @@ const tabScreenOptions = {
   },
 };
 
+function MainTabIcon(props: { icon: MainTabIconId; color: string; size: number }) {
+  const commonProps = {
+    stroke: props.color,
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    fill: 'none',
+  };
+
+  const children = (() => {
+    if (props.icon === 'overview') {
+      return (
+        <>
+          <Path {...commonProps} d="M4 13h6v7H4z" />
+          <Path {...commonProps} d="M14 4h6v16h-6z" />
+          <Path {...commonProps} d="M4 4h6v5H4z" />
+        </>
+      );
+    }
+
+    if (props.icon === 'nodes') {
+      return (
+        <>
+          <Path {...commonProps} d="M7 8h10M7 16h10M12 8v8" />
+          <Circle {...commonProps} cx={7} cy={8} r={3} />
+          <Circle {...commonProps} cx={17} cy={8} r={3} />
+          <Circle {...commonProps} cx={7} cy={16} r={3} />
+          <Circle {...commonProps} cx={17} cy={16} r={3} />
+        </>
+      );
+    }
+
+    if (props.icon === 'alerts') {
+      return (
+        <>
+          <Path {...commonProps} d="M12 4 3.5 19h17z" />
+          <Path {...commonProps} d="M12 9v4" />
+          <Path {...commonProps} d="M12 17h.01" />
+        </>
+      );
+    }
+
+    if (props.icon === 'settings') {
+      return (
+        <>
+          <Path {...commonProps} d="M5 7h14M5 12h14M5 17h14" />
+          <Path {...commonProps} d="M9 5v4M15 10v4M11 15v4" />
+        </>
+      );
+    }
+
+    if (props.icon === 'resources') {
+      return (
+        <>
+          <Path {...commonProps} d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3z" />
+          <Path {...commonProps} d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+          <Path {...commonProps} d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+        </>
+      );
+    }
+
+    if (props.icon === 'notifications') {
+      return (
+        <>
+          <Path {...commonProps} d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <Path {...commonProps} d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </>
+      );
+    }
+
+    return (
+      <>
+        <Path {...commonProps} d="M5 5h14v14H5z" />
+        <Path {...commonProps} d="m8 12 2.5 2.5L16 9" />
+      </>
+    );
+  })();
+
+  return (
+    <Svg width={props.size} height={props.size} viewBox="0 0 24 24">
+      {children}
+    </Svg>
+  );
+}
+
+function createTabIconRenderer(icon: MainTabIconId) {
+  return ({ color, size }: { focused: boolean; color: string; size: number }) => (
+    <MainTabIcon icon={icon} color={color} size={size} />
+  );
+}
+
 function RoleTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
 
@@ -112,6 +206,8 @@ function RoleTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           : typeof options.title === 'string'
             ? options.title
             : route.name;
+        const tintColor = focused ? '#f3f8fc' : '#8ea5b8';
+        const icon = options.tabBarIcon?.({ focused, color: tintColor, size: 20 });
 
         return (
           <Pressable
@@ -131,6 +227,7 @@ function RoleTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               }
             }}
           >
+            {icon ? <View style={styles.roleTabIcon}>{icon}</View> : null}
             <Text style={[styles.roleTabLabel, focused ? styles.roleTabLabelActive : null]}>{label}</Text>
           </Pressable>
         );
@@ -183,11 +280,11 @@ function ScreenFrame(props: {
 function MissingServerScreen(props: { onRefresh: () => Promise<void> }) {
   return (
     <ScreenFrame title="机器详情" identityLabel="机器详情" onRefresh={props.onRefresh}>
-      <View style={styles.screenContent}>
+      <RefreshableScrollView contentContainerStyle={styles.screenContent}>
         <SectionCard title="无法显示机器详情" description="该机器可能已不在当前可见范围内。">
-          <Text style={styles.emptyText}>请返回列表刷新后重试。</Text>
+          <Text style={styles.emptyText}>请返回列表下拉刷新后重试。</Text>
         </SectionCard>
-      </View>
+      </RefreshableScrollView>
     </ScreenFrame>
   );
 }
@@ -199,11 +296,11 @@ function MissingAdminRecordScreen(props: {
 }) {
   return (
     <ScreenFrame title={props.title} identityLabel={props.title} onRefresh={props.onRefresh}>
-      <View style={styles.screenContent}>
+      <RefreshableScrollView contentContainerStyle={styles.screenContent}>
         <SectionCard title={props.title} description={props.description}>
-          <Text style={styles.emptyText}>请返回列表刷新后重试。</Text>
+          <Text style={styles.emptyText}>请返回列表下拉刷新后重试。</Text>
         </SectionCard>
-      </View>
+      </RefreshableScrollView>
     </ScreenFrame>
   );
 }
@@ -307,13 +404,14 @@ function AdminSettingsTab() {
 
 function AdminTabsNavigator() {
   const labels = Object.fromEntries(ADMIN_TAB_ROUTES.map((route) => [route.name, route.label]));
+  const icons = Object.fromEntries(ADMIN_TAB_ROUTES.map((route) => [route.name, route.icon]));
 
   return (
     <AdminTabs.Navigator backBehavior="initialRoute" screenOptions={tabScreenOptions} tabBar={(props) => <RoleTabBar {...props} />}>
-      <AdminTabs.Screen name="OpsOverview" component={AdminOpsOverviewTab} options={{ tabBarLabel: labels.OpsOverview }} />
-      <AdminTabs.Screen name="Nodes" component={AdminNodesTab} options={{ tabBarLabel: labels.Nodes }} />
-      <AdminTabs.Screen name="Alerts" component={AdminAlertsTab} options={{ tabBarLabel: labels.Alerts }} />
-      <AdminTabs.Screen name="AdminSettings" component={AdminSettingsTab} options={{ tabBarLabel: labels.AdminSettings }} />
+      <AdminTabs.Screen name="OpsOverview" component={AdminOpsOverviewTab} options={{ tabBarLabel: labels.OpsOverview, tabBarIcon: createTabIconRenderer(icons.OpsOverview) }} />
+      <AdminTabs.Screen name="Nodes" component={AdminNodesTab} options={{ tabBarLabel: labels.Nodes, tabBarIcon: createTabIconRenderer(icons.Nodes) }} />
+      <AdminTabs.Screen name="Alerts" component={AdminAlertsTab} options={{ tabBarLabel: labels.Alerts, tabBarIcon: createTabIconRenderer(icons.Alerts) }} />
+      <AdminTabs.Screen name="AdminSettings" component={AdminSettingsTab} options={{ tabBarLabel: labels.AdminSettings, tabBarIcon: createTabIconRenderer(icons.AdminSettings) }} />
     </AdminTabs.Navigator>
   );
 }
@@ -322,6 +420,7 @@ function ServerDetailRoute(props: {
   serverId: string;
   isAdmin: boolean;
   onBack: () => void;
+  onSelectTask?: (taskId: string) => void;
 }) {
   const context = useMobileContext();
   const selectedServer = useMemo(
@@ -363,6 +462,7 @@ function ServerDetailRoute(props: {
         onBack={props.onBack}
         onToggleSubscription={() => context.toggleIdleServerSubscription(selectedServer.id)}
         onSaveSubscriptionRule={(rule) => context.updateIdleServerRule(selectedServer.id, rule)}
+        onSelectTask={props.onSelectTask}
       />
     </AuthenticatedShell>
   );
@@ -453,6 +553,7 @@ function PersonResourcesTab(props: BottomTabScreenProps<PersonTabParamList, 'Res
   const context = useMobileContext();
   const personName = getPersonName(context);
   const stackNavigation = props.navigation.getParent<NativeStackNavigationProp<PersonStackParamList>>();
+  const subscribedServerCount = Object.keys(context.notificationSettings.person.idleServerRules).length;
 
   return (
     <ScreenFrame title="资源" identityLabel={`普通用户 · ${personName}`} onRefresh={context.refreshOverview}>
@@ -462,10 +563,27 @@ function PersonResourcesTab(props: BottomTabScreenProps<PersonTabParamList, 'Res
         statuses={context.statuses}
         latestMetrics={context.latestMetrics}
         personTasks={context.personTasks}
-        recentTaskEvents={context.recentTaskEvents}
-        notificationInbox={context.notificationInbox}
         homeView={context.notificationSettings.home.personView}
         onChangeHomeView={(view: MobileHomeView) => context.setHomeView('person', view)}
+        onSelectServer={(serverId) => stackNavigation?.navigate('PersonServerDetail', { serverId })}
+        subscribedServerCount={subscribedServerCount}
+        onNavigateToTasks={() => props.navigation.navigate('MyTasks')}
+        onNavigateToNotifications={() => props.navigation.navigate('Notifications')}
+      />
+    </ScreenFrame>
+  );
+}
+
+function PersonNotificationsTab(props: BottomTabScreenProps<PersonTabParamList, 'Notifications'>) {
+  const context = useMobileContext();
+  const personName = getPersonName(context);
+  const stackNavigation = props.navigation.getParent<NativeStackNavigationProp<PersonStackParamList>>();
+
+  return (
+    <ScreenFrame title="通知" identityLabel={`普通用户 · ${personName}`} onRefresh={context.refreshOverview}>
+      <PersonNotificationsScreen
+        recentTaskEvents={context.recentTaskEvents}
+        notificationInbox={context.notificationInbox}
         onSelectServer={(serverId) => stackNavigation?.navigate('PersonServerDetail', { serverId })}
       />
     </ScreenFrame>
@@ -528,12 +646,14 @@ function PersonSettingsTab() {
 
 function PersonTabsNavigator() {
   const labels = Object.fromEntries(PERSON_TAB_ROUTES.map((route) => [route.name, route.label]));
+  const icons = Object.fromEntries(PERSON_TAB_ROUTES.map((route) => [route.name, route.icon]));
 
   return (
     <PersonTabs.Navigator backBehavior="initialRoute" screenOptions={tabScreenOptions} tabBar={(props) => <RoleTabBar {...props} />}>
-      <PersonTabs.Screen name="Resources" component={PersonResourcesTab} options={{ tabBarLabel: labels.Resources }} />
-      <PersonTabs.Screen name="MyTasks" component={PersonTasksTab} options={{ tabBarLabel: labels.MyTasks }} />
-      <PersonTabs.Screen name="PersonSettings" component={PersonSettingsTab} options={{ tabBarLabel: labels.PersonSettings }} />
+      <PersonTabs.Screen name="Resources" component={PersonResourcesTab} options={{ tabBarLabel: labels.Resources, tabBarIcon: createTabIconRenderer(icons.Resources) }} />
+      <PersonTabs.Screen name="MyTasks" component={PersonTasksTab} options={{ tabBarLabel: labels.MyTasks, tabBarIcon: createTabIconRenderer(icons.MyTasks) }} />
+      <PersonTabs.Screen name="Notifications" component={PersonNotificationsTab} options={{ tabBarLabel: labels.Notifications, tabBarIcon: createTabIconRenderer(icons.Notifications) }} />
+      <PersonTabs.Screen name="PersonSettings" component={PersonSettingsTab} options={{ tabBarLabel: labels.PersonSettings, tabBarIcon: createTabIconRenderer(icons.PersonSettings) }} />
     </PersonTabs.Navigator>
   );
 }
@@ -544,6 +664,7 @@ function PersonServerDetailScreen(props: NativeStackScreenProps<PersonStackParam
       serverId={props.route.params.serverId}
       isAdmin={false}
       onBack={() => props.navigation.goBack()}
+      onSelectTask={(taskId) => props.navigation.navigate('PersonTaskDetail', { taskId })}
     />
   );
 }

@@ -86,19 +86,6 @@ export const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
-  refreshButton: {
-    minWidth: 88,
-    borderRadius: 20,
-    backgroundColor: '#16324b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  refreshButtonText: {
-    color: '#dce9f4',
-    fontSize: 14,
-    fontWeight: '700',
-  },
   card: {
     borderRadius: 18,
     padding: 20,
@@ -852,13 +839,20 @@ export const styles = StyleSheet.create({
   },
   roleTabItem: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 48,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 3,
   },
   roleTabItemActive: {
     backgroundColor: '#12304a',
+  },
+  roleTabIcon: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   roleTabLabel: {
     color: '#8ea5b8',
@@ -939,17 +933,6 @@ export const styles = StyleSheet.create({
     color: '#a8bccd',
     fontSize: 13,
     fontWeight: '600',
-  },
-  compactRefreshButton: {
-    borderRadius: 14,
-    backgroundColor: '#16324b',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-  },
-  compactRefreshText: {
-    color: '#dce9f4',
-    fontSize: 12,
-    fontWeight: '700',
   },
   gpuIdleBar: {
     flexDirection: 'row',

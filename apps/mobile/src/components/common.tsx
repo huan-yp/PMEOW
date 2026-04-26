@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   LayoutAnimation,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   UIManager,
@@ -12,6 +13,7 @@ import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  type ScrollViewProps,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import { indexToTab, tabToIndex } from '../app/constants';
@@ -38,6 +40,33 @@ import { ServerCardVisuals } from './monitoring';
 
 if (Platform.OS === 'android') {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
+}
+
+const PullToRefreshContext = createContext<{
+  refreshing: boolean;
+  onRefresh: () => Promise<void>;
+} | null>(null);
+
+export function RefreshableScrollView(props: ScrollViewProps & { children: ReactNode }) {
+  const refreshContext = useContext(PullToRefreshContext);
+  const { children, ...scrollProps } = props;
+
+  return (
+    <ScrollView
+      {...scrollProps}
+      refreshControl={refreshContext ? (
+        <RefreshControl
+          refreshing={refreshContext.refreshing}
+          onRefresh={() => void refreshContext.onRefresh()}
+          tintColor="#86d5ff"
+          colors={['#86d5ff']}
+          progressBackgroundColor="#0d1d2c"
+        />
+      ) : undefined}
+    >
+      {children}
+    </ScrollView>
+  );
 }
 
 export function SectionCard(props: {
@@ -531,14 +560,14 @@ export function TaskRow(props: {
   );
 }
 
-export function QueueTaskRow(props: { task: TaskInfo }) {
+export function QueueTaskRow(props: { task: TaskInfo; onPress?: () => void }) {
   const requestedVramText = formatTaskRequestedVram(props.task);
 
   return (
-    <View style={styles.eventRow}>
+    <Pressable style={styles.eventRowCard} disabled={!props.onPress} onPress={props.onPress}>
       <Text style={styles.eventTitle}>{formatQueueTaskStatus(props.task.status)} · {props.task.command}</Text>
       <Text style={styles.eventMeta}>{props.task.user} · VRAM {requestedVramText} · {formatTimestamp(props.task.createdAt)}</Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -709,36 +738,32 @@ export function AuthenticatedShell(props: {
   tabs?: ReactNode;
 }) {
   return (
-    <View style={styles.shell}>
-      {props.compact ? (
-        <>
-          <View style={styles.compactHeaderRow}>
-            <Text style={styles.compactHeaderLabel}>{props.identityLabel ?? props.subtitle}</Text>
-            <Pressable style={styles.compactRefreshButton} onPress={() => void props.onRefresh()}>
-              <Text style={styles.compactRefreshText}>{props.refreshing ? '刷新中...' : '刷新'}</Text>
-            </Pressable>
-          </View>
-          {props.error ? (
+    <PullToRefreshContext.Provider value={{ refreshing: props.refreshing, onRefresh: props.onRefresh }}>
+      <View style={styles.shell}>
+        {props.compact ? (
+          <>
             <View style={styles.compactHeaderRow}>
-              <Text style={styles.errorText}>{props.error}</Text>
+              <Text style={styles.compactHeaderLabel}>{props.identityLabel ?? props.subtitle}</Text>
             </View>
-          ) : null}
-        </>
-      ) : (
-        <View style={styles.shellHeader}>
-          <View style={styles.heroCompact}>
-            <Text style={styles.kicker}>PMEOW MOBILE</Text>
-            <Text style={styles.shellTitle}>{props.title}</Text>
-            <Text style={styles.shellSubtitle}>{props.subtitle}</Text>
-            {props.error ? <Text style={styles.errorText}>{props.error}</Text> : null}
+            {props.error ? (
+              <View style={styles.compactHeaderRow}>
+                <Text style={styles.errorText}>{props.error}</Text>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View style={styles.shellHeader}>
+            <View style={styles.heroCompact}>
+              <Text style={styles.kicker}>PMEOW MOBILE</Text>
+              <Text style={styles.shellTitle}>{props.title}</Text>
+              <Text style={styles.shellSubtitle}>{props.subtitle}</Text>
+              {props.error ? <Text style={styles.errorText}>{props.error}</Text> : null}
+            </View>
           </View>
-          <Pressable style={styles.refreshButton} onPress={() => void props.onRefresh()}>
-            <Text style={styles.refreshButtonText}>{props.refreshing ? '刷新中...' : '刷新'}</Text>
-          </Pressable>
-        </View>
-      )}
-      <View style={styles.screenWrap}>{props.children}</View>
-      {props.tabs}
-    </View>
+        )}
+        <View style={styles.screenWrap}>{props.children}</View>
+        {props.tabs}
+      </View>
+    </PullToRefreshContext.Provider>
   );
 }

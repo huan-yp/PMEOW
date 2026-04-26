@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { Pressable, Switch, Text, View } from 'react-native';
 import type { Server } from '@pmeow/app-common';
 import type { NotificationInboxItem } from '../lib/notification-inbox';
-import { ADMIN_SETTINGS_SECONDARY_PAGES, type AdminSettingsSecondaryPageId } from '../app/navigation';
+import { ADMIN_SETTINGS_SECONDARY_PAGES, PERSON_SETTINGS_SECONDARY_PAGES, type AdminSettingsSecondaryPageId, type PersonSettingsSecondaryPageId } from '../app/navigation';
 import { styles } from '../app/styles';
-import { NotificationInboxSection, PageSection, SecondarySwipeView } from '../components/common';
+import { NotificationInboxSection, PageSection, RefreshableScrollView, SecondarySwipeView } from '../components/common';
 
 export function SettingsScreen(props: {
   baseUrl: string;
@@ -181,9 +181,11 @@ export function SettingsScreen(props: {
     </View>
   );
 
+  const [activePersonPage, setActivePersonPage] = useState<PersonSettingsSecondaryPageId>('localNotifications');
+
   if (props.isAdmin) {
     return (
-      <ScrollView contentContainerStyle={styles.screenContent}>
+      <RefreshableScrollView contentContainerStyle={styles.screenContent}>
         <PageSection title="设置" description="按模块管理本机通知、通知记录和当前连接。">
           <SecondarySwipeView
             pages={ADMIN_SETTINGS_SECONDARY_PAGES}
@@ -207,24 +209,35 @@ export function SettingsScreen(props: {
             }}
           />
         </PageSection>
-      </ScrollView>
+      </RefreshableScrollView>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
-      <PageSection title="本地通知设置" description="所有开关与订阅都只保存在本机。">
-        {notificationSettings}
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
+      <PageSection title="设置" description="按模块管理本机通知、通知记录和当前连接。">
+        <SecondarySwipeView
+          pages={PERSON_SETTINGS_SECONDARY_PAGES}
+          activePage={activePersonPage}
+          onChangePage={setActivePersonPage}
+          renderPage={(page) => {
+            if (page === 'localNotifications') {
+              return notificationSettings;
+            }
+            if (page === 'notificationInbox') {
+              return <NotificationInboxSection items={props.notificationInbox} initialVisibleCount={8} />;
+            }
+            return (
+              <View style={styles.sectionPanel}>
+                <Text style={styles.connectionMeta}>当前后端：{props.baseUrl}</Text>
+                <Pressable style={styles.ghostButtonWide} onPress={() => void props.onSignOut()}>
+                  <Text style={styles.ghostButtonText}>退出登录</Text>
+                </Pressable>
+              </View>
+            );
+          }}
+        />
       </PageSection>
-
-      <NotificationInboxSection items={props.notificationInbox} initialVisibleCount={8} />
-
-      <PageSection title="当前连接" description="连接地址仅用于当前 PMEOW 后端。">
-        <Text style={styles.connectionMeta}>当前后端：{props.baseUrl}</Text>
-        <Pressable style={styles.ghostButtonWide} onPress={() => void props.onSignOut()}>
-          <Text style={styles.ghostButtonText}>退出登录</Text>
-        </Pressable>
-      </PageSection>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }

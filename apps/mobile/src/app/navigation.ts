@@ -1,23 +1,28 @@
 export type AdminTabRouteName = 'OpsOverview' | 'Nodes' | 'Alerts' | 'AdminSettings';
-export type PersonTabRouteName = 'Resources' | 'MyTasks' | 'PersonSettings';
+export type PersonTabRouteName = 'Resources' | 'MyTasks' | 'Notifications' | 'PersonSettings';
 export type AdminDetailRouteName = 'AdminServerDetail' | 'AdminAlertDetail' | 'AdminSecurityEventDetail';
 export type PersonDetailRouteName = 'PersonServerDetail' | 'PersonTaskDetail';
+export type MainTabIconId = 'overview' | 'nodes' | 'alerts' | 'settings' | 'resources' | 'tasks' | 'notifications';
 export type AdminAlertSecondaryPageId = 'activeAlerts' | 'securityEvents';
 export type AdminSettingsSecondaryPageId = 'localNotifications' | 'notificationInbox' | 'connection';
+export type PersonTaskSecondaryPageId = 'inProgress' | 'completed' | 'all';
+export type PersonNotificationSecondaryPageId = 'taskEvents' | 'notificationInbox';
+export type PersonSettingsSecondaryPageId = 'localNotifications' | 'notificationInbox' | 'connection';
 export type ServerDetailSecondaryPageId = 'overview' | 'realtime' | 'disk' | 'vram' | 'tasks';
 export const SERVER_DETAIL_TAB_BLOCK_SIZE = 3;
 
-export const ADMIN_TAB_ROUTES: Array<{ name: AdminTabRouteName; label: string }> = [
-  { name: 'OpsOverview', label: '总览' },
-  { name: 'Nodes', label: '节点' },
-  { name: 'Alerts', label: '告警' },
-  { name: 'AdminSettings', label: '设置' },
+export const ADMIN_TAB_ROUTES: Array<{ name: AdminTabRouteName; label: string; icon: MainTabIconId }> = [
+  { name: 'OpsOverview', label: '总览', icon: 'overview' },
+  { name: 'Nodes', label: '节点', icon: 'nodes' },
+  { name: 'Alerts', label: '告警', icon: 'alerts' },
+  { name: 'AdminSettings', label: '设置', icon: 'settings' },
 ];
 
-export const PERSON_TAB_ROUTES: Array<{ name: PersonTabRouteName; label: string }> = [
-  { name: 'Resources', label: '资源' },
-  { name: 'MyTasks', label: '我的任务' },
-  { name: 'PersonSettings', label: '设置' },
+export const PERSON_TAB_ROUTES: Array<{ name: PersonTabRouteName; label: string; icon: MainTabIconId }> = [
+  { name: 'Resources', label: '资源', icon: 'resources' },
+  { name: 'MyTasks', label: '我的任务', icon: 'tasks' },
+  { name: 'Notifications', label: '通知', icon: 'notifications' },
+  { name: 'PersonSettings', label: '设置', icon: 'settings' },
 ];
 
 export const ADMIN_DETAIL_ROUTES: Array<{ name: AdminDetailRouteName }> = [
@@ -37,6 +42,23 @@ export const ADMIN_ALERT_SECONDARY_PAGES: Array<{ id: AdminAlertSecondaryPageId;
 ];
 
 export const ADMIN_SETTINGS_SECONDARY_PAGES: Array<{ id: AdminSettingsSecondaryPageId; label: string }> = [
+  { id: 'localNotifications', label: '本地通知' },
+  { id: 'notificationInbox', label: '通知记录' },
+  { id: 'connection', label: '当前连接' },
+];
+
+export const PERSON_TASK_SECONDARY_PAGES: Array<{ id: PersonTaskSecondaryPageId; label: string }> = [
+  { id: 'inProgress', label: '进行中' },
+  { id: 'completed', label: '已结束' },
+  { id: 'all', label: '全部' },
+];
+
+export const PERSON_NOTIFICATION_SECONDARY_PAGES: Array<{ id: PersonNotificationSecondaryPageId; label: string }> = [
+  { id: 'taskEvents', label: '任务事件' },
+  { id: 'notificationInbox', label: '通知记录' },
+];
+
+export const PERSON_SETTINGS_SECONDARY_PAGES: Array<{ id: PersonSettingsSecondaryPageId; label: string }> = [
   { id: 'localNotifications', label: '本地通知' },
   { id: 'notificationInbox', label: '通知记录' },
   { id: 'connection', label: '当前连接' },
@@ -90,8 +112,8 @@ export const MOBILE_INFORMATION_MAP = {
   person: {
     machineSummary: 'Resources',
     gpuIdleMachineView: 'Resources',
-    recentTaskEvents: 'Resources',
-    notificationInbox: 'Resources',
+    recentTaskEvents: 'Notifications',
+    notificationInbox: 'Notifications',
     personTasks: 'MyTasks',
     cancelTask: 'MyTasks',
     notificationSettings: 'PersonSettings',
