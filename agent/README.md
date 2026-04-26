@@ -191,10 +191,15 @@ Agent 通过环境变量配置；未设置时会使用默认值。
 | `PMEOW_LOG_DIR` | `~/.pmeow/logs/` | 任务 stdout 和 stderr 日志目录 |
 | `PMEOW_PID_FILE` | `~/.pmeow/pmeow-agent.pid` | 后台模式使用的 pid 文件 |
 | `PMEOW_AGENT_LOG_FILE` | 空 | 后台模式使用的专用运行日志文件 |
+| `PMEOW_INTERNET_PROBE_TARGETS` | `baidu.com` | 外网探测目标，逗号分隔主机名；当前通过 ping 判定，能 ping 通任一目标就上报“有外网” |
+| `PMEOW_INTERNET_PROBE_TIMEOUT` | `3.0` | 单个探测目标的 ping 超时时间，单位秒 |
+| `PMEOW_INTERNET_PROBE_INTERVAL` | `30.0` | 外网探测缓存刷新间隔，单位秒 |
 
 `PMEOW_SERVER_URL` 需要指向 PMEOW Web 服务的基础 URL。Agent transport 会自动连接 Socket.IO `/agent` namespace；不要自己拼 `/agent`，也不要改成原始 WebSocket URL。
 
 如果节点网络抖动较多，优先调 `PMEOW_WS_RECONNECT_DELAY_MAX` 和 `PMEOW_WS_REQUEST_TIMEOUT`；默认值已经比旧配置更激进，断线后会更快重新尝试连接。
+
+外网探测默认会 ping `baidu.com`。如果节点环境需要改成别的探测目标，可以通过 `PMEOW_INTERNET_PROBE_TARGETS` 覆盖；历史上的 `host:port` 写法仍然兼容，但端口会被忽略。
 
 ## 状态目录
 

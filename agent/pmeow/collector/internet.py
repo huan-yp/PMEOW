@@ -4,25 +4,26 @@ This collector is intentionally separate from `collector/network.py` because:
 
 - Network byte-counter collection must run every cycle to produce rates.
 - Probing an external host on every collection cycle is wasteful and would
-  add 5s-interval x 3s-timeout worth of outbound TCP attempts when the link is
-  down. The probe is therefore cached and only refreshed on its own interval.
+    add 5s-interval x 3s-timeout worth of outbound checks when the link is
+    down. The probe is therefore cached and only refreshed on its own interval.
 
-The probe uses TCP ``connect(target_host, target_port)`` rather than ICMP ping
-because ICMP is commonly blocked on hardened hosts and requires extra
-privileges, while TCP 443 is almost always allowed outbound.
+The probe uses the system ``ping`` command and, by default, checks whether the
+node can ping ``baidu.com``. This matches the product requirement that
+"能 ping 通百度就是有外网".
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import os
-import socket
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
 
-_DEFAULT_TARGETS = "1.1.1.1:443,8.8.8.8:443"
+_DEFAULT_TARGETS = "baidu.com"
 _DEFAULT_TIMEOUT_SECONDS = 3.0
 _DEFAULT_INTERVAL_SECONDS = 30.0
 
@@ -40,55 +41,59 @@ class InternetProbeResult:
 
 
 def _parse_targets(raw: str) -> list[tuple[str, int]]:
-    """Parse ``"host:port,host:port"`` into validated ``(host, port)`` tuples.
+    """Parse comma-separated hosts into ``(host, 0)`` tuples.
 
-    Silently drops malformed entries so a typo in the env var does not crash
-    the agent. Returns an empty list when ``raw`` is empty or all entries are
-    invalid; callers must treat that as "probe disabled".
+    The probe now uses ICMP ping, so only the host matters. Legacy
+    ``host:port`` entries are still accepted for compatibility and the port is
+    ignored.
     """
     targets: list[tuple[str, int]] = []
     for entry in raw.split(","):
         entry = entry.strip()
         if not entry:
             continue
-        host, _, port_str = entry.rpartition(":")
-        if not host or not port_str:
+        host = entry
+        if entry.count(":") == 1:
+            maybe_host, _, maybe_port = entry.rpartition(":")
+            if maybe_host and maybe_port.isdigit():
+                host = maybe_host
+        host = host.strip()
+        if not host:
             continue
-        try:
-            port = int(port_str)
-        except ValueError:
-            continue
-        if not (0 < port < 65536):
-            continue
-        targets.append((host, port))
+        targets.append((host, 0))
     return targets
 
 
 def _probe_once(host: str, port: int, timeout_seconds: float) -> Optional[float]:
-    """Attempt a TCP connect to ``host:port``.
+    """Ping ``host`` once and return latency in milliseconds on success."""
+    del port
 
-    Returns the latency in milliseconds on success, or ``None`` if the connect
-    failed or timed out. Uses ``monotonic`` so the latency is not affected by
-    wall-clock adjustments between start and finish.
-    """
+    timeout = max(1, int(math.ceil(timeout_seconds)))
     t0 = time.monotonic()
     try:
-        with socket.create_connection((host, port), timeout=timeout_seconds):
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", str(timeout), host],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode == 0:
             return round((time.monotonic() - t0) * 1000.0, 1)
     except OSError:
         return None
+    return None
 
 
 def probe_internet(
     targets: list[tuple[str, int]],
     timeout_seconds: float,
 ) -> InternetProbeResult:
-    """Try each target in order until one succeeds.
+    """Try each target in order until one ping succeeds.
 
     The first successful target wins and its latency is reported. If every
     target fails, the result is marked unreachable and ``latency_ms`` is
-    ``None``. The ``probe_target`` field is always set to the *first* target
-    attempted so UI consumers can display "probe target=1.1.1.1:443" even when
+    ``None``. The ``probe_target`` field is always set to the first host
+    attempted so UI consumers can display the current probe target even when
     the probe failed.
     """
     now = time.time()
@@ -102,14 +107,14 @@ def probe_internet(
             checked_at=now,
         )
 
-    first_target = f"{targets[0][0]}:{targets[0][1]}"
+    first_target = targets[0][0]
     for host, port in targets:
         latency = _probe_once(host, port, timeout_seconds)
         if latency is not None:
             return InternetProbeResult(
                 reachable=True,
                 latency_ms=latency,
-                probe_target=f"{host}:{port}",
+                probe_target=host,
                 checked_at=now,
             )
     return InternetProbeResult(
@@ -212,19 +217,19 @@ class InternetProbe:
 
 
 def load_probe_from_env(env: Optional[dict[str, str]] = None) -> InternetProbe:
-    """Build an ``InternetProbe`` from ``PMEOW_INTERNET_PROBE_*`` env vars.
+        """Build an ``InternetProbe`` from ``PMEOW_INTERNET_PROBE_*`` env vars.
 
-    Supported variables:
+        Supported variables:
 
-    - ``PMEOW_INTERNET_PROBE_TARGETS``: comma-separated ``host:port`` list.
-      Default ``"1.1.1.1:443,8.8.8.8:443"``. Set to an empty string to
-      disable the probe entirely.
-    - ``PMEOW_INTERNET_PROBE_TIMEOUT``: per-target TCP connect timeout in
-      seconds. Default ``3.0``.
-    - ``PMEOW_INTERNET_PROBE_INTERVAL``: minimum seconds between probe runs.
-      Default ``30.0``. Shorter intervals waste bandwidth; longer intervals
-      delay detection of WAN outages.
-    """
+        - ``PMEOW_INTERNET_PROBE_TARGETS``: comma-separated host list. Default
+            ``"baidu.com"``. Legacy ``host:port`` entries are accepted but the port
+            is ignored. Set to an empty string to disable the probe entirely.
+        - ``PMEOW_INTERNET_PROBE_TIMEOUT``: per-target ping timeout in seconds.
+            Default ``3.0``.
+        - ``PMEOW_INTERNET_PROBE_INTERVAL``: minimum seconds between probe runs.
+            Default ``30.0``. Shorter intervals waste bandwidth; longer intervals
+            delay detection of WAN outages.
+        """
     env_map = env if env is not None else os.environ
     raw_targets = env_map.get("PMEOW_INTERNET_PROBE_TARGETS", _DEFAULT_TARGETS)
     targets = _parse_targets(raw_targets)
