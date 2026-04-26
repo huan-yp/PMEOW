@@ -217,19 +217,19 @@ class InternetProbe:
 
 
 def load_probe_from_env(env: Optional[dict[str, str]] = None) -> InternetProbe:
-        """Build an ``InternetProbe`` from ``PMEOW_INTERNET_PROBE_*`` env vars.
+    """Build an ``InternetProbe`` from ``PMEOW_INTERNET_PROBE_*`` env vars.
 
-        Supported variables:
+    Supported variables:
 
-        - ``PMEOW_INTERNET_PROBE_TARGETS``: comma-separated host list. Default
-            ``"baidu.com"``. Legacy ``host:port`` entries are accepted but the port
-            is ignored. Set to an empty string to disable the probe entirely.
-        - ``PMEOW_INTERNET_PROBE_TIMEOUT``: per-target ping timeout in seconds.
-            Default ``3.0``.
-        - ``PMEOW_INTERNET_PROBE_INTERVAL``: minimum seconds between probe runs.
-            Default ``30.0``. Shorter intervals waste bandwidth; longer intervals
-            delay detection of WAN outages.
-        """
+    - ``PMEOW_INTERNET_PROBE_TARGETS``: comma-separated host list. Default
+        ``"baidu.com"``. Legacy ``host:port`` entries are accepted but the port
+        is ignored. Set to an empty string to disable the probe entirely.
+    - ``PMEOW_INTERNET_PROBE_TIMEOUT``: per-target ping timeout in seconds.
+        Default ``3.0``.
+    - ``PMEOW_INTERNET_PROBE_INTERVAL``: minimum seconds between probe runs.
+        Default ``30.0``. Shorter intervals waste bandwidth; longer intervals
+        delay detection of WAN outages.
+    """
     env_map = env if env is not None else os.environ
     raw_targets = env_map.get("PMEOW_INTERNET_PROBE_TARGETS", _DEFAULT_TARGETS)
     targets = _parse_targets(raw_targets)

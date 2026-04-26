@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pmeow.collector.internet as internet_mod
 from pmeow.collector.internet import (
@@ -17,28 +17,27 @@ from pmeow.collector.internet import (
 
 def test_parse_targets_basic() -> None:
     targets = _parse_targets("1.1.1.1:443,8.8.8.8:53")
-    assert targets == [("1.1.1.1", 443), ("8.8.8.8", 53)]
+    assert targets == [("1.1.1.1", 0), ("8.8.8.8", 0)]
 
 
 def test_probe_internet_returns_reachable_on_success() -> None:
     with patch(
-        "pmeow.collector.internet.socket.create_connection"
-    ) as mock_conn, patch(
+        "pmeow.collector.internet.subprocess.run",
+        return_value=Mock(returncode=0),
+    ) as mock_ping, patch(
         "pmeow.collector.internet.time.monotonic",
         side_effect=[1.0, 1.025],
     ), patch(
         "pmeow.collector.internet.time.time",
         return_value=1712000000.0,
     ):
-        mock_conn.return_value.__enter__ = lambda self: self
-        mock_conn.return_value.__exit__ = lambda *args: False
-
-        result = probe_internet([("1.1.1.1", 443)], timeout_seconds=3.0)
+        result = probe_internet([("1.1.1.1", 0)], timeout_seconds=3.0)
 
     assert result.reachable is True
     assert result.latency_ms == 25.0
-    assert result.probe_target == "1.1.1.1:443"
+    assert result.probe_target == "1.1.1.1"
     assert result.checked_at == 1712000000.0
+    mock_ping.assert_called_once()
 
 
 def test_internet_probe_caches_result_within_interval() -> None:
