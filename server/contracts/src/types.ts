@@ -367,6 +367,7 @@ export interface AppSettings {
   alertMemoryThreshold: number;
   alertDiskThreshold: number;
   alertGpuTempThreshold: number;
+  alertThresholdDurationSeconds: number;
   alertOfflineSeconds: number;
   alertGpuIdleMemoryPercent: number;
   alertGpuIdleUtilizationPercent: number;
@@ -386,6 +387,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   alertMemoryThreshold: 90,
   alertDiskThreshold: 90,
   alertGpuTempThreshold: 85,
+  alertThresholdDurationSeconds: 60,
   alertOfflineSeconds: 30,
   alertGpuIdleMemoryPercent: 20,
   alertGpuIdleUtilizationPercent: 5,

@@ -281,6 +281,7 @@ describe('settings', () => {
     const settings = getSettings();
     expect(settings.alertCpuThreshold).toBe(90);
     expect(settings.alertMemoryThreshold).toBe(90);
+    expect(settings.alertThresholdDurationSeconds).toBe(60);
     expect(settings.password).toBe('');
   });
 

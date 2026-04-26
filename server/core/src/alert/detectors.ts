@@ -6,15 +6,49 @@ import type { AlertStateStore } from './state-store.js';
 // Threshold detectors
 // ---------------------------------------------------------------------------
 
-const CPU_ALERT_RECOVERY_DELTA_PERCENT = 5;
-
 interface ThresholdAlertState {
   isActive: boolean;
   lastValue: number;
+  firstBreachedAt: number | null;
 }
 
 function cpuAlertStateKey(serverId: string): string {
   return `threshold:cpu:${serverId}`;
+}
+
+function thresholdAlertStateKey(serverId: string, alertType: AlertType, fingerprint: string): string {
+  return `threshold:${alertType}:${serverId}:${fingerprint}`;
+}
+
+function updateThresholdState(input: {
+  key: string;
+  value: number;
+  isBreaching: boolean;
+  settings: AppSettings;
+  store: AlertStateStore;
+  now: number;
+}): boolean {
+  const state = input.store.get<ThresholdAlertState>(input.key) ?? {
+    isActive: false,
+    lastValue: input.value,
+    firstBreachedAt: null,
+  };
+  const durationMs = Math.max(0, input.settings.alertThresholdDurationSeconds ?? 0) * 1000;
+
+  if (input.isBreaching) {
+    state.firstBreachedAt ??= input.now;
+    if (durationMs === 0 || input.now - state.firstBreachedAt >= durationMs) {
+      state.isActive = true;
+    }
+  } else {
+    state.isActive = false;
+    state.firstBreachedAt = null;
+  }
+
+  state.lastValue = input.value;
+  input.store.set(input.key, state);
+
+  return state.isActive;
 }
 
 function detectCpuThreshold(
@@ -22,16 +56,29 @@ function detectCpuThreshold(
   usagePercent: number,
   settings: AppSettings,
   store: AlertStateStore,
+  now: number,
 ): AlertAnomaly | null {
   const key = cpuAlertStateKey(serverId);
-  const state = store.get<ThresholdAlertState>(key) ?? { isActive: false, lastValue: usagePercent };
+  const state = store.get<ThresholdAlertState>(key) ?? {
+    isActive: false,
+    lastValue: usagePercent,
+    firstBreachedAt: null,
+  };
   const activationThreshold = settings.alertCpuThreshold;
-  const recoveryThreshold = Math.max(0, activationThreshold - CPU_ALERT_RECOVERY_DELTA_PERCENT);
 
   if (state.isActive) {
-    state.isActive = usagePercent > recoveryThreshold;
+    state.isActive = usagePercent >= activationThreshold;
+    if (!state.isActive) {
+      state.firstBreachedAt = null;
+    }
   } else if (usagePercent >= activationThreshold) {
-    state.isActive = true;
+    state.firstBreachedAt ??= now;
+    const durationMs = Math.max(0, settings.alertThresholdDurationSeconds ?? 0) * 1000;
+    if (durationMs === 0 || now - state.firstBreachedAt >= durationMs) {
+      state.isActive = true;
+    }
+  } else {
+    state.firstBreachedAt = null;
   }
 
   state.lastValue = usagePercent;
@@ -56,15 +103,23 @@ export function detectThresholds(
   settings: AppSettings,
   store: AlertStateStore,
 ): AlertAnomaly[] {
+  const now = Date.now();
   const anomalies: AlertAnomaly[] = [];
   const { resourceSnapshot } = report;
 
-  const cpuAnomaly = detectCpuThreshold(serverId, resourceSnapshot.cpu.usagePercent, settings, store);
+  const cpuAnomaly = detectCpuThreshold(serverId, resourceSnapshot.cpu.usagePercent, settings, store, now);
   if (cpuAnomaly) {
     anomalies.push(cpuAnomaly);
   }
 
-  if (resourceSnapshot.memory.usagePercent >= settings.alertMemoryThreshold) {
+  if (updateThresholdState({
+    key: thresholdAlertStateKey(serverId, 'memory', ''),
+    value: resourceSnapshot.memory.usagePercent,
+    isBreaching: resourceSnapshot.memory.usagePercent >= settings.alertMemoryThreshold,
+    settings,
+    store,
+    now,
+  })) {
     anomalies.push({
       alertType: 'memory',
       value: resourceSnapshot.memory.usagePercent,
@@ -76,7 +131,14 @@ export function detectThresholds(
 
   for (const disk of resourceSnapshot.disks) {
     if (!settings.alertDiskMountPoints.includes(disk.mountPoint)) continue;
-    if (disk.usagePercent >= settings.alertDiskThreshold) {
+    if (updateThresholdState({
+      key: thresholdAlertStateKey(serverId, 'disk', disk.mountPoint),
+      value: disk.usagePercent,
+      isBreaching: disk.usagePercent >= settings.alertDiskThreshold,
+      settings,
+      store,
+      now,
+    })) {
       anomalies.push({
         alertType: 'disk',
         value: disk.usagePercent,
@@ -88,7 +150,14 @@ export function detectThresholds(
   }
 
   for (const gpu of resourceSnapshot.gpuCards) {
-    if (gpu.temperature >= settings.alertGpuTempThreshold) {
+    if (updateThresholdState({
+      key: thresholdAlertStateKey(serverId, 'gpu_temp', `gpu${gpu.index}`),
+      value: gpu.temperature,
+      isBreaching: gpu.temperature >= settings.alertGpuTempThreshold,
+      settings,
+      store,
+      now,
+    })) {
       anomalies.push({
         alertType: 'gpu_temp',
         value: gpu.temperature,
