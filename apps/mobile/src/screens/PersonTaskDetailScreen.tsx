@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import type { Task } from '@pmeow/app-common';
 import {
   formatTaskDetailValue,
@@ -7,7 +7,7 @@ import {
   formatTimestamp,
 } from '../app/formatters';
 import { styles } from '../app/styles';
-import { SectionCard } from '../components/common';
+import { PageSection, RefreshableScrollView } from '../components/common';
 import { formatMobileApiError, MobileApiClient, MobileApiError } from '../lib/api';
 
 function isTaskCancelable(task: Task | null): boolean {
@@ -149,89 +149,100 @@ export function PersonTaskDetailScreen(props: {
       : `任务 ID · ${formatTaskIdentifier(props.taskId)}`;
 
   return (
-    <ScrollView contentContainerStyle={styles.screenContent}>
-      <SectionCard title="任务详情" description={summaryText}>
-        <Pressable
-          style={styles.detailBackButton}
-          onPress={props.onBack}
-        >
-          <Text style={styles.detailBackButtonText}>← 返回我的任务</Text>
-        </Pressable>
-        {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        {loading ? <Text style={styles.emptyText}>加载中...</Text> : null}
-        {!loading && !error ? <Text style={styles.connectionMeta}>任务 ID：{props.taskId}</Text> : null}
-      </SectionCard>
+    <RefreshableScrollView contentContainerStyle={styles.screenContent}>
+      <Pressable style={styles.detailBackButton} onPress={props.onBack}>
+        <Text style={styles.detailBackButtonText}>← 返回我的任务</Text>
+      </Pressable>
+      <PageSection title="任务详情" description={summaryText}>
+        <View style={styles.sectionPanel}>
+          {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {loading ? <Text style={styles.emptyText}>加载中...</Text> : null}
+          {!loading && !error ? <Text style={styles.connectionMeta}>任务 ID：{props.taskId}</Text> : null}
+        </View>
+      </PageSection>
 
       {!loading && !task ? (
-        <SectionCard title="无法显示详情" description="该记录可能已不存在或当前账号无权查看。">
-          <Pressable style={styles.secondaryButtonWide} onPress={() => void refreshTask()}>
-            <Text style={styles.secondaryButtonText}>重试</Text>
-          </Pressable>
-          <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
-            <Text style={styles.ghostButtonText}>返回</Text>
-          </Pressable>
-        </SectionCard>
+        <PageSection title="无法显示详情" description="该记录可能已不存在或当前账号无权查看。">
+          <View style={styles.sectionPanel}>
+            <Pressable style={styles.secondaryButtonWide} onPress={() => void refreshTask()}>
+              <Text style={styles.secondaryButtonText}>重试</Text>
+            </Pressable>
+            <Pressable style={styles.ghostButtonWide} onPress={props.onBack}>
+              <Text style={styles.ghostButtonText}>返回</Text>
+            </Pressable>
+          </View>
+        </PageSection>
       ) : null}
 
       {!loading && task ? (
         <>
-          <SectionCard title="主要信息" description="先看任务是什么、当前在哪台机器上。">
-            <View style={styles.panelStack}>
-              <DetailField label="命令" value={task.command} />
-              <DetailField label="服务器" value={task.serverId} />
-              <DetailField label="用户" value={task.user} />
-              <DetailField label="创建时间" value={formatTimestamp(task.createdAt)} />
+          <PageSection title="主要信息" description="先看任务是什么、当前在哪台机器上。">
+            <View style={styles.sectionPanel}>
+              <View style={styles.panelStack}>
+                <DetailField label="命令" value={task.command} />
+                <DetailField label="服务器" value={task.serverName} />
+                <DetailField label="用户" value={task.user} />
+                <DetailField label="创建时间" value={formatTimestamp(task.createdAt)} />
+              </View>
             </View>
-          </SectionCard>
+          </PageSection>
 
-          <SectionCard title="资源与启动信息" description="保留 web 端里最常用的调度和启动信息。">
-            <View style={styles.panelStack}>
-              <DetailField label="状态" value={formatTaskStatus(task.status)} />
-              <DetailField label="请求资源" value={formatRequestedResources(task)} />
-              <DetailField label="VRAM 模式" value={task.vramMode} />
-              <DetailField label="观察窗口" value={task.autoObserveWindowSec == null ? null : `${task.autoObserveWindowSec} 秒`} />
-              <DetailField label="观察峰值" value={formatPerGpuVramMap(task.autoPeakVramByGpuMb)} />
-              <DetailField label="回收状态" value={formatReclaimStatus(task)} />
-              <DetailField label="启动模式" value={task.launchMode} />
-              <DetailField label="优先级" value={task.priority} />
-              <DetailField label="指定 GPU" value={formatGpuList(task.gpuIds)} />
+          <PageSection title="资源与启动信息" description="保留 web 端里最常用的调度和启动信息。">
+            <View style={styles.sectionPanel}>
+              <View style={styles.panelStack}>
+                <DetailField label="状态" value={formatTaskStatus(task.status)} />
+                <DetailField label="请求资源" value={formatRequestedResources(task)} />
+                <DetailField label="VRAM 模式" value={task.vramMode} />
+                <DetailField label="观察窗口" value={task.autoObserveWindowSec == null ? null : `${task.autoObserveWindowSec} 秒`} />
+                <DetailField label="观察峰值" value={formatPerGpuVramMap(task.autoPeakVramByGpuMb)} />
+                <DetailField label="回收状态" value={formatReclaimStatus(task)} />
+                <DetailField label="启动模式" value={task.launchMode} />
+                <DetailField label="优先级" value={task.priority} />
+                <DetailField label="指定 GPU" value={formatGpuList(task.gpuIds)} />
+              </View>
             </View>
-          </SectionCard>
+          </PageSection>
 
-          <SectionCard title="运行状态信息" description="排查任务为什么没有启动或为什么结束。">
-            <View style={styles.panelStack}>
-              <DetailField label="工作目录" value={task.cwd} />
-              <DetailField label="开始时间" value={task.startedAt ? formatTimestamp(task.startedAt) : null} />
-              <DetailField label="结束时间" value={task.finishedAt ? formatTimestamp(task.finishedAt) : null} />
-              <DetailField label="PID" value={task.pid} />
-              <DetailField label="退出码" value={task.exitCode} />
-              <DetailField label="结束原因" value={task.endReason} />
+          <PageSection title="运行状态信息" description="排查任务为什么没有启动或为什么结束。">
+            <View style={styles.sectionPanel}>
+              <View style={styles.panelStack}>
+                <DetailField label="工作目录" value={task.cwd} />
+                <DetailField label="开始时间" value={task.startedAt ? formatTimestamp(task.startedAt) : null} />
+                <DetailField label="结束时间" value={task.finishedAt ? formatTimestamp(task.finishedAt) : null} />
+                <DetailField label="PID" value={task.pid} />
+                <DetailField label="退出码" value={task.exitCode} />
+                <DetailField label="结束原因" value={task.endReason} />
+              </View>
             </View>
-          </SectionCard>
+          </PageSection>
 
           {task.assignedGpus && task.assignedGpus.length > 0 ? (
-            <SectionCard title="已分配 GPU" description="任务已经占用的显卡列表。">
-              <View style={styles.panelStack}>
-                <DetailField label="GPU 列表" value={formatGpuList(task.assignedGpus)} />
-                <DetailField label="每 GPU 声明显存" value={task.declaredVramPerGpu == null ? null : `${task.declaredVramPerGpu} MB`} />
+            <PageSection title="已分配 GPU" description="任务已经占用的显卡列表。">
+              <View style={styles.sectionPanel}>
+                <View style={styles.panelStack}>
+                  <DetailField label="GPU 列表" value={formatGpuList(task.assignedGpus)} />
+                  <DetailField label="每 GPU 声明显存" value={task.declaredVramPerGpu == null ? null : `${task.declaredVramPerGpu} MB`} />
+                </View>
               </View>
-            </SectionCard>
+            </PageSection>
           ) : null}
 
           {isTaskCancelable(task) ? (
-            <SectionCard title="操作" description="只能取消当前仍在排队或运行中的任务。">
-              <Pressable
-                style={[styles.primaryButton, pendingCancel ? styles.buttonDisabled : null]}
-                disabled={pendingCancel}
-                onPress={() => void handleCancelTask()}
-              >
-                <Text style={styles.primaryButtonText}>{pendingCancel ? '提交中...' : '取消任务'}</Text>
-              </Pressable>
-            </SectionCard>
+            <PageSection title="操作" description="只能取消当前仍在排队或运行中的任务。">
+              <View style={styles.sectionPanel}>
+                <Pressable
+                  style={[styles.primaryButton, pendingCancel ? styles.buttonDisabled : null]}
+                  disabled={pendingCancel}
+                  onPress={() => void handleCancelTask()}
+                >
+                  <Text style={styles.primaryButtonText}>{pendingCancel ? '提交中...' : '取消任务'}</Text>
+                </Pressable>
+              </View>
+            </PageSection>
           ) : null}
         </>
       ) : null}
-    </ScrollView>
+    </RefreshableScrollView>
   );
 }
